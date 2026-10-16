@@ -1,0 +1,54 @@
+"""Statistiche cumulative dei turni passati, usate dal generatore per l'equità nel tempo."""
+from dataclasses import dataclass, field
+
+from .modello import Assegnazione
+
+CATEGORIE_WEEKEND = ("sab_giorno", "sab_notte", "dom_giorno", "dom_notte")
+
+
+def categoria_weekend(a: Assegnazione) -> str | None:
+    giorno = {5: "sab", 6: "dom"}.get(a.data.weekday())
+    return f"{giorno}_{a.fascia}" if giorno else None
+
+
+@dataclass
+class StoricoPersona:
+    settimane: int = 0
+    saldo_ore: float = 0.0  # ore lavorate in più (+) o in meno (-) rispetto alle medie settimanali
+    weekend: dict[str, int] = field(default_factory=dict)
+    ore_giorno: int = 0
+    ore_notte: int = 0
+
+    def __post_init__(self):
+        self.weekend = {k: self.weekend.get(k, 0) for k in CATEGORIE_WEEKEND}
+
+
+@dataclass
+class SettimanaPassata:
+    media_ore: float
+    dipendenti: list[int]
+    assegnazioni: list[Assegnazione]
+
+
+def calcola_storico(settimane: list[SettimanaPassata]) -> dict[int, StoricoPersona]:
+    storico: dict[int, StoricoPersona] = {}
+    for s in settimane:
+        presenti = set(s.dipendenti)
+        ore = {pid: 0 for pid in presenti}
+        for pid in presenti:
+            storico.setdefault(pid, StoricoPersona()).settimane += 1
+        for a in s.assegnazioni:
+            if a.persona_id not in presenti:
+                continue
+            st = storico[a.persona_id]
+            ore[a.persona_id] += a.ore
+            if a.fascia == "giorno":
+                st.ore_giorno += a.ore
+            else:
+                st.ore_notte += a.ore
+            cat = categoria_weekend(a)
+            if cat:
+                st.weekend[cat] += 1
+        for pid, h in ore.items():
+            storico[pid].saldo_ore += h - s.media_ore
+    return storico

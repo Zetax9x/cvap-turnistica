@@ -1,0 +1,71 @@
+# CVAP Turnistica — Contratto API e architettura
+
+Backend: Python 3.14, FastAPI, SQLite (`sqlite3` stdlib), OR-Tools CP-SAT.
+Frontend: HTML + JS vanilla (ES modules) in `static/`, servito da FastAPI. UI in italiano.
+
+## Moduli di dominio (`cvap/`)
+
+| Modulo | Contenuto |
+|---|---|
+| `modello.py` | `Persona(id, nome, tipo, qualifica)`, `Postazione(nome, solo_settimane_b)`, `Unita(data, postazione, fascia, segmento, ruolo)`, `Assegnazione(Unita + persona_id, origine)`, `orario()`, `in_conflitto()`, costanti `FASCE, SEGMENTI, RUOLI, TIPI, QUALIFICHE, ORIGINI` |
+| `calendario.py` | `lunedi(d)`, `tipo_settimana(inizio, riferimento_a) -> "A"\|"B"`, `giorni_settimana(d) -> list[date]`, `postazioni_attive(tipo, list[Postazione]) -> list[str]` |
+| `slot.py` | `unita_da_coprire(giorni, postazioni, occupate) -> list[Unita]` |
+| `vincoli.py` | `Violazione(livello: "errore"\|"avviso", codice, messaggio, persona_id=None, data=None)`, `valida_settimana(giorni, postazioni, assegnazioni, persone: dict[int, Persona], contesto=()) -> list[Violazione]` |
+| `storico.py` | `StoricoPersona(settimane, saldo_ore, weekend: dict, ore_giorno, ore_notte)`, `SettimanaPassata(media_ore, dipendenti: list[int], assegnazioni)`, `calcola_storico(list[SettimanaPassata]) -> dict[int, StoricoPersona]` |
+| `solver.py` | `genera(giorni, postazioni, persone: list[Persona], fissi=(), contesto=(), storico=None, tempo_max=20.0) -> Risultato` con `Risultato(stato, assegnazioni: list[Assegnazione]` (solo nuove, origine `generato`)`, scoperti: list[Unita], media_ore: float, ore: dict[int,int], messaggio: str)`; `stato` ∈ `ottimo \| ammissibile \| impossibile \| nessuna_soluzione` |
+
+Valori: `tipo` ∈ dipendente|volontario; `qualifica` ∈ autista|soccorritore; `fascia` ∈ giorno|notte;
+`segmento` ∈ intero|mattina|pomeriggio (mattina/pomeriggio solo con fascia giorno: 8-14 / 14-20);
+`ruolo` ∈ autista|soccorritore; `origine` ∈ volontario|generato|manuale.
+Orari: giorno 8-20, notte 20-8 (giorno dopo). Le settimane iniziano di lunedì; date ISO `YYYY-MM-DD`.
+
+## Database (`cvap/db.py`)
+
+```
+persone(id INTEGER PK, nome TEXT NOT NULL, tipo TEXT, qualifica TEXT, attivo INTEGER DEFAULT 1)
+postazioni(id INTEGER PK, nome TEXT UNIQUE, solo_settimane_b INTEGER, ordine INTEGER)
+   seed: Acquasanta(0,1), Venarotta(0,2), Ascoli(1,3)
+impostazioni(chiave TEXT PK, valore TEXT)        -- data_riferimento_a (default 2026-10-19)
+settimane(inizio TEXT PK, stato TEXT ('bozza'|'confermata'), dipendenti TEXT /*JSON id*/, generata_il TEXT, report TEXT /*JSON*/)
+assegnazioni(id INTEGER PK, data TEXT, postazione TEXT, fascia TEXT, segmento TEXT, ruolo TEXT,
+             persona_id INTEGER REFERENCES persone(id), origine TEXT)
+```
+
+Media ore di una settimana passata = ore dei dipendenti in `settimane.dipendenti` / numero di quei dipendenti
+(calcolata dalle assegnazioni reali, così le modifiche manuali contano).
+
+## Endpoint REST (prefisso `/api`, JSON)
+
+- `GET /persone` → `[{id, nome, tipo, qualifica, attivo}]` (tutte, anche non attive)
+- `POST /persone` `{nome, tipo, qualifica}` → 201 persona · 422 se valori non validi
+- `PUT /persone/{id}` `{nome, tipo, qualifica, attivo}` → persona · 404
+- `DELETE /persone/{id}` → 204; se ha assegnazioni viene solo disattivata (`attivo=0`)
+- `GET /postazioni` → `[{id, nome, solo_settimane_b}]`
+- `GET /impostazioni` → `{data_riferimento_a}` · `PUT /impostazioni` `{data_riferimento_a}` (normalizzata al lunedì)
+- `GET /settimane/{data}` (qualsiasi data, normalizzata al lunedì) →
+  ```
+  { inizio, fine, tipo: "A"|"B", stato: "nuova"|"bozza"|"confermata",
+    giorni: [iso x7], postazioni: [nomi attive],
+    assegnazioni: [{id, data, postazione, fascia, segmento, ruolo, persona_id, persona_nome, origine, ore}],
+    violazioni: [{livello, codice, messaggio, persona_id, data}],
+    riepilogo: [{persona_id, nome, tipo, qualifica, ore, ore_giorno, ore_notte, turni_weekend}],
+    media_ore,            // media ore dipendenti attivi nella settimana
+    report                // ultimo report di generazione o null
+  }
+  ```
+- `POST /settimane/{data}/assegnazioni` `{data, postazione, fascia, segmento, ruolo, persona_id}` → 201 settimana aggiornata (stesso payload di GET).
+  `origine` automatica: `volontario` se la persona è volontaria, altrimenti `manuale` (fissata, la generazione non la tocca).
+  400 se: settimana confermata, data fuori settimana, postazione non attiva quella settimana, fascia/segmento non validi,
+  persona non abilitata al ruolo, posto già occupato (segmento sovrapposto). Le altre regole (riposo, ore…) appaiono come `violazioni`.
+- `DELETE /assegnazioni/{id}` → 204 · 400 se settimana confermata
+- `POST /settimane/{data}/genera` `{tempo_max?: number}` → settimana aggiornata con `report = {stato, messaggio, scoperti: [{data, postazione, fascia, segmento, ruolo}], media_ore, durata_s}`.
+  Cancella le assegnazioni `generato` della settimana, poi chiama `solver.genera` con: dipendenti attivi, `fissi` = volontario+manuale,
+  `contesto` = assegnazioni dei 3 giorni prima e dopo la settimana, `storico` = `calcola_storico` su tutte le settimane precedenti presenti in `settimane`.
+  Salva le nuove assegnazioni, `stato='bozza'`, `dipendenti` = id dei dipendenti attivi. 400 se confermata.
+- `POST /settimane/{data}/conferma` · `POST /settimane/{data}/riapri` → settimana aggiornata
+- `DELETE /settimane/{data}/generati` → settimana aggiornata (rimuove solo le `generato`)
+- `GET /statistiche` → `[{persona_id, nome, tipo, qualifica, settimane, ore_totali, saldo_ore, ore_giorno, ore_notte, weekend: {sab_giorno, sab_notte, dom_giorno, dom_notte}}]`
+  su tutte le settimane in `settimane` (volontari: solo totali, saldo 0).
+
+`GET /` → `static/index.html`; `/static/*` → file statici.
+App factory: `create_app(db_path: str) -> FastAPI` in `cvap/app.py`; `uvicorn cvap.app:app` usa `data/turni.db`.
