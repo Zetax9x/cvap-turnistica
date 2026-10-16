@@ -56,9 +56,12 @@ def valida_settimana(
     for a in list(assegnazioni) + list(contesto):
         per_persona[a.persona_id].append(a)
     for pid, turni in per_persona.items():
-        nome = persone[pid].nome if pid in persone else f"#{pid}"
-        violazioni += _riposo(pid, nome, turni, settimana)
-        violazioni += _consecutivi(pid, nome, turni, settimana)
+        persona = persone.get(pid)
+        nome = persona.nome if persona else f"#{pid}"
+        # le regole di riposo valgono per i dipendenti; per i volontari sono solo avvisi
+        livello = "errore" if persona and persona.dipendente else "avviso"
+        violazioni += _riposo(pid, nome, turni, settimana, livello)
+        violazioni += _consecutivi(pid, nome, turni, settimana, livello)
 
     violazioni += _ore(assegnazioni, persone)
     return violazioni
@@ -99,7 +102,7 @@ def _qualifiche(assegnazioni, persone):
     return out
 
 
-def _riposo(pid, nome, turni, settimana):
+def _riposo(pid, nome, turni, settimana, livello):
     out = []
     for a, b in combinations(sorted(turni, key=lambda t: t.inizio), 2):
         if a.data not in settimana and b.data not in settimana:
@@ -110,13 +113,13 @@ def _riposo(pid, nome, turni, settimana):
                                   f"{nome} è in due turni contemporaneamente: {_descrivi(a)} e {_descrivi(b)}",
                                   pid, b.data))
         elif pausa < ORE_RIPOSO_MIN:
-            out.append(Violazione("errore", "riposo",
+            out.append(Violazione(livello, "riposo",
                                   f"{nome}: solo {pausa}h di riposo tra {_descrivi(a)} e {_descrivi(b)}",
                                   pid, b.data))
     return out
 
 
-def _consecutivi(pid, nome, turni, settimana):
+def _consecutivi(pid, nome, turni, settimana, livello):
     out = []
     for fascia in ("giorno", "notte"):
         date_lavorate = sorted({t.data for t in turni if t.fascia == fascia})
@@ -126,7 +129,7 @@ def _consecutivi(pid, nome, turni, settimana):
                 continue
             etichetta = "giorni" if fascia == "giorno" else "notti"
             if lunghezza > MAX_CONSECUTIVI:
-                out.append(Violazione("errore", "consecutivi",
+                out.append(Violazione(livello, "consecutivi",
                                       f"{nome}: {lunghezza} {etichetta} di fila dal {_fmt(inizio)} (massimo {MAX_CONSECUTIVI})",
                                       pid, inizio))
             else:

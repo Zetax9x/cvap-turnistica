@@ -61,3 +61,11 @@ def test_autista_puo_fare_il_soccorritore_ma_non_viceversa():
     assert autista.puo_ricoprire("autista") and autista.puo_ricoprire("soccorritore")
     assert soccorritore.puo_ricoprire("soccorritore")
     assert not soccorritore.puo_ricoprire("autista")
+
+
+def test_combinazione_fascia_segmento_non_valida_viene_rifiutata_subito():
+    import pytest
+    with pytest.raises(ValueError):
+        ass(LUNEDI_A, "Acquasanta", "notte", "autista", 1, segmento="mattina")
+    with pytest.raises(ValueError):
+        ass(LUNEDI_A, "Acquasanta", "giorno", "pilota", 1)

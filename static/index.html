@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>CVAP Turnistica</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script type="module" src="/static/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Vai al contenuto</a>
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">+</span>
+      <span class="brand-text"><strong>CVAP</strong> Turnistica</span>
+    </div>
+    <nav class="nav" aria-label="Sezioni">
+      <a href="#settimana" data-view="settimana">Settimana</a>
+      <a href="#personale" data-view="personale">Personale</a>
+      <a href="#statistiche" data-view="statistiche">Statistiche</a>
+      <a href="#impostazioni" data-view="impostazioni">Impostazioni</a>
+    </nav>
+  </header>
+
+  <main id="main" tabindex="-1">
+    <section id="view-settimana" class="view" aria-label="Settimana"></section>
+    <section id="view-personale" class="view" aria-label="Personale" hidden></section>
+    <section id="view-statistiche" class="view" aria-label="Statistiche" hidden></section>
+    <section id="view-impostazioni" class="view" aria-label="Impostazioni" hidden></section>
+    <noscript><p class="banner banner-errore">Per usare CVAP Turnistica è necessario abilitare JavaScript.</p></noscript>
+  </main>
+
+  <div id="overlay" class="overlay" hidden>
+    <div class="overlay-box" role="status" aria-live="assertive">
+      <span class="spinner" aria-hidden="true"></span>
+      <span class="overlay-msg">Generazione in corso…</span>
+      <span class="muted overlay-sub">Può richiedere fino a 30 secondi.</span>
+    </div>
+  </div>
+
+  <div id="toast-area" class="toast-area" aria-live="polite" aria-atomic="false"></div>
+</body>
+</html>

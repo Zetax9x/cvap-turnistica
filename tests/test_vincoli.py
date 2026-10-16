@@ -103,3 +103,13 @@ def test_prenotazione_doppia_sullo_stesso_posto():
         ass(LUNEDI_A, "Acquasanta", "giorno", "soccorritore", 3, segmento="mattina", origine="volontario"),
     ]
     assert "doppione" in codici(valida_settimana(GIORNI, STAZIONI, a, PERSONE))
+
+
+def test_riposo_e_consecutivi_dei_volontari_sono_solo_avvisi():
+    a = [
+        ass(LUNEDI_A, "Acquasanta", "notte", "soccorritore", 3, origine="volontario"),
+        ass(LUNEDI_A + timedelta(days=1), "Acquasanta", "giorno", "soccorritore", 3, origine="volontario"),
+    ]
+    v = valida_settimana(GIORNI, STAZIONI, a, PERSONE)
+    assert "riposo" in codici(v, "avviso")
+    assert "riposo" not in codici(v)

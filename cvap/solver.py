@@ -19,6 +19,7 @@ Obiettivi (minimizzati insieme, in ordine di peso):
 """
 import time
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from itertools import combinations
@@ -28,7 +29,7 @@ from ortools.sat.python import cp_model
 from .modello import Assegnazione, Persona, Unita, in_conflitto
 from .slot import unita_da_coprire
 from .storico import CATEGORIE_WEEKEND, StoricoPersona, categoria_weekend
-from .vincoli import MAX_CONSECUTIVI, SCARTO_ORE_MAX
+from .vincoli import MAX_CONSECUTIVI, SCARTO_ORE_MAX, valida_settimana
 
 __all__ = ["Risultato", "StoricoPersona", "genera"]
 
@@ -59,41 +60,57 @@ def genera(
     giorni: list[date],
     postazioni: list[str],
     persone: list[Persona],
-    fissi: list[Assegnazione] = (),
-    contesto: list[Assegnazione] = (),
+    fissi: Sequence[Assegnazione] = (),
+    contesto: Sequence[Assegnazione] = (),
     storico: dict[int, StoricoPersona] | None = None,
     tempo_max: float = 20.0,
     seed: int = 0,
+    workers: int = 8,
 ) -> Risultato:
+    """Genera i turni dei dipendenti.
+
+    `persone` deve contenere solo i dipendenti disponibili (il chiamante esclude non attivi e assenti):
+    la media delle ore è calcolata su di loro.
+    """
     avvio = time.monotonic()
     storico = storico or {}
+    fissi, contesto = list(fissi), list(contesto)
     dipendenti = [p for p in persone if p.dipendente]
-    unita = unita_da_coprire(giorni, postazioni, list(fissi))
+    unita = unita_da_coprire(giorni, postazioni, fissi)
+    problemi_fissi = _problemi_turni_fissi(giorni, postazioni, fissi, contesto, dipendenti)
     if not unita:
-        return Risultato("ottimo", messaggio="Tutti i posti sono già coperti.",
-                         ore=_ore_fisse(dipendenti, fissi))
+        ore = _ore_fisse(dipendenti, fissi)
+        media = sum(ore.values()) / len(dipendenti) if dipendenti else 0.0
+        return Risultato("ottimo", media_ore=media, ore=ore,
+                         messaggio=" ".join(["Tutti i posti sono già coperti."] + problemi_fissi))
     if not dipendenti:
         return Risultato("impossibile", scoperti=unita, messaggio="Nessun dipendente attivo disponibile.")
 
-    m = _Modello(giorni, unita, dipendenti, list(fissi), list(contesto), storico)
+    m = _Modello(giorni, unita, dipendenti, fissi, contesto, storico)
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = tempo_max
-    solver.parameters.num_search_workers = 8
+    solver.parameters.num_search_workers = workers
     solver.parameters.random_seed = seed
     status = solver.Solve(m.model)
     durata = time.monotonic() - avvio
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         if status == cp_model.INFEASIBLE:
-            return Risultato("impossibile", scoperti=unita, durata_s=durata,
-                             messaggio="I turni fissati a mano o le settimane vicine rendono impossibile "
-                                       "rispettare riposi e turni consecutivi. Rimuovi qualche turno fissato.")
-        return Risultato("nessuna_soluzione", scoperti=unita, durata_s=durata,
-                         messaggio="Nessuna soluzione trovata nel tempo disponibile: aumenta il tempo massimo.")
+            msg = ("I turni fissati a mano o le settimane vicine rendono impossibile rispettare "
+                   "riposi e turni consecutivi. Rimuovi qualche turno fissato.")
+        elif status == cp_model.MODEL_INVALID:
+            msg = "Errore interno nel modello di generazione: " + m.model.Validate()
+        else:
+            msg = "Nessuna soluzione trovata nel tempo disponibile: aumenta il tempo massimo."
+        stato = "impossibile" if status == cp_model.INFEASIBLE else "nessuna_soluzione"
+        return Risultato(stato, scoperti=unita, durata_s=durata, messaggio=" ".join([msg] + problemi_fissi))
 
+    per_unita = defaultdict(list)
+    for (pid, ui), var in m.x.items():
+        per_unita[ui].append((pid, var))
     assegnazioni, scoperti = [], []
     for ui, u in enumerate(unita):
-        chi = [pid for (pid, i), var in m.x.items() if i == ui and solver.Value(var)]
+        chi = [pid for pid, var in per_unita[ui] if solver.Value(var)]
         if chi:
             assegnazioni.append(Assegnazione(u.data, u.postazione, u.fascia, u.segmento, u.ruolo, chi[0], "generato"))
         else:
@@ -105,7 +122,7 @@ def genera(
     media = sum(ore.values()) / len(dipendenti)
     fuori_banda = [p.nome for p in dipendenti if abs(ore[p.id] - media) > SCARTO_ORE_MAX]
 
-    note = []
+    note = list(problemi_fissi)
     if scoperti:
         note.append(f"{len(scoperti)} posti non coperti: servono altri dipendenti o volontari.")
     if fuori_banda:
@@ -124,6 +141,14 @@ def genera(
         messaggio=" ".join(note),
         durata_s=durata,
     )
+
+
+def _problemi_turni_fissi(giorni, postazioni, fissi, contesto, dipendenti) -> list[str]:
+    """Violazioni già presenti nei turni che il generatore non può cambiare (fissati e settimane vicine)."""
+    persone = {p.id: p for p in dipendenti}
+    regole = {"riposo", "sovrapposizione", "consecutivi"}
+    return [v.messaggio + "." for v in valida_settimana(giorni, postazioni, fissi, persone, contesto=contesto)
+            if v.livello == "errore" and v.codice in regole]
 
 
 def _ore_fisse(dipendenti, fissi) -> dict[int, int]:
@@ -155,6 +180,9 @@ class _Modello:
             for p in dipendenti:
                 if p.puo_ricoprire(u.ruolo) and not any(in_conflitto(u, f) for f in self.fissi_di[p.id]):
                     self.x[p.id, ui] = self.model.NewBoolVar(f"x_{p.id}_{ui}")
+        self.per_persona: dict[int, list[tuple[Unita, cp_model.IntVar]]] = defaultdict(list)
+        for (pid, ui), v in self.x.items():
+            self.per_persona[pid].append((unita[ui], v))
 
         self._copertura()
         self._riposo()
@@ -183,8 +211,10 @@ class _Modello:
                 dopo += 1
             return prima + dopo + 1
 
+        settimana = set(self.giorni)
+
         def ore_fascia(pid, fascia):
-            return sum(t.ore for t in presi[pid] if t.fascia == fascia and t.data in set(self.giorni))
+            return sum(t.ore for t in presi[pid] if t.fascia == fascia and t.data in settimana)
 
         # prima i posti da autista (più vincolati), poi in ordine cronologico
         ordine = sorted(range(len(self.unita)), key=lambda ui: (self.unita[ui].ruolo != "autista", self.unita[ui].inizio))
@@ -209,7 +239,7 @@ class _Modello:
             self.model.AddHint(v, scelta.get(ui) == pid)
 
     def _vars_di(self, pid, filtro=lambda u: True):
-        return [(self.unita[ui], v) for (p, ui), v in self.x.items() if p == pid and filtro(self.unita[ui])]
+        return [(u, v) for u, v in self.per_persona[pid] if filtro(u)]
 
     def _copertura(self):
         per_unita = defaultdict(list)
@@ -229,21 +259,21 @@ class _Modello:
 
     def _consecutivi(self):
         settimana = set(self.giorni)
-        date = [self.giorni[0] + timedelta(days=i) for i in range(-MAX_CONSECUTIVI, 7 + MAX_CONSECUTIVI)]
+        giorni = [self.giorni[0] + timedelta(days=i) for i in range(-MAX_CONSECUTIVI, 7 + MAX_CONSECUTIVI)]
         for p in self.dipendenti:
             for fascia in ("giorno", "notte"):
                 lavorato = {}
                 note = {a.data for a in self.fissi_di[p.id] if a.fascia == fascia}
-                for d in date:
+                for d in giorni:
                     vars_d = [v for u, v in self._vars_di(p.id, lambda u, d=d: u.data == d and u.fascia == fascia)]
                     lavorato[d] = (sum(vars_d) if vars_d else 0) + (1 if d in note else 0)
-                for i in range(len(date)):
-                    finestra4 = date[i:i + MAX_CONSECUTIVI + 1]
+                for i in range(len(giorni)):
+                    finestra4 = giorni[i:i + MAX_CONSECUTIVI + 1]
                     if len(finestra4) == MAX_CONSECUTIVI + 1 and set(finestra4) & settimana:
                         espr = sum(lavorato[d] for d in finestra4)
                         if not isinstance(espr, int):
                             self.model.Add(espr <= MAX_CONSECUTIVI)
-                    finestra3 = date[i:i + 3]
+                    finestra3 = giorni[i:i + 3]
                     if len(finestra3) == 3 and set(finestra3) & settimana:
                         espr = sum(lavorato[d] for d in finestra3)
                         if not isinstance(espr, int):
@@ -263,6 +293,9 @@ class _Modello:
         totale = self.model.NewIntVar(0, 24 * 7 * n, "ore_totali")
         self.model.Add(totale == sum(self.ore.values()))
         massimo = self.model.NewIntVar(0, 1000 * n, "scarto_max")
+        # i saldi si centrano sui dipendenti attuali: chi è entrato o uscito non sposta tutti dalla media
+        saldi = {p.id: self.storico.get(p.id, StoricoPersona()).saldo_ore for p in self.dipendenti}
+        saldo_medio = sum(saldi.values()) / n
         for p in self.dipendenti:
             # n * (ore - media) = n * ore - totale  (tutto intero)
             scarto = n * self.ore[p.id] - totale
@@ -274,7 +307,7 @@ class _Modello:
             self.obiettivo.append((P_FUORI_BANDA, sotto))
 
             # obiettivo: media - saldo delle settimane precedenti
-            saldo = self.storico.get(p.id, StoricoPersona()).saldo_ore
+            saldo = saldi[p.id] - saldo_medio
             saldo = max(-2 * SCARTO_ORE_MAX, min(2 * SCARTO_ORE_MAX, saldo))  # oltre non serve: la banda è rigida
             dev = self.model.NewIntVar(0, 1000 * n, "")
             self.model.AddAbsEquality(dev, scarto + round(n * saldo))
@@ -309,7 +342,9 @@ class _Modello:
             tasso = totale_cat / settimane_tot if settimane_tot else 0.0
             for p in self.dipendenti:
                 st = self.storico.get(p.id, StoricoPersona())
-                debito = st.weekend[cat] - tasso * st.settimane  # >0: ne ha fatti più del dovuto
+                fissati = sum(1 for a in self.fissi_settimana if a.persona_id == p.id and categoria_weekend(a) == cat)
+                # >0: ne ha fatti (o ne ha già fissati questa settimana) più del dovuto
+                debito = st.weekend[cat] + fissati - tasso * st.settimane
                 # costo marginale di (storico + c)^2 con c binario: 2*storico + 1
                 costo = round(P_WEEKEND * n * (2 * debito + 1))
                 for u, v in self._vars_di(p.id, lambda u, cat=cat: categoria_weekend(u) == cat):
@@ -319,6 +354,6 @@ class _Modello:
             turni = [v for u, v in self._vars_di(p.id, lambda u: categoria_weekend(u) is not None)]
             fissi = sum(1 for a in self.fissi_settimana if a.persona_id == p.id and categoria_weekend(a))
             if turni:
-                extra = self.model.NewIntVar(0, 4, "")
+                extra = self.model.NewIntVar(0, 4 + fissi, "")
                 self.model.Add(sum(turni) + fissi - 1 <= extra)
                 self.obiettivo.append((P_DOPPIO_WEEKEND * n, extra))

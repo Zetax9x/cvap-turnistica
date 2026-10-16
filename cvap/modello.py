@@ -63,13 +63,21 @@ class Unita:
     segmento: str
     ruolo: str
 
+    def __post_init__(self):
+        if self.ruolo not in RUOLI:
+            raise ValueError(f"ruolo non valido: {self.ruolo}")
+        # valida fascia/segmento e memorizza l'orario (usato moltissimo dal generatore)
+        inizio, fine = orario(self.data, self.fascia, self.segmento)
+        object.__setattr__(self, "_inizio", inizio)
+        object.__setattr__(self, "_fine", fine)
+
     @property
     def inizio(self) -> int:
-        return orario(self.data, self.fascia, self.segmento)[0]
+        return self._inizio
 
     @property
     def fine(self) -> int:
-        return orario(self.data, self.fascia, self.segmento)[1]
+        return self._fine
 
     @property
     def ore(self) -> int:

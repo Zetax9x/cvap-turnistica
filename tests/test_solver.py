@@ -118,3 +118,33 @@ def test_settimana_b_con_tre_postazioni(dipendenti_14):
     r = genera(GIORNI, STAZIONI_B, persone, tempo_max=15)
     assert r.scoperti == []
     assert errori(GIORNI, STAZIONI_B, r.assegnazioni, persone) == []
+
+
+def test_tutto_gia_coperto_riporta_comunque_la_media_ore():
+    persone = staff(1, 1)
+    fissi = [ass(d, "Acquasanta", f, r, 1 if r == "autista" else 2, origine="manuale")
+             for d in GIORNI for f in ("giorno",) for r in ("autista", "soccorritore")]
+    fissi += [ass(d, "Acquasanta", "notte", r, 100 if r == "autista" else 101, origine="volontario")
+              for d in GIORNI for r in ("autista", "soccorritore")]
+    r = genera(GIORNI, ["Acquasanta"], persone, fissi=fissi, tempo_max=5)
+    assert r.scoperti == [] and r.assegnazioni == []
+    assert r.media_ore == 84
+
+
+def test_turni_fissati_in_conflitto_vengono_segnalati_nel_messaggio(dipendenti_14):
+    fissi = [
+        ass(GIORNI[0], "Acquasanta", "notte", "autista", 1, origine="manuale"),
+        ass(GIORNI[1], "Venarotta", "giorno", "autista", 1, origine="manuale"),
+    ]
+    r = genera(GIORNI, STAZIONI_A, dipendenti_14, fissi=fissi, tempo_max=5)
+    assert "riposo" in r.messaggio.lower()
+
+
+def test_weekend_fissati_a_mano_contano_per_l_equita(dipendenti_14):
+    # il dipendente 1 ha già sabato giorno e domenica giorno fissati: non deve ricevere altri weekend
+    fissi = [
+        ass(GIORNI[5], "Acquasanta", "giorno", "autista", 1, origine="manuale"),
+        ass(GIORNI[6], "Acquasanta", "giorno", "autista", 1, origine="manuale"),
+    ]
+    r = genera(GIORNI, STAZIONI_A, dipendenti_14, fissi=fissi, tempo_max=10)
+    assert not [a for a in r.assegnazioni if a.persona_id == 1 and a.data in WEEKEND]
