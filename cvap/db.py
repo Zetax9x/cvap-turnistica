@@ -14,7 +14,7 @@ RIFERIMENTO_A_DEFAULT = "2026-10-19"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS persone (
-    id INTEGER PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,  -- mai riutilizzati: lo storico è legato all'id
     nome TEXT NOT NULL,
     tipo TEXT NOT NULL,
     qualifica TEXT NOT NULL,

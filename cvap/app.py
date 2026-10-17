@@ -1,7 +1,9 @@
 """API REST della turnistica (FastAPI). Contratto in docs/API.md."""
 import os
 import sqlite3
+import threading
 import time
+from contextlib import contextmanager
 from collections.abc import Iterator
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -20,6 +22,8 @@ from .vincoli import valida_settimana
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 GIORNI_CONTESTO = 3
+DATA_MIN, DATA_MAX = date(2000, 1, 1), date(2100, 12, 31)
+DataValida = Annotated[date, Field(ge=DATA_MIN, le=DATA_MAX)]
 
 _SOVRAPPOSTI = {
     "intero": {"intero", "mattina", "pomeriggio"},
@@ -43,11 +47,11 @@ class PersonaUpdate(PersonaIn):
 
 
 class ImpostazioniIn(BaseModel):
-    data_riferimento_a: date
+    data_riferimento_a: DataValida
 
 
 class AssegnazioneIn(BaseModel):
-    data: date
+    data: DataValida
     postazione: Annotated[str, StringConstraints(min_length=1, max_length=100)]
     fascia: Literal["giorno", "notte"]
     segmento: Literal["intero", "mattina", "pomeriggio"]
@@ -65,9 +69,12 @@ def _errore(messaggio: str) -> HTTPException:
 
 def _data(valore: str) -> date:
     try:
-        return date.fromisoformat(valore)
+        d = date.fromisoformat(valore)
     except ValueError:
         raise _errore(f"Data non valida: {valore!r} (formato atteso AAAA-MM-GG)") from None
+    if not DATA_MIN <= d <= DATA_MAX:
+        raise _errore(f"Data fuori intervallo ({DATA_MIN.year}-{DATA_MAX.year})")
+    return d
 
 
 def _iso(d: date | None) -> str | None:
@@ -171,6 +178,19 @@ def create_app(db_path: str) -> FastAPI:
     db.connetti(db_path).close()  # crea schema e seed
 
     app = FastAPI(title="CVAP Turnistica")
+    blocco = threading.Lock()
+    app.state.blocco_scrittura = blocco
+
+    @contextmanager
+    def scrittura(attendi: bool = True):
+        """Serializza le modifiche alle settimane: nulla cambia (né si conferma) durante una generazione."""
+        preso = blocco.acquire(timeout=5) if attendi else blocco.acquire(blocking=False)
+        if not preso:
+            raise HTTPException(409, "Generazione dei turni in corso: riprova tra qualche istante")
+        try:
+            yield
+        finally:
+            blocco.release()
 
     def connessione() -> Iterator[sqlite3.Connection]:
         conn = db.apri(db_path)
@@ -223,85 +243,96 @@ def create_app(db_path: str) -> FastAPI:
 
     @app.post("/api/settimane/{data}/assegnazioni", status_code=201)
     def aggiungi_assegnazione(data: str, body: AssegnazioneIn, conn: Conn):
-        inizio = lunedi(_data(data))
-        _verifica_modificabile(conn, inizio)
-        giorni, tipo, attive = _info_settimana(conn, inizio)
-        if body.data not in giorni:
-            raise _errore("La data del turno non appartiene a questa settimana")
-        if body.postazione not in attive:
-            raise _errore(f"La postazione {body.postazione} non è attiva nella settimana {tipo}")
-        if body.fascia == "notte" and body.segmento != "intero":
-            raise _errore("Il turno di notte non si può spezzare in mattina/pomeriggio")
-        p = db.get_persona(conn, body.persona_id)
-        if p is None:
-            raise HTTPException(404, "Persona non trovata")
-        if not db.a_persona(p).puo_ricoprire(body.ruolo):
-            raise _errore(f"{p['nome']} non è abilitato al ruolo di autista")
-        nuova = Assegnazione(body.data, body.postazione, body.fascia, body.segmento, body.ruolo,
-                             body.persona_id, "volontario" if p["tipo"] == "volontario" else "manuale")
-        for _, a in db.assegnazioni_periodo(conn, body.data, body.data):
-            if a.chiave == nuova.chiave and a.segmento in _SOVRAPPOSTI[nuova.segmento]:
-                raise _errore("Il posto è già occupato in quella fascia")
-        db.crea_assegnazione(conn, nuova)
-        return payload_settimana(conn, inizio)
+        with scrittura():
+            inizio = lunedi(_data(data))
+            _verifica_modificabile(conn, inizio)
+            giorni, tipo, attive = _info_settimana(conn, inizio)
+            if body.data not in giorni:
+                raise _errore("La data del turno non appartiene a questa settimana")
+            if body.postazione not in attive:
+                raise _errore(f"La postazione {body.postazione} non è attiva nella settimana {tipo}")
+            if body.fascia == "notte" and body.segmento != "intero":
+                raise _errore("Il turno di notte non si può spezzare in mattina/pomeriggio")
+            p = db.get_persona(conn, body.persona_id)
+            if p is None:
+                raise HTTPException(404, "Persona non trovata")
+            if not p["attivo"]:
+                raise _errore(f"{p['nome']} non è attivo: riattivalo in Personale per assegnarlo")
+            if not db.a_persona(p).puo_ricoprire(body.ruolo):
+                raise _errore(f"{p['nome']} non è abilitato al ruolo di autista")
+            nuova = Assegnazione(body.data, body.postazione, body.fascia, body.segmento, body.ruolo,
+                                 body.persona_id, "volontario" if p["tipo"] == "volontario" else "manuale")
+            for _, a in db.assegnazioni_periodo(conn, body.data, body.data):
+                if a.chiave == nuova.chiave and a.segmento in _SOVRAPPOSTI[nuova.segmento]:
+                    raise _errore("Il posto è già occupato in quella fascia")
+            db.crea_assegnazione(conn, nuova)
+            return payload_settimana(conn, inizio)
 
     @app.delete("/api/assegnazioni/{assegnazione_id}", status_code=204)
     def elimina_assegnazione(assegnazione_id: int, conn: Conn):
-        a = db.get_assegnazione(conn, assegnazione_id)
-        if a is None:
-            raise HTTPException(404, "Assegnazione non trovata")
-        _verifica_modificabile(conn, lunedi(a.data))
-        db.elimina_assegnazione(conn, assegnazione_id)
-        return Response(status_code=204)
+        with scrittura():
+            a = db.get_assegnazione(conn, assegnazione_id)
+            if a is None:
+                raise HTTPException(404, "Assegnazione non trovata")
+            _verifica_modificabile(conn, lunedi(a.data))
+            db.elimina_assegnazione(conn, assegnazione_id)
+            return Response(status_code=204)
 
     @app.post("/api/settimane/{data}/genera")
     def genera_settimana(data: str, conn: Conn, body: GeneraIn | None = None):
         from . import solver  # import tardivo: OR-Tools è pesante
 
-        inizio = lunedi(_data(data))
-        _verifica_modificabile(conn, inizio)
-        giorni, _, attive = _info_settimana(conn, inizio)
-        dipendenti = db.dipendenti_attivi(conn)
-        fissi = [a for _, a in db.assegnazioni_periodo(conn, giorni[0], giorni[-1]) if a.origine != "generato"]
-        storico = calcola_storico([_settimana_passata(conn, r) for r in db.lista_settimane(conn, prima_di=inizio)])
-        kwargs = {"tempo_max": body.tempo_max} if body and body.tempo_max else {}
+        with scrittura(attendi=False):
+            inizio = lunedi(_data(data))
+            _verifica_modificabile(conn, inizio)
+            giorni, _, attive = _info_settimana(conn, inizio)
+            dipendenti = db.dipendenti_attivi(conn)
+            fissi = [a for _, a in db.assegnazioni_periodo(conn, giorni[0], giorni[-1]) if a.origine != "generato"]
+            storico = calcola_storico([_settimana_passata(conn, r) for r in db.lista_settimane(conn, prima_di=inizio)])
+            kwargs = {"tempo_max": body.tempo_max} if body and body.tempo_max else {}
 
-        t0 = time.monotonic()
-        ris = solver.genera(giorni, attive, dipendenti, fissi=fissi, contesto=_contesto(conn, giorni),
-                            storico=storico, **kwargs)
-        durata = round(time.monotonic() - t0, 2)
+            t0 = time.monotonic()
+            ris = solver.genera(giorni, attive, dipendenti, fissi=fissi, contesto=_contesto(conn, giorni),
+                                storico=storico, **kwargs)
+            durata = round(time.monotonic() - t0, 2)
+            if ris.stato in ("impossibile", "nessuna_soluzione"):
+                # niente da salvare: si tengono i turni generati in precedenza
+                raise HTTPException(409, ris.messaggio)
 
-        report = {
-            "stato": ris.stato,
-            "messaggio": ris.messaggio,
-            "scoperti": [_unita_json(u) for u in ris.scoperti],
-            "media_ore": ris.media_ore,
-            "durata_s": durata,
-        }
-        nuove = [Assegnazione(a.data, a.postazione, a.fascia, a.segmento, a.ruolo, a.persona_id, "generato")
-                 for a in ris.assegnazioni]
-        db.salva_generazione(conn, giorni[0], giorni[-1], nuove, [p.id for p in dipendenti],
-                             datetime.now().isoformat(timespec="seconds"), report)
-        return payload_settimana(conn, inizio)
+            report = {
+                "stato": ris.stato,
+                "messaggio": ris.messaggio,
+                "scoperti": [_unita_json(u) for u in ris.scoperti],
+                "media_ore": ris.media_ore,
+                "durata_s": durata,
+            }
+            nuove = [Assegnazione(a.data, a.postazione, a.fascia, a.segmento, a.ruolo, a.persona_id, "generato")
+                     for a in ris.assegnazioni]
+            db.salva_generazione(conn, giorni[0], giorni[-1], nuove, [p.id for p in dipendenti],
+                                 datetime.now().isoformat(timespec="seconds"), report)
+            return payload_settimana(conn, inizio)
 
     @app.post("/api/settimane/{data}/conferma")
     def conferma(data: str, conn: Conn):
-        inizio = lunedi(_data(data))
-        db.imposta_stato(conn, inizio, "confermata")
-        return payload_settimana(conn, inizio)
+        with scrittura():
+            inizio = lunedi(_data(data))
+            db.imposta_stato(conn, inizio, "confermata")
+            return payload_settimana(conn, inizio)
 
     @app.post("/api/settimane/{data}/riapri")
     def riapri(data: str, conn: Conn):
-        inizio = lunedi(_data(data))
-        db.imposta_stato(conn, inizio, "bozza")
-        return payload_settimana(conn, inizio)
+        with scrittura():
+            inizio = lunedi(_data(data))
+            db.imposta_stato(conn, inizio, "bozza")
+            return payload_settimana(conn, inizio)
 
     @app.delete("/api/settimane/{data}/generati")
     def elimina_generati(data: str, conn: Conn):
-        inizio = lunedi(_data(data))
-        _verifica_modificabile(conn, inizio)
-        db.elimina_generati(conn, inizio, inizio + timedelta(days=6))
-        return payload_settimana(conn, inizio)
+        with scrittura():
+            inizio = lunedi(_data(data))
+            _verifica_modificabile(conn, inizio)
+            db.elimina_generati(conn, inizio, inizio + timedelta(days=6))
+            return payload_settimana(conn, inizio)
 
     # --- statistiche ---
     @app.get("/api/statistiche")

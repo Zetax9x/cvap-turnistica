@@ -63,7 +63,7 @@ def genera(
     fissi: Sequence[Assegnazione] = (),
     contesto: Sequence[Assegnazione] = (),
     storico: dict[int, StoricoPersona] | None = None,
-    tempo_max: float = 20.0,
+    tempo_max: float = 45.0,
     seed: int = 0,
     workers: int = 8,
 ) -> Risultato:

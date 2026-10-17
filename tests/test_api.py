@@ -270,3 +270,50 @@ def test_genera_settimana_successiva_usa_storico(generata):
 def test_index_non_crasha(client):
     r = client.get("/")
     assert r.status_code in (200, 404)
+
+
+# --- correzioni dalla security review ------------------------------------------
+
+def test_persona_non_attiva_non_si_puo_assegnare(client):
+    p = crea(client, "Ex", "dipendente", "autista")
+    client.put(f"/api/persone/{p['id']}", json={"nome": "Ex", "tipo": "dipendente",
+                                                 "qualifica": "autista", "attivo": False})
+    r = prenota(client, LUNEDI_A, p["id"])
+    assert r.status_code == 400
+
+
+@pytest.mark.parametrize("data", ["0001-01-01", "9999-12-31"])
+def test_date_estreme_rifiutate_senza_500(client, data):
+    assert client.get(f"/api/settimane/{data}").status_code == 400
+
+
+def test_generazione_concorrente_restituisce_409(client):
+    staff_14(client)
+    client.app.state.blocco_scrittura.acquire()
+    try:
+        r = client.post(f"/api/settimane/{LUNEDI_A}/genera", json={"tempo_max": 5})
+        assert r.status_code == 409
+    finally:
+        client.app.state.blocco_scrittura.release()
+
+
+def test_generazione_fallita_non_cancella_i_turni_precedenti(generata):
+    client, _, _ = generata
+    prima = [a for a in client.get(f"/api/settimane/{LUNEDI_A}").json()["assegnazioni"] if a["origine"] == "generato"]
+    assert prima
+    for p in client.get("/api/persone").json():
+        if p["tipo"] == "dipendente":
+            client.put(f"/api/persone/{p['id']}", json={**{k: p[k] for k in ("nome", "tipo", "qualifica")},
+                                                         "attivo": False})
+    r = client.post(f"/api/settimane/{LUNEDI_A}/genera", json={"tempo_max": 5})
+    assert r.status_code == 409
+    dopo = [a for a in client.get(f"/api/settimane/{LUNEDI_A}").json()["assegnazioni"] if a["origine"] == "generato"]
+    assert len(dopo) == len(prima)
+
+
+def test_id_persona_non_riutilizzato(client):
+    a = crea(client, "A")
+    b = crea(client, "B")
+    client.delete(f"/api/persone/{b['id']}")
+    c = crea(client, "C")
+    assert c["id"] > b["id"] > a["id"]
