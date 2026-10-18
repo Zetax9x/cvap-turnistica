@@ -4,6 +4,7 @@ Tutte le query sono parametrizzate. Le righe vengono convertite in oggetti di
 dominio (`Persona`, `Postazione`, `Assegnazione` con date vere).
 """
 import json
+import os
 import sqlite3
 from datetime import date
 
@@ -53,8 +54,82 @@ CREATE INDEX IF NOT EXISTS idx_assegnazioni_data ON assegnazioni(data);
 _POSTAZIONI_SEED = (("Acquasanta", 0, 1), ("Venarotta", 0, 2), ("Ascoli", 1, 3))
 
 
+_SCHEMI_REMOTI = ("libsql://", "https://", "http://", "wss://", "ws://")
+
+
+def remoto(path: str) -> bool:
+    """True se `path` è l'URL di un database Turso/libSQL invece di un file locale."""
+    return path.startswith(_SCHEMI_REMOTI)
+
+
+class _CursoreLibsql:
+    """Cursore libsql che restituisce le righe come dict (libsql non ha `row_factory`)."""
+
+    def __init__(self, cur):
+        self._cur = cur
+
+    def _riga(self, r):
+        return None if r is None else dict(zip((c[0] for c in self._cur.description), r))
+
+    def fetchone(self):
+        return self._riga(self._cur.fetchone())
+
+    def fetchall(self):
+        return [self._riga(r) for r in self._cur.fetchall()]
+
+    @property
+    def lastrowid(self):
+        return self._cur.lastrowid
+
+    @property
+    def rowcount(self):
+        return self._cur.rowcount
+
+
+class _ConnessioneLibsql:
+    """Adatta una connessione libsql all'interfaccia di `sqlite3.Connection` usata qui."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, sql, params=()):
+        return _CursoreLibsql(self._conn.execute(sql, params))
+
+    def executemany(self, sql, params):
+        return _CursoreLibsql(self._conn.executemany(sql, list(params)))  # vuole una lista
+
+    def executescript(self, sql):
+        self._conn.executescript(sql)
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, tipo, *_):
+        if tipo is None:
+            self._conn.commit()
+        else:
+            self._conn.rollback()
+        return False
+
+
+def _apri_libsql(path: str):
+    import libsql  # solo in produzione su Turso: in locale basta sqlite3
+
+    return _ConnessioneLibsql(libsql.connect(path, auth_token=os.environ.get("TURSO_AUTH_TOKEN", "")))
+
+
 def apri(path: str) -> sqlite3.Connection:
-    """Apre una connessione (schema già creato) con foreign keys attive e righe per nome."""
+    """Apre una connessione (schema già creato) con foreign keys attive e righe per nome.
+
+    Con un URL `libsql://...` si collega a Turso (token in TURSO_AUTH_TOKEN).
+    """
+    if remoto(path):
+        conn = _apri_libsql(path)
+        conn.execute("PRAGMA foreign_keys = ON")
+        return conn
     conn = sqlite3.connect(path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")

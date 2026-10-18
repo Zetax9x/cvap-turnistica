@@ -392,6 +392,9 @@ def create_app(db_path: str) -> FastAPI:
 
 
 def _app_predefinita() -> FastAPI:
+    turso = os.environ.get("TURSO_DATABASE_URL")
+    if turso:  # su Vercel il filesystem è in sola lettura: si usa Turso
+        return create_app(turso)
     percorso = Path(os.environ.get("CVAP_DB", "data/turni.db"))
     percorso.parent.mkdir(parents=True, exist_ok=True)
     return create_app(str(percorso))
