@@ -16,6 +16,11 @@ const SEGMENTI_PROG = ["prog_mattina", "prog_pomeriggio"];
 const MAX_PROGRAMMATI = 20;
 const SOGLIA_SCARTO = 12;
 const CHIAVE_SETTIMANA = "cvap.settimana";
+const CHIAVE_TEMPO = "cvap.tempoGenerazione";
+// Su Vercel la funzione si ferma a 300 s: si lascia margine per leggere e salvare i dati
+const TEMPO_PREDEFINITO = 120;
+const TEMPO_MIN = 10;
+const TEMPO_MAX = 280;
 
 const stato = {
   root: null,
@@ -150,6 +155,14 @@ function renderToolbar(s) {
     el("button", {
       type: "button", class: "btn btn-primary", disabled: confermata || dis, onclick: onGenera,
     }, "Genera turni"),
+    el("label", { class: "tempo-generazione", title: "Più tempo = soluzioni migliori quando ci sono molti posti" },
+      "Tempo max ",
+      el("input", {
+        type: "number", id: "tempo-generazione", min: String(TEMPO_MIN), max: String(TEMPO_MAX), step: "10",
+        value: String(tempoGenerazione()), disabled: confermata || dis, inputmode: "numeric",
+        onchange: (e) => salvaTempo(e.target),
+      }),
+      " s"),
     el("button", {
       type: "button", class: "btn", disabled: confermata || dis || !haGenerati, onclick: onRimuoviGenerati,
     }, "Rimuovi generati"),
@@ -984,6 +997,22 @@ async function eseguiAzione(fn, { overlay = null } = {}) {
   }
 }
 
+function tempoGenerazione() {
+  let valore = null;
+  try { valore = Number(localStorage.getItem(CHIAVE_TEMPO)); } catch { /* ignora */ }
+  return Number.isInteger(valore) && valore >= TEMPO_MIN && valore <= TEMPO_MAX ? valore : TEMPO_PREDEFINITO;
+}
+
+function salvaTempo(input) {
+  const valore = Number(input.value);
+  if (!Number.isInteger(valore) || valore < TEMPO_MIN || valore > TEMPO_MAX) {
+    toast(`Il tempo massimo va da ${TEMPO_MIN} a ${TEMPO_MAX} secondi.`, "avviso");
+    input.value = String(tempoGenerazione());
+    return;
+  }
+  try { localStorage.setItem(CHIAVE_TEMPO, String(valore)); } catch { /* ignora */ }
+}
+
 async function onGenera() {
   const s = stato.settimana;
   if (s.assegnazioni.some((a) => a.origine === "generato")) {
@@ -992,7 +1021,10 @@ async function onGenera() {
       { titolo: "Rigenerare i turni?", ok: "Rigenera" });
     if (!ok) return;
   }
-  const r = await eseguiAzione(() => api.genera(stato.data), { overlay: "Generazione in corso…" });
+  const tempo = tempoGenerazione();
+  const sotto = document.querySelector("#overlay .overlay-sub");
+  if (sotto) sotto.textContent = `Può richiedere fino a ${tempo < 90 ? `${tempo} secondi` : `${Math.ceil(tempo / 60)} minuti`}.`;
+  const r = await eseguiAzione(() => api.genera(stato.data, tempo), { overlay: "Generazione in corso…" });
   if (r && r.report) {
     const rep = r.report;
     const n = (rep.scoperti || []).length;

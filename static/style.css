@@ -563,3 +563,7 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
   .griglia-sottotitolo { display: none; }
   .cella-non-richiesta, .cella-non-richiesta.weekend { background: #fff; }
 }
+
+/* ---------- Tempo massimo di generazione ---------- */
+.tempo-generazione { display: inline-flex; align-items: center; gap: .25rem; color: var(--muted); font-size: .9rem; }
+.tempo-generazione input { width: 4.5rem; }
