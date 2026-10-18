@@ -111,8 +111,16 @@ export const ETICHETTE = {
   ruolo: { autista: "Autista", soccorritore: "Soccorritore" },
   fascia: { giorno: "Giorno 8–20", notte: "Notte 20–8" },
   fasciaBreve: { giorno: "Giorno", notte: "Notte" },
-  segmento: { intero: "Intero", mattina: "8–14", pomeriggio: "14–20" },
-  segmentoLungo: { intero: "Turno intero", mattina: "Mattina 8–14", pomeriggio: "Pomeriggio 14–20" },
+  segmento: {
+    intero: "Intero", mattina: "8–14", pomeriggio: "14–20",
+    standby: "Intero", standby_mattina: "7–14", standby_pomeriggio: "14–19",
+    prog_mattina: "7–14", prog_pomeriggio: "14–20",
+  },
+  segmentoLungo: {
+    intero: "Turno intero", mattina: "Mattina 8–14", pomeriggio: "Pomeriggio 14–20",
+    standby: "Turno intero", standby_mattina: "Mattina 7–14", standby_pomeriggio: "Pomeriggio 14–19",
+    prog_mattina: "Mattina 7–14", prog_pomeriggio: "Pomeriggio 14–20",
+  },
   origine: { volontario: "Volontario", manuale: "Fissato", generato: "Generato" },
   stato: { nuova: "Nuova", bozza: "Bozza", confermata: "Confermata" },
   statoReport: {
@@ -125,6 +133,33 @@ export const ETICHETTE = {
 
 export function etichetta(gruppo, valore) {
   return (ETICHETTE[gruppo] && ETICHETTE[gruppo][valore]) || valore || "—";
+}
+
+// Orari dei turni (ore di inizio/fine, la fine può superare le 24) per fascia e segmento.
+const ORARI = {
+  "giorno|intero": ["Giorno", 8, 20],
+  "giorno|mattina": ["Mattina", 8, 14],
+  "giorno|pomeriggio": ["Pomeriggio", 14, 20],
+  "notte|intero": ["Notte", 20, 32],
+  "giorno|standby": ["Giorno", 7, 19],
+  "giorno|standby_mattina": ["Mattina", 7, 14],
+  "giorno|standby_pomeriggio": ["Pomeriggio", 14, 19],
+  "notte|standby": ["Notte", 19, 31],
+  "giorno|prog_mattina": ["Mattina", 7, 14],
+  "giorno|prog_pomeriggio": ["Pomeriggio", 14, 20],
+};
+
+/** Orario leggibile di un turno, es. "Giorno 8–20", "Notte 19–7", "Mattina 7–14". */
+export function orarioTurno(fascia, segmento) {
+  const o = ORARI[`${fascia}|${segmento || "intero"}`];
+  if (!o) return `${etichetta("fasciaBreve", fascia)}${segmento && segmento !== "intero" ? ` ${segmento}` : ""}`;
+  return `${o[0]} ${o[1]}–${o[2] % 24}`;
+}
+
+/** Ora di inizio di un turno (per ordinare i turni di una giornata). */
+export function oraInizio(fascia, segmento) {
+  const o = ORARI[`${fascia}|${segmento || "intero"}`];
+  return o ? o[1] : (fascia === "notte" ? 20 : 8);
 }
 
 // ---------- Toast (aria-live) ----------

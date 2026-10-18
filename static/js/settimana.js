@@ -3,11 +3,17 @@
 import { api } from "./api.js";
 import {
   el, clear, toast, toastErrore, chiediConferma, addDays, mondayOf, todayISO, ddmm, dataLunga,
-  dataEstesa, indiceGiorno, GIORNI_BREVI, etichetta, formatOre, formatSaldo,
+  dataEstesa, indiceGiorno, GIORNI_BREVI, etichetta, formatOre, formatSaldo, orarioTurno,
 } from "./util.js";
 
 const FASCE = ["giorno", "notte"];
 const RUOLI = ["autista", "soccorritore"];
+// Postazioni a richiesta (solo settimane A): esistono solo dove l'utente indica il fabbisogno.
+const STANDBY = "Standby";
+const PROGRAMMATI = "Programmati";
+const POSTAZIONI_A_RICHIESTA = [STANDBY, PROGRAMMATI];
+const SEGMENTI_PROG = ["prog_mattina", "prog_pomeriggio"];
+const MAX_PROGRAMMATI = 20;
 const SOGLIA_SCARTO = 12;
 const CHIAVE_SETTIMANA = "cvap.settimana";
 
@@ -17,8 +23,9 @@ const stato = {
   settimana: null,     // payload GET /settimane/{data}
   persone: [],
   occupato: false,
-  cellaAperta: null,   // {data, postazione, fascia, ruolo}
+  cellaAperta: null,   // {data, postazione, fascia, ruolo, segmento?} (segmento solo per i Programmati)
   dispAperta: {},      // lunedì ISO -> pannello disponibilità aperto/chiuso dall'utente
+  richAperta: {},      // lunedì ISO -> pannello richieste Standby/Programmati aperto/chiuso
 };
 
 let dialogCella = null;
@@ -54,6 +61,8 @@ function vaiA(data) {
 }
 
 function aggiorna(settimana) {
+  // risposta arrivata dopo un cambio di settimana: non va mostrata
+  if (!settimana || mondayOf(settimana.inizio) !== stato.data) return;
   stato.settimana = settimana;
   render();
   if (dialogCella && dialogCella.open && stato.cellaAperta) renderDialog();
@@ -92,11 +101,14 @@ function render() {
   }
   if (s.report) frammento.append(renderReport(s.report));
   frammento.append(renderDisponibilita(s));
-  frammento.append(renderLegenda());
+  if ((s.postazioni_a_richiesta || []).length) frammento.append(renderRichieste(s));
+  const speciali = postazioniSpecialiVisibili(s);
+  frammento.append(renderLegenda(speciali.length > 0));
 
   const griglie = el("div", { class: "griglie" });
   for (const postazione of s.postazioni) griglie.append(renderGriglia(s, postazione));
   if (!s.postazioni.length) griglie.append(el("p", { class: "muted" }, "Nessuna postazione attiva in questa settimana."));
+  for (const postazione of speciali) griglie.append(renderGriglia(s, postazione));
   frammento.append(griglie);
 
   frammento.append(el("div", { class: "pannelli" }, renderViolazioni(s), renderRiepilogo(s)));
@@ -149,12 +161,13 @@ function renderToolbar(s) {
   );
 }
 
-function renderLegenda() {
+function renderLegenda(conSpeciali) {
   return el("ul", { class: "legenda", "aria-label": "Legenda" },
     el("li", {}, el("span", { class: "chip chip-volontario" }, "Nome"), " volontario"),
     el("li", {}, el("span", { class: "chip chip-manuale" }, "Nome"), " fissato manualmente"),
     el("li", {}, el("span", { class: "chip chip-generato" }, "Nome"), " generato"),
     el("li", {}, el("span", { class: "scoperto" }, "scoperto"), " posto da coprire"),
+    conSpeciali ? el("li", {}, el("span", { class: "non-richiesto", "aria-hidden": "true" }, "—"), " turno non richiesto") : null,
   );
 }
 
@@ -173,9 +186,7 @@ function renderReport(r) {
     dettagli.append(
       el("p", { class: "report-scoperti-titolo" }, `Posti rimasti scoperti (${r.scoperti.length}):`),
       el("ul", { class: "report-scoperti" }, r.scoperti.map((u) => el("li", {},
-        `${dataEstesa(u.data)} · ${u.postazione} · ${etichetta("fasciaBreve", u.fascia)}`,
-        u.segmento && u.segmento !== "intero" ? ` ${etichetta("segmento", u.segmento)}` : "",
-        ` · ${etichetta("ruolo", u.ruolo)}`))),
+        `${dataEstesa(u.data)} · ${u.postazione} · ${orarioTurno(u.fascia, u.segmento)} · ${etichetta("ruolo", u.ruolo)}`))),
     );
   }
   return dettagli;
@@ -183,25 +194,126 @@ function renderReport(r) {
 
 // ---------------------------------------------------------------- griglia
 
-function chiaveCella(data, postazione, fascia, ruolo) {
-  return `${data}|${postazione}|${fascia}|${ruolo}`;
+/*
+ * Una "cella" è un posto della griglia: {data, postazione, fascia, ruolo} e, solo per i Programmati,
+ * anche `segmento` (prog_mattina / prog_pomeriggio sono turni distinti, con più persone ciascuno).
+ * Postazioni normali e Standby: un posto per ruolo, il turno di giorno è spezzabile in due metà.
+ */
+
+function aRichiesta(postazione) {
+  return POSTAZIONI_A_RICHIESTA.includes(postazione);
 }
 
-function assegnazioniCella(s, data, postazione, fascia, ruolo) {
+/** Segmento del turno intero della postazione (i Programmati non ne hanno: ogni metà è a sé). */
+function segmentoIntero(postazione) {
+  return postazione === STANDBY ? "standby" : "intero";
+}
+
+/** Le due metà in cui si spezza il turno di giorno. */
+function metaGiorno(postazione) {
+  return postazione === STANDBY ? ["standby_mattina", "standby_pomeriggio"] : ["mattina", "pomeriggio"];
+}
+
+/** Segmento con cui la cella è identificata (il suo turno intero, o la metà per i Programmati). */
+function segmentoCella(c) {
+  return c.segmento || segmentoIntero(c.postazione);
+}
+
+function chiaveCella(c) {
+  const base = `${c.data}|${c.postazione}|${c.fascia}|${c.ruolo}`;
+  return c.postazione === PROGRAMMATI ? `${base}|${c.segmento}` : base;
+}
+
+function assegnazioniCella(s, c) {
   return s.assegnazioni.filter((a) =>
-    a.data === data && a.postazione === postazione && a.fascia === fascia && a.ruolo === ruolo);
+    a.data === c.data && a.postazione === c.postazione && a.fascia === c.fascia && a.ruolo === c.ruolo
+    && (!c.segmento || a.segmento === c.segmento));
 }
 
-/** Restituisce i segmenti mancanti: [] se coperta, ["intero"] se vuota, altrimenti la metà mancante. */
-function segmentiMancanti(fascia, lista) {
-  if (!lista.length) return ["intero"];
-  if (fascia !== "giorno") return [];
+/** Quantità richiesta nel fabbisogno per un turno di una postazione a richiesta (0 se assente). */
+function quantitaFabbisogno(s, data, postazione, fascia, segmento, ruolo) {
+  const f = (s.fabbisogno || []).find((x) => x.data === data && x.postazione === postazione
+    && x.fascia === fascia && x.segmento === segmento && x.ruolo === ruolo);
+  return f ? Number(f.quantita) || 0 : 0;
+}
+
+/** Posti richiesti nella cella: 1 per le postazioni normali, dal fabbisogno per quelle a richiesta. */
+function richiestiCella(s, c) {
+  if (!aRichiesta(c.postazione)) return 1;
+  return quantitaFabbisogno(s, c.data, c.postazione, c.fascia, segmentoCella(c), c.ruolo);
+}
+
+/**
+ * Segmenti mancanti di un posto singolo (postazioni normali e Standby):
+ * [] se coperto, [turno intero] se vuoto, altrimenti la metà mancante.
+ */
+function segmentiMancanti(c, lista) {
+  if (!lista.length) return [segmentoIntero(c.postazione)];
+  if (c.fascia !== "giorno") return [];
+  const intero = segmentoIntero(c.postazione);
+  const meta = metaGiorno(c.postazione);
   const coperti = new Set();
   for (const a of lista) {
-    if (a.segmento === "intero") { coperti.add("mattina"); coperti.add("pomeriggio"); }
+    if (a.segmento === intero) meta.forEach((m) => coperti.add(m));
     else coperti.add(a.segmento);
   }
-  return ["mattina", "pomeriggio"].filter((x) => !coperti.has(x));
+  return meta.filter((x) => !coperti.has(x));
+}
+
+/**
+ * Stato di copertura di una cella:
+ * {richiesti, mancanti: segmenti mancanti (posto singolo), nMancanti: posti scoperti, eccesso: persone in più}.
+ * Le celle non richieste (postazioni a richiesta senza fabbisogno) hanno richiesti = 0 e nulla di mancante.
+ */
+function coperturaCella(s, c, lista) {
+  const richiesti = richiestiCella(s, c);
+  if (c.postazione === PROGRAMMATI) {
+    return {
+      richiesti, mancanti: [],
+      nMancanti: Math.max(0, richiesti - lista.length),
+      eccesso: Math.max(0, lista.length - richiesti),
+    };
+  }
+  if (!richiesti) return { richiesti, mancanti: [], nMancanti: 0, eccesso: lista.length ? 1 : 0 };
+  const mancanti = segmentiMancanti(c, lista);
+  return { richiesti, mancanti, nMancanti: mancanti.length ? 1 : 0, eccesso: 0 };
+}
+
+/** Testi "scoperto" da mostrare nella cella. */
+function testiScoperti(c, cop) {
+  if (c.postazione === PROGRAMMATI) {
+    if (!cop.nMancanti) return [];
+    if (cop.richiesti === 1) return ["scoperto"];
+    return [`${cop.nMancanti} di ${cop.richiesti} ${cop.nMancanti === 1 ? "scoperto" : "scoperti"}`];
+  }
+  return cop.mancanti.map((m) => (m === segmentoIntero(c.postazione) ? "scoperto" : `${etichetta("segmento", m)} scoperto`));
+}
+
+/** Postazioni a richiesta da mostrare in griglia: con fabbisogno o con assegnazioni. */
+function postazioniSpecialiVisibili(s) {
+  const attive = s.postazioni_a_richiesta || [];
+  return POSTAZIONI_A_RICHIESTA.filter((p) =>
+    (attive.includes(p) && (s.fabbisogno || []).some((f) => f.postazione === p && f.quantita > 0))
+    || s.assegnazioni.some((a) => a.postazione === p));
+}
+
+/** Righe della griglia di una postazione: [{fascia, segmento?, ruolo, etichettaTurno, inizio}]. */
+function righeGriglia(postazione) {
+  const righe = [];
+  if (postazione === PROGRAMMATI) {
+    for (const segmento of SEGMENTI_PROG) {
+      RUOLI.forEach((ruolo, idx) => righe.push({
+        fascia: "giorno", segmento, ruolo, etichettaTurno: orarioTurno("giorno", segmento), inizio: idx === 0,
+      }));
+    }
+    return righe;
+  }
+  for (const fascia of FASCE) {
+    RUOLI.forEach((ruolo, idx) => righe.push({
+      fascia, ruolo, etichettaTurno: orarioTurno(fascia, segmentoIntero(postazione)), inizio: idx === 0,
+    }));
+  }
+  return righe;
 }
 
 function indiceViolazioni(s) {
@@ -215,10 +327,10 @@ function indiceViolazioni(s) {
 }
 
 function renderGriglia(s, postazione) {
-  const scopertiReport = new Set(
-    ((s.report && s.report.scoperti) || []).map((u) => chiaveCella(u.data, u.postazione, u.fascia, u.ruolo)));
+  const scopertiReport = new Set(((s.report && s.report.scoperti) || []).map((u) => chiaveCella(u)));
   const violazioni = indiceViolazioni(s);
   const confermata = s.stato === "confermata";
+  const speciale = aRichiesta(postazione);
 
   const thead = el("thead", {}, el("tr", {},
     el("th", { scope: "col", class: "col-turno" }, "Turno"),
@@ -230,59 +342,84 @@ function renderGriglia(s, postazione) {
   ));
 
   const tbody = el("tbody");
-  for (const fascia of FASCE) {
-    RUOLI.forEach((ruolo, idx) => {
-      const tr = el("tr", { class: `riga-${fascia}${idx === 0 ? " inizio-fascia" : ""}` },
-        el("th", { scope: "row", class: "col-turno" },
-          el("span", { class: "fascia-label" }, etichetta("fascia", fascia)),
-          el("span", { class: "ruolo-label" }, etichetta("ruolo", ruolo))));
-      for (const g of s.giorni) {
-        tr.append(renderCella(s, { data: g, postazione, fascia, ruolo }, scopertiReport, violazioni, confermata));
-      }
-      tbody.append(tr);
-    });
+  for (const riga of righeGriglia(postazione)) {
+    const classeRiga = riga.segmento ? `riga-${riga.segmento}` : `riga-${riga.fascia}`;
+    const tr = el("tr", { class: `${classeRiga}${riga.inizio ? " inizio-fascia" : ""}` },
+      el("th", { scope: "row", class: "col-turno" },
+        el("span", { class: "fascia-label" }, riga.etichettaTurno),
+        el("span", { class: "ruolo-label" }, etichetta("ruolo", riga.ruolo))));
+    for (const g of s.giorni) {
+      const cella = { data: g, postazione, fascia: riga.fascia, ruolo: riga.ruolo };
+      if (riga.segmento) cella.segmento = riga.segmento;
+      tr.append(renderCella(s, cella, scopertiReport, violazioni, confermata));
+    }
+    tbody.append(tr);
   }
 
   const idTitolo = `griglia-${postazione.replace(/[^\w-]/g, "_")}`;
-  return el("section", { class: "griglia-blocco", "aria-labelledby": idTitolo },
-    el("h2", { id: idTitolo, class: "griglia-titolo" }, postazione),
+  return el("section", { class: `griglia-blocco${speciale ? " griglia-speciale" : ""}`, "aria-labelledby": idTitolo },
+    el("h2", { id: idTitolo, class: "griglia-titolo" }, postazione,
+      speciale ? el("span", { class: "griglia-sottotitolo muted" }, " · solo i turni richiesti") : null),
     el("div", { class: "griglia-scroll" },
       el("table", { class: "griglia" }, thead, tbody)));
 }
 
+/** Il segmento va indicato sul chip solo se diverso dal turno della riga. */
+function mostraSegmento(a) {
+  return a.postazione !== PROGRAMMATI && a.segmento !== segmentoIntero(a.postazione);
+}
+
 function renderCella(s, cella, scopertiReport, violazioni, confermata) {
-  const { data, postazione, fascia, ruolo } = cella;
-  const lista = assegnazioniCella(s, data, postazione, fascia, ruolo)
+  const { data, postazione } = cella;
+  const lista = assegnazioniCella(s, cella)
     .sort((a, b) => ordineSegmento(a.segmento) - ordineSegmento(b.segmento));
-  const mancanti = segmentiMancanti(fascia, lista);
-  const evidenzia = mancanti.length && scopertiReport.has(chiaveCella(data, postazione, fascia, ruolo));
+  const cop = coperturaCella(s, cella, lista);
+  const scoperti = testiScoperti(cella, cop);
+  const evidenzia = scoperti.length && scopertiReport.has(chiaveCella(cella));
+  const i = indiceGiorno(data);
+  const turno = `${orarioTurno(cella.fascia, segmentoCella(cella))}, ${etichetta("ruolo", cella.ruolo)}`;
+  const classi = ["cella"];
+  if (i >= 5) classi.push("weekend");
+
+  // Postazione a richiesta, turno non richiesto e vuoto: niente da fare qui.
+  if (!cop.richiesti && !lista.length) {
+    classi.push("cella-non-richiesta");
+    return el("td", { class: classi.join(" ") },
+      el("span", { class: "non-richiesto", "aria-hidden": "true" }, "—"),
+      el("span", { class: "sr-only" }, `${postazione}, ${GIORNI_BREVI[i]} ${ddmm(data)}, ${turno}: non richiesto`));
+  }
 
   const contenuto = [];
   const descr = [];
   for (const a of lista) {
     const viol = violazioni.get(`${a.persona_id}|${a.data}`);
+    const seg = mostraSegmento(a);
     contenuto.push(el("span", {
       class: `chip chip-${a.origine}${viol ? ` chip-viol-${viol}` : ""}`,
       title: `${etichetta("origine", a.origine)}${viol ? (viol === "errore" ? " · violazione" : " · avviso") : ""}`,
     },
       el("span", { class: "chip-nome" }, a.persona_nome),
-      a.segmento !== "intero" ? el("span", { class: "chip-seg" }, etichetta("segmento", a.segmento)) : null,
+      seg ? el("span", { class: "chip-seg" }, etichetta("segmento", a.segmento)) : null,
       a.origine === "manuale" ? el("span", { class: "chip-tag" }, "fissato") : null,
       viol ? el("span", { class: "chip-alert", "aria-hidden": "true" }, "!") : null,
     ));
-    descr.push(`${a.persona_nome}${a.segmento !== "intero" ? ` ${etichetta("segmento", a.segmento)}` : ""} (${etichetta("origine", a.origine)})`);
+    descr.push(`${a.persona_nome}${seg ? ` ${etichetta("segmento", a.segmento)}` : ""} (${etichetta("origine", a.origine)})`);
   }
-  for (const m of mancanti) {
-    const testo = m === "intero" ? "scoperto" : `${etichetta("segmento", m)} scoperto`;
+  for (const testo of scoperti) {
     contenuto.push(el("span", { class: "scoperto" }, testo));
     descr.push(testo);
   }
+  if (cop.eccesso) {
+    const testo = cop.richiesti ? `${cop.eccesso} oltre il richiesto` : "non richiesto";
+    contenuto.push(el("span", { class: "eccesso" }, testo));
+    descr.push(testo);
+  }
+  if (postazione === PROGRAMMATI && cop.richiesti > 1 && !cop.nMancanti && !cop.eccesso) {
+    descr.push(`${cop.richiesti} su ${cop.richiesti}`);
+  }
 
-  const i = indiceGiorno(data);
-  const etichettaCella = `${postazione}, ${GIORNI_BREVI[i]} ${ddmm(data)}, ${etichetta("fascia", fascia)}, ${etichetta("ruolo", ruolo)}: ${descr.join(", ")}`;
-  const classi = ["cella"];
-  if (i >= 5) classi.push("weekend");
-  if (mancanti.length) classi.push("cella-scoperta");
+  const etichettaCella = `${postazione}, ${GIORNI_BREVI[i]} ${ddmm(data)}, ${turno}: ${descr.join(", ")}`;
+  if (scoperti.length) classi.push("cella-scoperta");
   if (evidenzia) classi.push("cella-evidenziata");
 
   return el("td", { class: classi.join(" ") },
@@ -294,7 +431,11 @@ function renderCella(s, cella, scopertiReport, violazioni, confermata) {
 }
 
 function ordineSegmento(seg) {
-  return { intero: 0, mattina: 1, pomeriggio: 2 }[seg] ?? 3;
+  return {
+    intero: 0, mattina: 1, pomeriggio: 2,
+    standby: 0, standby_mattina: 1, standby_pomeriggio: 2,
+    prog_mattina: 1, prog_pomeriggio: 2,
+  }[seg] ?? 3;
 }
 
 // ---------------------------------------------------------------- pannelli
@@ -449,17 +590,170 @@ function renderDisponibilita(s) {
   return blocco;
 }
 
+// I salvataggi dei pannelli (disponibilità, richieste) vanno al server uno alla volta, nell'ordine in cui
+// l'utente li fa: così l'ultima risposta è sempre la più recente, e Genera/Conferma li aspettano.
+let coda = Promise.resolve();
+
+function inCoda(fn) {
+  const risultato = coda.then(fn);
+  coda = risultato.catch(() => {});
+  return risultato;
+}
+
 async function onCambiaIndisponibilita(p, data, checkbox) {
-  const s = stato.settimana;
-  const giorni = new Set((s.indisponibilita || []).filter((x) => x.persona_id === p.id).map((x) => x.data));
-  if (checkbox.checked) giorni.add(data); else giorni.delete(data);
+  const idFocus = checkbox.id;
   checkbox.disabled = true;
   try {
-    aggiorna(await api.impostaIndisponibilita(stato.data, p.id, [...giorni].sort()));
+    // le date si leggono al momento dell'invio, dopo i salvataggi precedenti in coda
+    await inCoda(async () => {
+      const giorni = new Set((stato.settimana.indisponibilita || [])
+        .filter((x) => x.persona_id === p.id).map((x) => x.data));
+      if (checkbox.checked) giorni.add(data); else giorni.delete(data);
+      aggiorna(await api.impostaIndisponibilita(stato.data, p.id, [...giorni].sort()));
+    });
+    rifocalizza(idFocus);
   } catch (err) {
     toastErrore(err);
     checkbox.checked = !checkbox.checked;
     checkbox.disabled = false;
+  }
+}
+
+// ---------------------------------------------------------------- richieste Standby / Programmati
+
+/** Ripristina il focus sull'elemento con lo stesso id dopo un nuovo render (il pannello viene ricostruito). */
+function rifocalizza(id) {
+  if (!id) return;
+  const nodo = document.getElementById(id);
+  if (nodo && !nodo.disabled) nodo.focus();
+}
+
+async function salvaFabbisogno(voci, idFocus) {
+  const data = stato.data;
+  await inCoda(async () => aggiorna(await api.impostaFabbisogno(data, voci)));
+  rifocalizza(idFocus);
+}
+
+function intestazioneGiorni(s, primaColonna) {
+  return el("thead", {}, el("tr", {},
+    el("th", { scope: "col" }, primaColonna),
+    s.giorni.map((g) => {
+      const i = indiceGiorno(g);
+      return el("th", { scope: "col", class: `disp-cella${i >= 5 ? " weekend" : ""}` }, `${GIORNI_BREVI[i]} ${ddmm(g)}`);
+    })));
+}
+
+function renderRichieste(s) {
+  const attive = s.postazioni_a_richiesta || [];
+  const bloccato = s.stato === "confermata" || stato.occupato;
+  const fabb = s.fabbisogno || [];
+  const nStandby = new Set(fabb.filter((f) => f.postazione === STANDBY && f.quantita > 0)
+    .map((f) => `${f.data}|${f.fascia}`)).size;
+  const nProg = fabb.filter((f) => f.postazione === PROGRAMMATI)
+    .reduce((t, f) => t + (Number(f.quantita) || 0), 0);
+  const riepilogo = [
+    attive.includes(STANDBY) ? (nStandby ? `${nStandby} ${nStandby === 1 ? "turno" : "turni"} Standby` : "nessuno Standby") : null,
+    attive.includes(PROGRAMMATI) ? (nProg ? `${nProg} ${nProg === 1 ? "posto" : "posti"} nei Programmati` : "nessun Programmato") : null,
+  ].filter(Boolean).join(" · ");
+
+  const aperto = stato.richAperta[s.inizio] ?? s.stato === "nuova";
+  const blocco = el("details", {
+    class: "pannello richieste", open: aperto,
+    ontoggle: (e) => { stato.richAperta[s.inizio] = e.currentTarget.open; },
+  },
+    el("summary", {}, el("h2", { class: "richieste-titolo" }, "Richieste Standby e Programmati"),
+      el("span", { class: "muted" }, ` ${riepilogo}`)),
+    el("p", { class: "muted" },
+      "Indica prima di generare quando servono. Ogni Standby richiede un autista e un soccorritore; ",
+      "nei Programmati indica quante persone servono per ruolo. I turni non richiesti non vengono assegnati."));
+
+  if (attive.includes(STANDBY)) blocco.append(renderRichiesteStandby(s, bloccato));
+  if (attive.includes(PROGRAMMATI)) blocco.append(renderRichiesteProgrammati(s, bloccato));
+  return blocco;
+}
+
+function renderRichiesteStandby(s, bloccato) {
+  const tbody = el("tbody", {}, FASCE.map((fascia) => {
+    const turno = orarioTurno(fascia, "standby");
+    return el("tr", {},
+      el("th", { scope: "row" }, turno),
+      s.giorni.map((g) => {
+        const i = indiceGiorno(g);
+        const richiesto = RUOLI.some((r) => quantitaFabbisogno(s, g, STANDBY, fascia, "standby", r) > 0);
+        return el("td", { class: `disp-cella${i >= 5 ? " weekend" : ""}` }, el("input", {
+          type: "checkbox", id: `rich-standby-${g}-${fascia}`, checked: richiesto, disabled: bloccato,
+          "aria-label": `Standby ${turno} ${GIORNI_BREVI[i]} ${ddmm(g)}: richiesto autista e soccorritore`,
+          onchange: (e) => onCambiaStandby(g, fascia, e.target),
+        }));
+      }));
+  }));
+  return el("section", { class: "richieste-blocco", "aria-labelledby": "titolo-rich-standby" },
+    el("h3", { id: "titolo-rich-standby" }, "Standby", el("span", { class: "muted" }, " · autista + soccorritore")),
+    el("div", { class: "table-scroll" }, el("table", { class: "tabella tabella-richieste" },
+      intestazioneGiorni(s, "Turno"), tbody)));
+}
+
+async function onCambiaStandby(data, fascia, checkbox) {
+  const quantita = checkbox.checked ? 1 : 0;
+  const voci = RUOLI.map((ruolo) => ({ data, postazione: STANDBY, fascia, segmento: "standby", ruolo, quantita }));
+  const idFocus = checkbox.id;  // letto prima di disabilitare: un controllo disabilitato perde il focus
+  checkbox.disabled = true;
+  try {
+    await salvaFabbisogno(voci, idFocus);
+  } catch (err) {
+    toastErrore(err);
+    checkbox.checked = !checkbox.checked;
+    checkbox.disabled = false;
+  }
+}
+
+function renderRichiesteProgrammati(s, bloccato) {
+  const righe = [];
+  for (const segmento of SEGMENTI_PROG) {
+    RUOLI.forEach((ruolo, idx) => {
+      const turno = orarioTurno("giorno", segmento);
+      const ruoloPlurale = ruolo === "autista" ? "Autisti" : "Soccorritori";
+      righe.push(el("tr", { class: idx === 0 ? "inizio-fascia" : null },
+        el("th", { scope: "row" },
+          el("span", { class: "fascia-label" }, turno), " ", el("span", { class: "ruolo-label" }, ruoloPlurale)),
+        s.giorni.map((g) => {
+          const i = indiceGiorno(g);
+          const valore = quantitaFabbisogno(s, g, PROGRAMMATI, "giorno", segmento, ruolo);
+          return el("td", { class: `disp-cella${i >= 5 ? " weekend" : ""}` }, el("input", {
+            type: "number", class: "input-quantita", id: `rich-prog-${g}-${segmento}-${ruolo}`,
+            min: "0", max: String(MAX_PROGRAMMATI), step: "1", inputmode: "numeric",
+            value: String(valore), disabled: bloccato, dataset: { valore: String(valore) },
+            "aria-label": `Programmati ${turno} ${GIORNI_BREVI[i]} ${ddmm(g)}: numero di ${ruoloPlurale.toLowerCase()}`,
+            onchange: (e) => onCambiaProgrammati(g, segmento, ruolo, e.target),
+          }));
+        })));
+    });
+  }
+  return el("section", { class: "richieste-blocco", "aria-labelledby": "titolo-rich-prog" },
+    el("h3", { id: "titolo-rich-prog" }, "Programmati", el("span", { class: "muted" }, " · persone per turno")),
+    el("div", { class: "table-scroll" }, el("table", { class: "tabella tabella-richieste" },
+      intestazioneGiorni(s, "Turno"), el("tbody", {}, righe))));
+}
+
+async function onCambiaProgrammati(data, segmento, ruolo, input) {
+  const precedente = input.dataset.valore || "0";
+  const testo = input.value.trim();
+  // con testo non numerico (es. "e") il campo number vale "": non va scambiato per uno svuotamento
+  const quantita = input.validity && input.validity.badInput ? NaN : testo === "" ? 0 : Number(testo);
+  if (!Number.isInteger(quantita) || quantita < 0 || quantita > MAX_PROGRAMMATI) {
+    toast(`Indica un numero intero da 0 a ${MAX_PROGRAMMATI}.`, "avviso");
+    input.value = precedente;
+    return;
+  }
+  if (String(quantita) === precedente) { input.value = precedente; return; }
+  const idFocus = input.id;
+  input.disabled = true;
+  try {
+    await salvaFabbisogno([{ data, postazione: PROGRAMMATI, fascia: "giorno", segmento, ruolo, quantita }], idFocus);
+  } catch (err) {
+    toastErrore(err);
+    input.value = precedente;
+    input.disabled = false;
   }
 }
 
@@ -482,21 +776,26 @@ function renderDialog() {
   const s = stato.settimana;
   const c = stato.cellaAperta;
   const confermata = s.stato === "confermata";
-  const lista = assegnazioniCella(s, c.data, c.postazione, c.fascia, c.ruolo)
+  const lista = assegnazioniCella(s, c)
     .sort((a, b) => ordineSegmento(a.segmento) - ordineSegmento(b.segmento));
+  const cop = coperturaCella(s, c, lista);
+  const prog = c.postazione === PROGRAMMATI;
   const d = clear(dialogCella);
 
   d.append(el("div", { class: "dialog-head" },
     el("h2", { id: "cella-titolo", class: "dialog-title" },
       `${c.postazione} · ${dataEstesa(c.data)}`),
-    el("p", { class: "muted" }, `${etichetta("fascia", c.fascia)} · ${etichetta("ruolo", c.ruolo)}`),
+    el("p", { class: "muted" }, `${orarioTurno(c.fascia, segmentoCella(c))} · ${etichetta("ruolo", c.ruolo)}`,
+      prog ? ` · ${cop.richiesti} ${cop.richiesti === 1 ? "richiesto" : "richiesti"}` : ""),
     el("button", { type: "button", class: "dialog-x", "aria-label": "Chiudi", onclick: () => d.close() }, "×")));
 
   // Assegnazioni esistenti
   const esistenti = el("section", { class: "dialog-section", "aria-label": "Assegnazioni presenti" },
     el("h3", {}, "Assegnati"));
   if (!lista.length) {
-    esistenti.append(el("p", { class: "scoperto-text" }, "Nessuno: posto scoperto."));
+    esistenti.append(cop.richiesti
+      ? el("p", { class: "scoperto-text" }, prog && cop.richiesti > 1 ? "Nessuno: posti scoperti." : "Nessuno: posto scoperto.")
+      : el("p", { class: "muted" }, "Nessuno."));
   } else {
     esistenti.append(el("ul", { class: "lista-assegnati" }, lista.map((a) => el("li", {},
       el("span", { class: `chip chip-${a.origine}` }, el("span", { class: "chip-nome" }, a.persona_nome)),
@@ -507,16 +806,31 @@ function renderDialog() {
         onclick: (e) => onEliminaAssegnazione(a, e.currentTarget),
       }, "Rimuovi")))));
   }
-  const mancanti = segmentiMancanti(c.fascia, lista);
+  const mancanti = cop.mancanti;
   if (lista.length && mancanti.length) {
     esistenti.append(el("p", { class: "scoperto-text" },
       `Manca: ${mancanti.map((m) => etichetta("segmentoLungo", m)).join(", ")}`));
+  }
+  if (prog && lista.length && cop.nMancanti) {
+    esistenti.append(el("p", { class: "scoperto-text" },
+      cop.nMancanti === 1 ? "Manca ancora 1 persona." : `Mancano ancora ${cop.nMancanti} persone.`));
+  }
+  if (cop.eccesso) {
+    esistenti.append(el("p", { class: "eccesso-text" }, cop.richiesti
+      ? `Assegnate ${cop.eccesso} persone in più del richiesto.`
+      : "Turno non richiesto: rimuovi le assegnazioni o indica il fabbisogno nelle richieste."));
   }
   d.append(esistenti);
 
   // Form aggiunta
   if (confermata) {
     d.append(el("p", { class: "banner banner-info" }, "Settimana confermata: riaprila per modificare."));
+  } else if (!cop.richiesti) {
+    d.append(el("p", { class: "banner banner-info" },
+      "Turno non richiesto: per assegnarlo indicalo prima nel pannello “Richieste Standby e Programmati”."));
+  } else if (prog && !cop.nMancanti) {
+    d.append(el("p", { class: "banner banner-info" },
+      "Tutti i posti richiesti sono occupati: aumenta il numero nelle richieste per aggiungere altre persone."));
   } else {
     d.append(renderFormAggiunta(c, mancanti));
   }
@@ -527,11 +841,15 @@ function renderDialog() {
 function renderFormAggiunta(c, mancanti) {
   const s = stato.settimana;
   const oreSettimana = new Map((s.riepilogo || []).map((r) => [r.persona_id, r.ore]));
-  const giaInCella = new Set(assegnazioniCella(s, c.data, c.postazione, c.fascia, c.ruolo).map((a) => a.persona_id));
+  const giaInCella = new Set(assegnazioniCella(s, c).map((a) => a.persona_id));
   const inFerie = giorniPersona(s.ferie, c.data);
   const indisponibili = giorniPersona(s.indisponibilita, c.data);
+  const prog = c.postazione === PROGRAMMATI;
+  // l'autista può fare anche il soccorritore; nei Programmati guida anche chi ha "autista programmati"
+  const puoRicoprire = (p) => c.ruolo === "soccorritore" || p.qualifica === "autista"
+    || (prog && !!p.autista_programmati);
   const dipendenti = stato.persone
-    .filter((p) => p.tipo === "dipendente" && p.attivo && (c.ruolo === "soccorritore" || p.qualifica === "autista"))
+    .filter((p) => p.tipo === "dipendente" && p.attivo && puoRicoprire(p))
     .sort((a, b) => a.nome.localeCompare(b.nome, "it"));
   const volontariNoti = stato.persone.filter((p) => p.tipo === "volontario")
     .sort((a, b) => a.nome.localeCompare(b.nome, "it"));
@@ -552,7 +870,7 @@ function renderFormAggiunta(c, mancanti) {
     dipendenti.map((p) => {
       const ore = oreSettimana.get(p.id);
       const extra = [inFerie.has(p.id) ? "IN FERIE" : null, indisponibili.has(p.id) ? "INDISPONIBILE" : null,
-        p.qualifica === "autista" ? "autista" : null, ore ? `${formatOre(ore)} h` : null, giaInCella.has(p.id) ? "già qui" : null]
+        p.qualifica === "autista" ? "autista" : (prog && p.autista_programmati ? "autista programmati" : null), ore ? `${formatOre(ore)} h` : null, giaInCella.has(p.id) ? "già qui" : null]
         .filter(Boolean).join(", ");
       return el("option", { value: String(p.id) }, extra ? `${p.nome} (${extra})` : p.nome);
     }));
@@ -561,7 +879,9 @@ function renderFormAggiunta(c, mancanti) {
     !dipendenti.length ? el("p", { class: "hint" }, c.ruolo === "autista"
       ? "Nessun dipendente attivo con qualifica autista."
       : "Nessun dipendente attivo. Aggiungilo nella sezione Personale.") : null,
-    c.ruolo === "autista" && dipendenti.length ? el("p", { class: "hint" }, "Sono elencati solo i dipendenti autisti.") : null);
+    c.ruolo === "autista" && dipendenti.length ? el("p", { class: "hint" }, prog
+      ? "Sono elencati i dipendenti autisti e i soccorritori abilitati come autisti programmati."
+      : "Sono elencati solo i dipendenti autisti.") : null);
 
   let chi = "volontario";
   const scegli = (valore) => {
@@ -576,12 +896,14 @@ function renderFormAggiunta(c, mancanti) {
       ` ${etichetta("tipo", v)}`)));
 
   const campi = [interruttore, campoVol, campoDip];
+  // Segmento: il turno di giorno (normali e Standby) si può spezzare; notte e Programmati no.
   let segSelect = null;
-  if (c.fascia === "giorno") {
-    const predefinito = mancanti.length === 1 ? mancanti[0] : "intero";
+  if (c.fascia === "giorno" && !prog) {
+    const intero = segmentoIntero(c.postazione);
+    const predefinito = mancanti.length === 1 ? mancanti[0] : intero;
     segSelect = el("select", { id: "cella-segmento", name: "segmento" },
-      ["intero", "mattina", "pomeriggio"].map((seg) => el("option", { value: seg, selected: seg === predefinito },
-        { intero: "Intero 8–20", mattina: "Mattina 8–14", pomeriggio: "Pomeriggio 14–20" }[seg])));
+      [intero, ...metaGiorno(c.postazione)].map((seg) => el("option", { value: seg, selected: seg === predefinito },
+        seg === intero ? `Intero ${orarioTurno("giorno", seg).replace(/^\S+ /, "")}` : orarioTurno("giorno", seg))));
     campi.push(el("div", { class: "campo" }, el("label", { for: "cella-segmento" }, "Segmento"), segSelect));
   }
 
@@ -592,7 +914,7 @@ function renderFormAggiunta(c, mancanti) {
       e.preventDefault();
       const turno = {
         data: c.data, postazione: c.postazione, fascia: c.fascia,
-        segmento: segSelect ? segSelect.value : "intero", ruolo: c.ruolo,
+        segmento: segSelect ? segSelect.value : segmentoCella(c), ruolo: c.ruolo,
       };
       if (chi === "volontario") {
         const nome = nomeVol.value.trim();
@@ -605,13 +927,17 @@ function renderFormAggiunta(c, mancanti) {
       invia.disabled = true;
       try {
         const nuova = await api.aggiungiAssegnazione(stato.data, turno);
-        if (turno.nome_volontario) stato.persone = await api.persone();  // può essere un volontario nuovo
         dialogCella.close();
         aggiorna(nuova);
         toast("Assegnazione aggiunta.", "ok");
       } catch (err) {
         toastErrore(err);
         invia.disabled = false;
+        return;
+      }
+      if (turno.nome_volontario) {
+        // può essere un volontario nuovo: serve per i suggerimenti; se fallisce il turno è comunque salvato
+        try { stato.persone = await api.persone(); } catch { /* si aggiorna al prossimo caricamento */ }
       }
     },
   }, el("h3", {}, "Aggiungi"), el("div", { class: "campi" }, campi), el("div", { class: "form-actions" }, invia));
@@ -644,7 +970,7 @@ async function eseguiAzione(fn, { overlay = null } = {}) {
     ov.hidden = false;
   }
   try {
-    const risultato = await fn();
+    const risultato = await inCoda(fn);  // dopo eventuali salvataggi dei pannelli ancora in corso
     stato.occupato = false;
     if (risultato) aggiorna(risultato); else render();
     return risultato;
@@ -702,10 +1028,14 @@ async function onRiapri() {
   if (await eseguiAzione(() => api.riapri(stato.data))) toast("Settimana riaperta.", "ok");
 }
 
+/** Posti scoperti della settimana, comprese le postazioni a richiesta (solo i turni richiesti). */
 function contaScoperti(s) {
   let n = 0;
-  for (const postazione of s.postazioni) for (const g of s.giorni) for (const f of FASCE) for (const r of RUOLI) {
-    if (segmentiMancanti(f, assegnazioniCella(s, g, postazione, f, r)).length) n++;
+  const postazioni = [...s.postazioni, ...(s.postazioni_a_richiesta || [])];
+  for (const postazione of postazioni) for (const riga of righeGriglia(postazione)) for (const g of s.giorni) {
+    const c = { data: g, postazione, fascia: riga.fascia, ruolo: riga.ruolo };
+    if (riga.segmento) c.segmento = riga.segmento;
+    n += coperturaCella(s, c, assegnazioniCella(s, c)).nMancanti;
   }
   return n;
 }

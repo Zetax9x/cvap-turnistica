@@ -90,3 +90,49 @@ non di ferie (calcolata dalle assegnazioni reali, così le modifiche manuali con
 
 `GET /` → `static/index.html`; `/static/*` → file statici.
 App factory: `create_app(db_path: str) -> FastAPI` in `cvap/app.py`; `uvicorn cvap.app:app` usa `data/turni.db`.
+
+## Postazioni a richiesta: Standby e Programmati (solo settimane A)
+
+Costanti in `cvap/modello.py`: `STANDBY = "Standby"`, `PROGRAMMATI = "Programmati"`, `POSTAZIONI_A_RICHIESTA`.
+Non sono nella tabella `postazioni`: esistono solo nelle settimane **A** e solo dove l'utente indica il fabbisogno.
+
+Turni (`turni_ammessi(postazione)` → coppie `(fascia, segmento)`):
+
+| Postazione | fascia/segmento | Orario | Note |
+|---|---|---|---|
+| Standby | giorno/`standby` | 7–19 | spezzabile dai volontari in `standby_mattina` 7–14 / `standby_pomeriggio` 14–19 |
+| Standby | notte/`standby` | 19–7 | non si spezza |
+| Programmati | giorno/`prog_mattina` | 7–14 | più persone per turno |
+| Programmati | giorno/`prog_pomeriggio` | 14–20 | più persone per turno |
+| normali | giorno/`intero` (8–20, spezzabile `mattina`/`pomeriggio`), notte/`intero` (20–8) | | |
+
+Fabbisogno: `Fabbisogno(data, postazione, fascia, segmento, ruolo, quantita)`. Standby: `segmento="standby"`,
+`quantita` 0/1 per ruolo (l'interfaccia chiede sempre autista + soccorritore insieme). Programmati: `quantita` 0–20 per
+ruolo e segmento. `unita_da_coprire(giorni, postazioni, occupate, fabbisogno)`, `valida_settimana(..., fabbisogno=)`,
+`solver.genera(..., fabbisogno=)`. Nuovo codice di violazione `eccesso` (più persone del richiesto o turno non richiesto).
+Priorità di copertura nel generatore: postazioni normali > Standby > Programmati.
+
+`Persona.autista_programmati: bool` — può fare l'autista nei Programmati anche se soccorritore
+(`puo_ricoprire(ruolo, postazione)`); gli autisti guidano comunque anche nei Programmati.
+
+### Database
+```
+persone(..., autista_programmati INTEGER NOT NULL DEFAULT 0)   -- su DB esistenti: ALTER TABLE ADD COLUMN se manca
+fabbisogno(data TEXT, postazione TEXT, fascia TEXT, segmento TEXT, ruolo TEXT, quantita INTEGER NOT NULL,
+           PRIMARY KEY (data, postazione, fascia, segmento, ruolo))
+```
+
+### API
+- Persone: `POST /persone` accetta `autista_programmati: bool` (default false); in `PUT` se assente resta invariato; tutte le risposte lo includono. Id fuori 1..2^63-1 → 422; nomi senza caratteri di controllo.
+- `GET /settimane/{data}` aggiunge `postazioni_a_richiesta: ["Standby","Programmati"]` (settimane A) o `[]` (B) e
+  `fabbisogno: [{data, postazione, fascia, segmento, ruolo, quantita}]` (solo quantita > 0).
+- `PUT /settimane/{data}/fabbisogno` `{voci: [{data, postazione, fascia, segmento, ruolo, quantita}]}` (max 200 voci) →
+  settimana aggiornata. Ogni voce sostituisce la quantità di quel turno (0 = rimuove). Tutto in una transazione.
+  400 se: settimana B, settimana confermata, data fuori settimana, postazione non a richiesta, `(fascia, segmento)`
+  non valido per la postazione (Standby solo `standby`; Programmati `prog_mattina`/`prog_pomeriggio`),
+  quantita fuori 0–20 (Standby 0–1).
+- `POST /settimane/{data}/assegnazioni`: `postazione` può essere Standby/Programmati nelle settimane A;
+  `(fascia, segmento)` deve essere in `turni_ammessi`; abilitazione con `puo_ricoprire(ruolo, postazione)`.
+  400 se non c'è fabbisogno per quel turno ("Turno non richiesto"), se i posti richiesti sono già tutti presi
+  (Programmati: contati per segmento) o se il segmento si sovrappone a uno già occupato (Standby, come le normali).
+- `POST /settimane/{data}/genera` passa il fabbisogno della settimana al generatore.

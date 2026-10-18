@@ -479,7 +479,7 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
     color-scheme: light;
   }
   body { font-size: 10pt; background: #fff; }
-  .app-header, .skip-link, .toolbar, .week-nav, .legenda, .pannelli, .report, .banner, .disponibilita,
+  .app-header, .skip-link, .toolbar, .week-nav, .legenda, .pannelli, .report, .banner, .disponibilita, .richieste,
   .toast-area, .overlay, dialog, #view-personale, #view-statistiche, #view-impostazioni { display: none !important; }
   main { padding: 0; max-width: none; }
   .week-header { margin-bottom: 4mm; }
@@ -522,3 +522,44 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
 .totali-persona { display: grid; grid-template-columns: max-content 1fr; gap: .35rem 1.25rem; margin: 0; }
 .totali-persona dt { color: var(--muted); }
 .totali-persona dd { margin: 0; font-weight: 600; }
+
+/* ---------- Postazioni a richiesta: Standby e Programmati ---------- */
+.richieste { margin-bottom: 1rem; }
+.richieste > summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem; }
+.richieste-titolo { display: inline; margin: 0; }
+.richieste-blocco { margin-top: .9rem; }
+.richieste-blocco h3 { margin-bottom: .4rem; }
+.richieste-blocco h3 .muted { font-weight: 400; }
+.tabella-richieste .disp-cella { text-align: center; }
+.tabella-richieste .weekend { background: var(--weekend); }
+.tabella-richieste tbody th { white-space: nowrap; }
+.tabella-richieste tbody th .fascia-label { display: inline; }
+.tabella-richieste tbody th .ruolo-label { display: inline; }
+.tabella-richieste tr.inizio-fascia > * { border-top: 2px solid var(--border-strong); }
+.tabella-richieste input[type="checkbox"] { width: 1.15rem; height: 1.15rem; }
+.input-quantita { width: 4.2rem; text-align: right; font-variant-numeric: tabular-nums; }
+.input-quantita:disabled, .tabella-richieste input:disabled { opacity: .6; cursor: not-allowed; }
+
+.griglia-sottotitolo { font-size: .82rem; font-weight: 400; }
+.griglia-speciale .griglia-titolo { border-left-color: var(--man-border); }
+.cella-non-richiesta {
+  vertical-align: middle !important; text-align: center;
+  background: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--border) 35%, transparent) 6px 7px);
+}
+.cella-non-richiesta.weekend { background-color: var(--weekend); }
+.non-richiesto { color: var(--muted); }
+.eccesso {
+  display: inline-block; align-self: flex-start;
+  padding: 1px 6px; border-radius: 5px; font-size: .78rem; font-weight: 700;
+  color: var(--warn); background: var(--warn-bg); border: 1px dashed var(--warn-border);
+}
+.eccesso-text { color: var(--warn); font-weight: 600; margin: .3rem 0; }
+.badge-programmati { background: var(--vol-bg); color: var(--vol-text); border-color: var(--vol-border); }
+.campo-check { min-width: 0; justify-content: flex-end; min-height: 36px; }
+.campo-check .check { margin-left: 0; font-weight: 500; }
+
+@media print {
+  .eccesso { border: 1px dotted #000; color: #000; background: #fff; font-size: 7.5pt; }
+  .griglia-sottotitolo { display: none; }
+  .cella-non-richiesta, .cella-non-richiesta.weekend { background: #fff; }
+}

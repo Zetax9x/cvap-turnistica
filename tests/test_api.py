@@ -48,11 +48,12 @@ def test_crud_persone(client):
     assert client.get("/api/persone").json() == []
     p = crea(client, "  Mario Rossi  ")
     assert p["nome"] == "Mario Rossi" and p["attivo"] is True and p["tipo"] == "dipendente"
+    assert p["autista_programmati"] is False
     r = client.put(f"/api/persone/{p['id']}", json={
         "nome": "Mario", "tipo": "volontario", "qualifica": "soccorritore", "attivo": False})
     assert r.status_code == 200
     assert r.json() == {"id": p["id"], "nome": "Mario", "tipo": "volontario",
-                        "qualifica": "soccorritore", "attivo": False}
+                        "qualifica": "soccorritore", "autista_programmati": False, "attivo": False}
     assert len(client.get("/api/persone").json()) == 1
     assert client.delete(f"/api/persone/{p['id']}").status_code == 204
     assert client.get("/api/persone").json() == []
@@ -463,3 +464,233 @@ def test_nome_volontario_non_valido(client):
     url = f"/api/settimane/{LUNEDI_A}/assegnazioni"
     assert client.post(url, json=body).status_code in (400, 422)                       # nessuno dei due
     assert client.post(url, json={**body, "persona_id": 1, "nome_volontario": "X"}).status_code in (400, 422)
+
+
+# --- postazioni a richiesta: Standby e Programmati ---------------------------------------
+
+def voce(data=LUNEDI_A, postazione="Programmati", fascia="giorno", segmento="prog_mattina",
+         ruolo="autista", quantita=1):
+    return {"data": data, "postazione": postazione, "fascia": fascia, "segmento": segmento,
+            "ruolo": ruolo, "quantita": quantita}
+
+
+def imposta_fabbisogno(client, voci, settimana=LUNEDI_A):
+    return client.put(f"/api/settimane/{settimana}/fabbisogno", json={"voci": voci})
+
+
+def test_persona_autista_programmati(client):
+    r = client.post("/api/persone", json={"nome": "Sara", "tipo": "dipendente", "qualifica": "soccorritore",
+                                          "autista_programmati": True})
+    assert r.status_code == 201, r.text
+    p = r.json()
+    assert p["autista_programmati"] is True
+    assert client.get("/api/persone").json()[0]["autista_programmati"] is True
+    r = client.put(f"/api/persone/{p['id']}", json={"nome": "Sara", "tipo": "dipendente",
+                                                    "qualifica": "soccorritore", "attivo": True})
+    assert r.status_code == 200 and r.json()["autista_programmati"] is True  # campo assente: invariato
+    r = client.put(f"/api/persone/{p['id']}", json={"nome": "Sara", "tipo": "dipendente", "qualifica": "soccorritore",
+                                                    "attivo": True, "autista_programmati": False})
+    assert r.json()["autista_programmati"] is False
+    r = client.put(f"/api/persone/{p['id']}", json={"nome": "Sara", "tipo": "dipendente", "qualifica": "soccorritore",
+                                                    "attivo": True, "autista_programmati": True})
+    assert r.json()["autista_programmati"] is True
+    assert client.get("/api/persone").json()[0]["autista_programmati"] is True
+
+
+def test_payload_postazioni_a_richiesta(client):
+    a = client.get(f"/api/settimane/{LUNEDI_A}").json()
+    assert a["postazioni_a_richiesta"] == ["Standby", "Programmati"] and a["fabbisogno"] == []
+    b = client.get(f"/api/settimane/{LUNEDI_B}").json()
+    assert b["postazioni_a_richiesta"] == [] and b["fabbisogno"] == []
+
+
+def test_imposta_fabbisogno_e_rimozione(client):
+    voci = [voce(quantita=3),
+            voce(data="2026-10-20", postazione="Standby", fascia="notte", segmento="standby", ruolo="autista"),
+            voce(data="2026-10-20", postazione="Standby", fascia="notte", segmento="standby", ruolo="soccorritore")]
+    r = imposta_fabbisogno(client, voci)
+    assert r.status_code == 200, r.text
+    s = r.json()
+    assert sorted(s["fabbisogno"], key=lambda f: (f["data"], f["postazione"], f["ruolo"])) == sorted(
+        voci, key=lambda f: (f["data"], f["postazione"], f["ruolo"]))
+    # i posti richiesti e non coperti sono scoperti
+    assert sum(1 for v in s["violazioni"] if v["codice"] == "scoperto" and v["data"] == LUNEDI_A) >= 1
+    # aggiornamento della quantità e rimozione con 0
+    s = imposta_fabbisogno(client, [voce(quantita=2), voci[1] | {"quantita": 0}]).json()
+    assert len(s["fabbisogno"]) == 2
+    assert voce(quantita=2) in s["fabbisogno"]
+    assert all(f["ruolo"] == "soccorritore" for f in s["fabbisogno"] if f["postazione"] == "Standby")
+    assert client.get(f"/api/settimane/{LUNEDI_A}").json()["fabbisogno"] == s["fabbisogno"]
+
+
+@pytest.mark.parametrize("v", [
+    voce(data="2026-10-26"),                                        # data fuori settimana
+    voce(postazione="Acquasanta", segmento="intero"),               # postazione normale
+    voce(postazione="Inesistente"),
+    voce(segmento="standby"),                                       # segmento non dei Programmati
+    voce(fascia="notte"),                                           # Programmati solo di giorno
+    voce(postazione="Standby", segmento="standby_mattina"),         # Standby solo "standby"
+    voce(postazione="Standby", segmento="standby", quantita=2),     # Standby 0-1
+])
+def test_fabbisogno_non_valido_400(client, v):
+    r = imposta_fabbisogno(client, [v])
+    assert r.status_code == 400, r.text
+    assert isinstance(r.json()["detail"], str)
+    assert client.get(f"/api/settimane/{LUNEDI_A}").json()["fabbisogno"] == []
+
+
+def test_fabbisogno_tutto_o_niente(client):
+    r = imposta_fabbisogno(client, [voce(), voce(data="2026-10-26")])
+    assert r.status_code == 400
+    assert client.get(f"/api/settimane/{LUNEDI_A}").json()["fabbisogno"] == []
+
+
+def test_fabbisogno_quantita_fuori_limiti_422(client):
+    assert imposta_fabbisogno(client, [voce(quantita=21)]).status_code in (400, 422)
+    assert imposta_fabbisogno(client, [voce(quantita=-1)]).status_code in (400, 422)
+    assert imposta_fabbisogno(client, [voce()] * 201).status_code in (400, 422)
+
+
+def test_fabbisogno_settimana_b_o_confermata_400(client):
+    assert imposta_fabbisogno(client, [voce(data=LUNEDI_B)], settimana=LUNEDI_B).status_code == 400
+    assert client.post(f"/api/settimane/{LUNEDI_A}/conferma").status_code == 200
+    assert imposta_fabbisogno(client, [voce()]).status_code == 400
+
+
+def test_programmati_volontari_fino_alla_quantita(client):
+    assert imposta_fabbisogno(client, [voce(quantita=2)]).status_code == 200
+    kw = {"postazione": "Programmati", "segmento": "prog_mattina", "ruolo": "autista"}
+    assert prenota_nome(client, "Uno", **kw).status_code == 201
+    assert prenota_nome(client, "Due", **kw).status_code == 201
+    r = prenota_nome(client, "Tre", **kw)
+    assert r.status_code == 400
+    # nessun volontario creato se la prenotazione fallisce
+    assert "Tre" not in [p["nome"] for p in client.get("/api/persone").json()]
+    # il pomeriggio è un turno a sé, non richiesto
+    r = prenota_nome(client, "Uno", **{**kw, "segmento": "prog_pomeriggio"})
+    assert r.status_code == 400 and "non richiesto" in r.json()["detail"]
+    s = client.get(f"/api/settimane/{LUNEDI_A}").json()
+    assert len([a for a in s["assegnazioni"] if a["postazione"] == "Programmati"]) == 2
+
+
+def test_soccorritore_autista_programmati(client):
+    sara = client.post("/api/persone", json={"nome": "Sara", "tipo": "dipendente", "qualifica": "soccorritore",
+                                             "autista_programmati": True}).json()
+    assert imposta_fabbisogno(client, [voce()]).status_code == 200
+    r = prenota(client, LUNEDI_A, sara["id"], postazione="Programmati", segmento="prog_mattina", ruolo="autista")
+    assert r.status_code == 201, r.text
+    r = prenota(client, LUNEDI_A, sara["id"], data="2026-10-21", ruolo="autista")  # Acquasanta
+    assert r.status_code == 400
+
+
+def test_standby_spezzato_volontario_e_dipendente(client):
+    voci = [voce(postazione="Standby", segmento="standby", ruolo=r) for r in ("autista", "soccorritore")]
+    assert imposta_fabbisogno(client, voci).status_code == 200
+    dip = crea(client, "Mario", "dipendente", "soccorritore")
+    r = prenota_nome(client, "Anna", postazione="Standby", segmento="standby_mattina")
+    assert r.status_code == 201, r.text
+    r = prenota(client, LUNEDI_A, dip["id"], postazione="Standby", segmento="standby_pomeriggio")
+    assert r.status_code == 201, r.text
+    # il posto intero ora è occupato
+    altro = crea(client, "Luca", "dipendente", "soccorritore")
+    assert prenota(client, LUNEDI_A, altro["id"], postazione="Standby", segmento="standby").status_code == 400
+    # segmento non ammesso per lo Standby
+    assert prenota(client, LUNEDI_A, altro["id"], postazione="Standby", segmento="mattina").status_code == 400
+
+
+def test_turno_a_richiesta_non_richiesto_400(client):
+    p = crea(client, "Mario", "dipendente", "soccorritore")
+    r = prenota(client, LUNEDI_A, p["id"], postazione="Standby", segmento="standby")
+    assert r.status_code == 400 and "non richiesto" in r.json()["detail"]
+    r = prenota_nome(client, "Nuovo", postazione="Programmati", segmento="prog_mattina")
+    assert r.status_code == 400
+    assert "Nuovo" not in [p["nome"] for p in client.get("/api/persone").json()]
+
+
+def test_postazioni_a_richiesta_non_in_settimana_b(client):
+    p = crea(client, "Mario", "dipendente", "soccorritore")
+    r = prenota(client, LUNEDI_B, p["id"], postazione="Standby", segmento="standby")
+    assert r.status_code == 400
+
+
+def test_genera_con_fabbisogno(client):
+    staff_14(client)
+    crea(client, "Autista extra", "dipendente", "autista")
+    crea(client, "Soccorritore extra", "dipendente", "soccorritore")
+    voci = [voce(data="2026-10-20", postazione="Standby", fascia="notte", segmento="standby", ruolo=r)
+            for r in ("autista", "soccorritore")]
+    voci.append(voce(quantita=2))
+    assert imposta_fabbisogno(client, voci).status_code == 200
+    r = client.post(f"/api/settimane/{LUNEDI_A}/genera", json={"tempo_max": 10})
+    assert r.status_code == 200, r.text
+    s = r.json()
+    assert s["report"]["scoperti"] == []
+    assert not [v for v in s["violazioni"] if v["livello"] == "errore"]
+    speciali = [a for a in s["assegnazioni"] if a["postazione"] in ("Standby", "Programmati")]
+    assert len(speciali) == 4
+    assert len([a for a in speciali if a["postazione"] == "Programmati" and a["ruolo"] == "autista"]) == 2
+
+
+@pytest.mark.parametrize("backend", ["sqlite", "libsql"])
+def test_migrazione_colonna_autista_programmati(tmp_path, monkeypatch, backend):
+    import sqlite3
+
+    percorso = tmp_path / "vecchio.db"
+    vecchio = sqlite3.connect(percorso)
+    vecchio.executescript("""
+        CREATE TABLE persone (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, nome TEXT NOT NULL, tipo TEXT NOT NULL,
+            qualifica TEXT NOT NULL, attivo INTEGER NOT NULL DEFAULT 1);
+        INSERT INTO persone(nome, tipo, qualifica) VALUES ('Vecchio', 'dipendente', 'autista');
+    """)
+    vecchio.commit()
+    vecchio.close()
+    if backend == "libsql":
+        pytest.importorskip("libsql")
+        monkeypatch.setattr(db, "remoto", lambda path: True)
+    c = TestClient(create_app(str(percorso)))
+    [p] = c.get("/api/persone").json()
+    assert p["nome"] == "Vecchio" and p["autista_programmati"] is False
+    colonne = [r[1] for r in sqlite3.connect(percorso).execute("PRAGMA table_info(persone)")]
+    assert "autista_programmati" in colonne
+    create_app(str(percorso))  # riaprire un DB già migrato non fallisce
+
+
+# --- correzioni dalla review --------------------------------------------------------------
+
+def test_put_persona_senza_flag_lo_mantiene(client):
+    p = client.post("/api/persone", json={"nome": "Sara", "tipo": "dipendente", "qualifica": "soccorritore",
+                                          "autista_programmati": True}).json()
+    r = client.put(f"/api/persone/{p['id']}", json={"nome": "Sara B", "tipo": "dipendente",
+                                                    "qualifica": "soccorritore", "attivo": True})
+    assert r.status_code == 200 and r.json()["autista_programmati"] is True
+
+
+def test_id_enormi_non_causano_errori_del_server(client):
+    enorme = 2 ** 70
+    corpo = {"nome": "X", "tipo": "dipendente", "qualifica": "autista", "attivo": True}
+    assert client.put(f"/api/persone/{enorme}", json=corpo).status_code in (404, 422)
+    assert client.delete(f"/api/assegnazioni/{enorme}").status_code in (404, 422)
+    assert client.delete(f"/api/ferie/{enorme}").status_code in (404, 422)
+    imposta_fabbisogno(client, [voce(quantita=2)])
+    r = client.post(f"/api/settimane/{LUNEDI_A}/assegnazioni", json={
+        "data": LUNEDI_A, "postazione": "Programmati", "fascia": "giorno", "segmento": "prog_mattina",
+        "ruolo": "autista", "persona_id": enorme})
+    assert r.status_code in (404, 422)
+
+
+def test_stessa_persona_due_volte_nello_stesso_turno_programmati(client):
+    p = crea(client, "Rino", "dipendente", "autista")
+    imposta_fabbisogno(client, [voce(quantita=3)])
+    corpo = {"data": LUNEDI_A, "postazione": "Programmati", "fascia": "giorno", "segmento": "prog_mattina",
+             "ruolo": "autista"}
+    url = f"/api/settimane/{LUNEDI_A}/assegnazioni"
+    assert client.post(url, json={**corpo, "persona_id": p["id"]}).status_code == 201
+    assert client.post(url, json={**corpo, "persona_id": p["id"]}).status_code == 400
+    assert client.post(url, json={**corpo, "nome_volontario": "Gina"}).status_code == 201
+    assert client.post(url, json={**corpo, "nome_volontario": "gina"}).status_code == 400
+
+
+def test_nome_con_caratteri_di_controllo_rifiutato(client):
+    r = client.post("/api/persone", json={"nome": "a\u0000b", "tipo": "volontario", "qualifica": "autista"})
+    assert r.status_code == 422

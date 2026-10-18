@@ -10,7 +10,8 @@ Vincoli rigidi (mai violati):
   - al massimo 3 giorni (o 3 notti) di fila
 Vincoli rigidi "con evidenza": se impossibili il modello resta risolvibile ma paga una penalità enorme
 e il risultato li segnala:
-  - copertura di tutti i posti
+  - copertura di tutti i posti, con priorità: postazioni normali, poi Standby, poi Programmati
+    (se manca personale restano scoperti prima i Programmati)
   - ore di ogni dipendente entro ±12 dalla sua quota: la media della settimana, ridotta in
     proporzione ai giorni di ferie
 Obiettivi (minimizzati insieme, in ordine di peso):
@@ -28,7 +29,7 @@ from itertools import combinations
 
 from ortools.sat.python import cp_model
 
-from .modello import Assegnazione, Persona, Unita, in_conflitto
+from .modello import PROGRAMMATI, STANDBY, Assegnazione, Fabbisogno, Persona, Unita, in_conflitto
 from .slot import unita_da_coprire
 from .storico import CATEGORIE_WEEKEND, StoricoPersona, categoria_weekend
 from .vincoli import MAX_CONSECUTIVI, SCARTO_ORE_MAX, giorni_disponibili, valida_settimana
@@ -70,12 +71,14 @@ def genera(
     workers: int = 8,
     ferie: dict[int, set[date]] | None = None,
     indisponibili: dict[int, set[date]] | None = None,
+    fabbisogno: Sequence[Fabbisogno] = (),
 ) -> Risultato:
     """Genera i turni dei dipendenti.
 
     `persone` deve contenere i dipendenti attivi (il chiamante esclude i non attivi). `ferie` e
     `indisponibili` sono i giorni, per id, in cui non possono iniziare turni; chi è in ferie tutta
     la settimana viene escluso. `media_ore` è la media di un dipendente a tempo pieno.
+    `fabbisogno`: posti richiesti nelle postazioni a richiesta (Standby, Programmati).
     """
     avvio = time.monotonic()
     storico = storico or {}
@@ -83,7 +86,7 @@ def genera(
     fissi, contesto = list(fissi), list(contesto)
     disponibili = {p.id: giorni_disponibili(giorni, ferie.get(p.id, set())) for p in persone if p.dipendente}
     dipendenti = [p for p in persone if disponibili.get(p.id)]
-    unita = unita_da_coprire(giorni, postazioni, fissi)
+    unita = unita_da_coprire(giorni, postazioni, fissi, fabbisogno)
     problemi_fissi = _problemi_turni_fissi(giorni, postazioni, fissi, contesto, dipendenti, ferie, indisponibili)
     if not unita:
         ore = _ore_fisse(dipendenti, fissi)
@@ -160,6 +163,11 @@ def _problemi_turni_fissi(giorni, postazioni, fissi, contesto, dipendenti, ferie
             if v.livello == "errore" and v.codice in regole]
 
 
+def _priorita(u: Unita) -> int:
+    """0 = postazioni normali (coperte per prime), 1 = Standby, 2 = Programmati."""
+    return {STANDBY: 1, PROGRAMMATI: 2}.get(u.postazione, 0)
+
+
 def _media(ore: dict[int, int], disponibili: dict[int, int]) -> float:
     """Media ore di un dipendente a tempo pieno: chi ha ferie pesa per i giorni disponibili."""
     giorni = sum(disponibili[pid] for pid in ore)
@@ -196,7 +204,7 @@ class _Modello:
         self.x: dict[tuple[int, int], cp_model.IntVar] = {}
         for ui, u in enumerate(unita):
             for p in dipendenti:
-                if (p.puo_ricoprire(u.ruolo) and u.data not in bloccati[p.id]
+                if (p.puo_ricoprire(u.ruolo, u.postazione) and u.data not in bloccati[p.id]
                         and not any(in_conflitto(u, f) for f in self.fissi_di[p.id])):
                     self.x[p.id, ui] = self.model.NewBoolVar(f"x_{p.id}_{ui}")
         self.per_persona: dict[int, list[tuple[Unita, cp_model.IntVar]]] = defaultdict(list)
@@ -235,8 +243,9 @@ class _Modello:
         def ore_fascia(pid, fascia):
             return sum(t.ore for t in presi[pid] if t.fascia == fascia and t.data in settimana)
 
-        # prima i posti da autista (più vincolati), poi in ordine cronologico
-        ordine = sorted(range(len(self.unita)), key=lambda ui: (self.unita[ui].ruolo != "autista", self.unita[ui].inizio))
+        # prima i posti più importanti, poi quelli da autista (più vincolati), poi in ordine cronologico
+        ordine = sorted(range(len(self.unita)), key=lambda ui: (
+            _priorita(self.unita[ui]), self.unita[ui].ruolo != "autista", self.unita[ui].inizio))
         scelta = {}
         for ui in ordine:
             u = self.unita[ui]
@@ -264,10 +273,17 @@ class _Modello:
         per_unita = defaultdict(list)
         for (_, ui), v in self.x.items():
             per_unita[ui].append(v)
-        for ui in range(len(self.unita)):
+        # pesi "lessicografici": un posto di livello più alto vale più di tutti quelli dei livelli sotto
+        quanti = defaultdict(int)
+        for u in self.unita:
+            quanti[_priorita(u)] += 1
+        peso = {2: P_SCOPERTO * self.scala}
+        peso[1] = peso[2] * (quanti[2] + 1)
+        peso[0] = peso[1] * (quanti[1] + 1)
+        for ui, u in enumerate(self.unita):
             scoperto = self.model.NewBoolVar(f"scoperto_{ui}")
             self.model.Add(sum(per_unita[ui]) + scoperto == 1)
-            self.obiettivo.append((P_SCOPERTO * self.scala, scoperto))
+            self.obiettivo.append((peso[_priorita(u)], scoperto))
 
     def _riposo(self):
         for p in self.dipendenti:

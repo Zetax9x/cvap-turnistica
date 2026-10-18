@@ -3,6 +3,7 @@
 import { api } from "./api.js";
 import {
   el, clear, addDays, mondayOf, todayISO, ddmm, dataLunga, dataEstesa, indiceGiorno, etichetta, formatOre,
+  orarioTurno, oraInizio,
 } from "./util.js";
 
 const CHIAVE_SETTIMANA = "cvap.settimana";
@@ -96,9 +97,7 @@ function render() {
 }
 
 function descriviTurno(a) {
-  const orario = a.fascia === "giorno" && a.segmento !== "intero"
-    ? etichetta("segmentoLungo", a.segmento) : etichetta("fascia", a.fascia);
-  return `${orario} · ${a.postazione} · ${etichetta("ruolo", a.ruolo)}`;
+  return `${orarioTurno(a.fascia, a.segmento)} · ${a.postazione} · ${etichetta("ruolo", a.ruolo)}`;
 }
 
 function renderTurni(s, persona) {
@@ -106,11 +105,10 @@ function renderTurni(s, persona) {
   const indisp = new Set((s.indisponibilita || []).filter((x) => x.persona_id === persona.id).map((x) => x.data));
   const errori = new Set((s.violazioni || [])
     .filter((v) => v.persona_id === persona.id && v.livello === "errore" && v.data).map((v) => v.data));
-  const ordine = { giorno: 0, notte: 1 };
 
   const righe = s.giorni.map((g) => {
     const turni = s.assegnazioni.filter((a) => a.persona_id === persona.id && a.data === g)
-      .sort((a, b) => ordine[a.fascia] - ordine[b.fascia] || a.segmento.localeCompare(b.segmento));
+      .sort((a, b) => oraInizio(a.fascia, a.segmento) - oraInizio(b.fascia, b.segmento));
     let contenuto;
     if (turni.length) {
       contenuto = el("ul", { class: "turni-persona" }, turni.map((a) => el("li", {},

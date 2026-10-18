@@ -9,7 +9,7 @@ import sqlite3
 from datetime import date, timedelta
 
 from .calendario import lunedi
-from .modello import Assegnazione, Persona, Postazione
+from .modello import Assegnazione, Fabbisogno, Persona, Postazione
 
 RIFERIMENTO_A_DEFAULT = "2026-10-19"
 
@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS persone (
     nome TEXT NOT NULL,
     tipo TEXT NOT NULL,
     qualifica TEXT NOT NULL,
-    attivo INTEGER NOT NULL DEFAULT 1
+    attivo INTEGER NOT NULL DEFAULT 1,
+    autista_programmati INTEGER NOT NULL DEFAULT 0  -- soccorritore che può guidare nei Programmati
 );
 CREATE TABLE IF NOT EXISTS postazioni (
     id INTEGER PRIMARY KEY,
@@ -59,6 +60,15 @@ CREATE TABLE IF NOT EXISTS indisponibilita (
     persona_id INTEGER NOT NULL REFERENCES persone(id),
     data TEXT NOT NULL,
     PRIMARY KEY (persona_id, data)
+);
+CREATE TABLE IF NOT EXISTS fabbisogno (  -- posti richiesti nelle postazioni a richiesta (Standby, Programmati)
+    data TEXT NOT NULL,
+    postazione TEXT NOT NULL,
+    fascia TEXT NOT NULL,
+    segmento TEXT NOT NULL,
+    ruolo TEXT NOT NULL,
+    quantita INTEGER NOT NULL,
+    PRIMARY KEY (data, postazione, fascia, segmento, ruolo)
 );
 """
 
@@ -152,6 +162,7 @@ def connetti(path: str) -> sqlite3.Connection:
     conn = apri(path)
     with conn:
         conn.executescript(_SCHEMA)
+        _migra(conn)
         conn.executemany(
             "INSERT OR IGNORE INTO postazioni(nome, solo_settimane_b, ordine) VALUES (?, ?, ?)",
             _POSTAZIONI_SEED,
@@ -163,15 +174,30 @@ def connetti(path: str) -> sqlite3.Connection:
     return conn
 
 
+def _colonne(conn, tabella: str) -> set[str]:
+    return {r["name"] for r in conn.execute(f"PRAGMA table_info({tabella})").fetchall()}
+
+
+def _migra(conn) -> None:
+    """Aggiunge ai database creati con versioni precedenti le colonne che mancano."""
+    if "autista_programmati" not in _colonne(conn, "persone"):
+        try:
+            conn.execute("ALTER TABLE persone ADD COLUMN autista_programmati INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            # due avvii in contemporanea (es. due istanze Vercel): l'altro l'ha già aggiunta
+            if "autista_programmati" not in _colonne(conn, "persone"):
+                raise
+
+
 # --- persone ---------------------------------------------------------------
 
 def _persona_dict(r: sqlite3.Row) -> dict:
     return {"id": r["id"], "nome": r["nome"], "tipo": r["tipo"], "qualifica": r["qualifica"],
-            "attivo": bool(r["attivo"])}
+            "autista_programmati": bool(r["autista_programmati"]), "attivo": bool(r["attivo"])}
 
 
 def a_persona(r: dict | sqlite3.Row) -> Persona:
-    return Persona(r["id"], r["nome"], r["tipo"], r["qualifica"])
+    return Persona(r["id"], r["nome"], r["tipo"], r["qualifica"], bool(r["autista_programmati"]))
 
 
 def lista_persone(conn: sqlite3.Connection) -> list[dict]:
@@ -184,18 +210,25 @@ def get_persona(conn: sqlite3.Connection, persona_id: int) -> dict | None:
     return _persona_dict(r) if r else None
 
 
-def crea_persona(conn: sqlite3.Connection, nome: str, tipo: str, qualifica: str) -> dict:
+def crea_persona(conn: sqlite3.Connection, nome: str, tipo: str, qualifica: str,
+                 autista_programmati: bool = False) -> dict:
     with conn:
-        cur = conn.execute("INSERT INTO persone(nome, tipo, qualifica, attivo) VALUES (?, ?, ?, 1)",
-                           (nome, tipo, qualifica))
+        cur = conn.execute("INSERT INTO persone(nome, tipo, qualifica, attivo, autista_programmati) "
+                           "VALUES (?, ?, ?, 1, ?)", (nome, tipo, qualifica, int(autista_programmati)))
     return get_persona(conn, cur.lastrowid)
 
 
 def aggiorna_persona(conn: sqlite3.Connection, persona_id: int, nome: str, tipo: str,
-                     qualifica: str, attivo: bool) -> dict | None:
+                     qualifica: str, attivo: bool, autista_programmati: bool | None = None) -> dict | None:
+    """`autista_programmati=None` lascia invariato il valore salvato."""
     with conn:
-        cur = conn.execute("UPDATE persone SET nome = ?, tipo = ?, qualifica = ?, attivo = ? WHERE id = ?",
-                           (nome, tipo, qualifica, int(attivo), persona_id))
+        if autista_programmati is None:
+            cur = conn.execute("UPDATE persone SET nome = ?, tipo = ?, qualifica = ?, attivo = ? WHERE id = ?",
+                               (nome, tipo, qualifica, int(attivo), persona_id))
+        else:
+            cur = conn.execute("UPDATE persone SET nome = ?, tipo = ?, qualifica = ?, attivo = ?, "
+                               "autista_programmati = ? WHERE id = ?",
+                               (nome, tipo, qualifica, int(attivo), int(autista_programmati), persona_id))
     return get_persona(conn, persona_id) if cur.rowcount else None
 
 
@@ -418,3 +451,33 @@ def imposta_indisponibilita(conn: sqlite3.Connection, persona_id: int, dal: date
         if giorni:
             conn.executemany("INSERT INTO indisponibilita(persona_id, data) VALUES (?, ?)",
                              [(persona_id, d.isoformat()) for d in sorted(set(giorni))])
+
+
+# --- fabbisogno delle postazioni a richiesta -------------------------------------------
+
+def fabbisogno_periodo(conn: sqlite3.Connection, dal: date, al: date) -> list[Fabbisogno]:
+    """Posti richiesti (quantita > 0) con data in [dal, al]."""
+    rows = conn.execute(
+        "SELECT * FROM fabbisogno WHERE data >= ? AND data <= ? AND quantita > 0 "
+        "ORDER BY data, postazione, fascia, segmento, ruolo",
+        (dal.isoformat(), al.isoformat()),
+    ).fetchall()
+    return [Fabbisogno(date.fromisoformat(r["data"]), r["postazione"], r["fascia"], r["segmento"],
+                       r["ruolo"], r["quantita"]) for r in rows]
+
+
+def imposta_fabbisogno(conn: sqlite3.Connection, voci: list[Fabbisogno]) -> None:
+    """Sostituisce la quantità di ogni turno indicato (0 = rimuove), in un'unica transazione."""
+    with conn:
+        for f in voci:
+            chiave = (f.data.isoformat(), f.postazione, f.fascia, f.segmento, f.ruolo)
+            if f.quantita <= 0:
+                conn.execute("DELETE FROM fabbisogno WHERE data = ? AND postazione = ? AND fascia = ? "
+                             "AND segmento = ? AND ruolo = ?", chiave)
+            else:
+                conn.execute(
+                    "INSERT INTO fabbisogno(data, postazione, fascia, segmento, ruolo, quantita) "
+                    "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(data, postazione, fascia, segmento, ruolo) "
+                    "DO UPDATE SET quantita = excluded.quantita",
+                    (*chiave, f.quantita),
+                )

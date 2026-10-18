@@ -71,6 +71,8 @@ export const api = {
   impostaIndisponibilita: (data, personaId, date) =>
     richiesta("PUT", `/settimane/${enc(data)}/indisponibilita`, { persona_id: personaId, date }),
 
+  impostaFabbisogno: (data, voci) => richiesta("PUT", `/settimane/${enc(data)}/fabbisogno`, { voci }),
+
   ferie: () => richiesta("GET", "/ferie"),
   creaFerie: (dati) => richiesta("POST", "/ferie", dati),
   eliminaFerie: (id) => richiesta("DELETE", `/ferie/${enc(id)}`),

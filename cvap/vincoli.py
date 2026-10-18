@@ -2,24 +2,19 @@
 
 Usato per controllare sia l'output del generatore sia le modifiche manuali.
 """
-from collections import defaultdict
+from collections import Counter, defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from itertools import combinations
 
-from .modello import ORE_RIPOSO_MIN, Assegnazione, Persona
+from .modello import (ORE_RIPOSO_MIN, Assegnazione, Fabbisogno, Persona, orario, si_sovrappongono,
+                      turni_ammessi)
 from .slot import unita_da_coprire
 
 MAX_CONSECUTIVI = 3       # oltre è vietato
 SOGLIA_CONSECUTIVI = 3    # da qui in su si segnala come eccezione
 SCARTO_ORE_MAX = 12
-
-_SOVRAPPOSTI = {
-    "intero": {"intero", "mattina", "pomeriggio"},
-    "mattina": {"intero", "mattina"},
-    "pomeriggio": {"intero", "pomeriggio"},
-}
-
 
 @dataclass(frozen=True)
 class Violazione:
@@ -35,7 +30,14 @@ def _fmt(d: date) -> str:
 
 
 def _descrivi(a: Assegnazione) -> str:
-    seg = "" if a.segmento == "intero" else f" ({a.segmento})"
+    if a.segmento == "intero":
+        seg = ""
+    else:
+        try:
+            inizio, fine = orario(a.data, a.fascia, a.segmento)
+            seg = f" {inizio % 24}-{fine % 24}"
+        except ValueError:
+            seg = f" ({a.segmento})"
     return f"{a.postazione} {a.fascia}{seg} {_fmt(a.data)}"
 
 
@@ -47,15 +49,18 @@ def valida_settimana(
     contesto: list[Assegnazione] = (),
     ferie: dict[int, set[date]] | None = None,
     indisponibili: dict[int, set[date]] | None = None,
+    fabbisogno: Sequence[Fabbisogno] = (),
 ) -> list[Violazione]:
     """`ferie` e `indisponibili`: giorni (per id persona) in cui non può iniziare alcun turno.
 
     Le ferie riducono anche la quota di ore della settimana, in proporzione ai giorni.
+    `fabbisogno`: posti richiesti nelle postazioni a richiesta (Standby, Programmati).
     """
     ferie, indisponibili = ferie or {}, indisponibili or {}
     violazioni: list[Violazione] = []
-    violazioni += _copertura(giorni, postazioni, assegnazioni)
-    violazioni += _doppioni(assegnazioni)
+    violazioni += _copertura(giorni, postazioni, assegnazioni, fabbisogno)
+    violazioni += _doppioni(assegnazioni, postazioni)
+    violazioni += _eccessi(giorni, assegnazioni, postazioni, fabbisogno)
     violazioni += _qualifiche(assegnazioni, persone)
     violazioni += _assenze(assegnazioni, persone, ferie, "ferie", "è in ferie")
     violazioni += _assenze(assegnazioni, persone, indisponibili, "indisponibile", "è indisponibile")
@@ -76,24 +81,62 @@ def valida_settimana(
     return violazioni
 
 
-def _copertura(giorni, postazioni, assegnazioni):
+def _copertura(giorni, postazioni, assegnazioni, fabbisogno):
     return [
         Violazione("errore", "scoperto", f"Posto scoperto: {u.ruolo} {_descrivi(u)}", data=u.data)
-        for u in unita_da_coprire(giorni, postazioni, assegnazioni)
+        for u in unita_da_coprire(giorni, postazioni, assegnazioni, fabbisogno)
     ]
 
 
-def _doppioni(assegnazioni):
+def _doppioni(assegnazioni, postazioni):
+    """Posti delle postazioni normali coperti due volte nelle stesse ore (per Standby e Programmati: `_eccessi`)."""
     per_posto: dict[tuple, list[Assegnazione]] = defaultdict(list)
     for a in assegnazioni:
-        per_posto[a.chiave].append(a)
+        if a.postazione in postazioni:
+            per_posto[a.chiave].append(a)
     out = []
     for gruppo in per_posto.values():
         for a, b in combinations(gruppo, 2):
-            if b.segmento in _SOVRAPPOSTI[a.segmento]:
+            if si_sovrappongono(a.segmento, b.segmento):
                 out.append(Violazione("errore", "doppione",
                                       f"Posto {a.ruolo} {_descrivi(a)} assegnato due volte", data=a.data))
     return out
+
+
+def _eccessi(giorni, assegnazioni, postazioni, fabbisogno):
+    """Nelle postazioni a richiesta: persone in turni non richiesti o più di quante richieste."""
+    settimana = set(giorni)
+    richiesti = Counter()
+    for f in fabbisogno:
+        richiesti[(f.data, f.postazione, f.fascia, f.ruolo)] += f.quantita
+        if f.segmento.startswith("prog_"):
+            richiesti[(f.data, f.postazione, f.fascia, f.segmento, f.ruolo)] += f.quantita
+    presenti: dict[tuple, list[Assegnazione]] = defaultdict(list)
+    for a in assegnazioni:
+        if a.postazione in postazioni or a.data not in settimana:
+            continue
+        # Programmati: si conta per segmento; Standby: per posto (le due metà sono lo stesso posto)
+        chiave = ((a.data, a.postazione, a.fascia, a.segmento, a.ruolo) if a.segmento.startswith("prog_")
+                  else a.chiave)
+        presenti[chiave].append(a)
+    out = []
+    for chiave, gruppo in presenti.items():
+        a = gruppo[0]
+        # metà di Standby coperte da persone diverse contano come un solo posto
+        n = len(gruppo) if a.segmento.startswith("prog_") else _posti_occupati(gruppo)
+        if n > richiesti[chiave]:
+            out.append(Violazione("errore", "eccesso",
+                                  f"{a.ruolo} {_descrivi(a)}: {n} assegnati, richiesti {richiesti[chiave]}",
+                                  data=a.data))
+    return out
+
+
+def _posti_occupati(gruppo: list[Assegnazione]) -> int:
+    """Quanti posti singoli servono per ospitare i turni (le due metà di un turno ne occupano uno)."""
+    interi = sum(1 for a in gruppo if a.segmento in ("intero", "standby"))
+    mattine = sum(1 for a in gruppo if a.segmento.endswith("mattina"))
+    pomeriggi = sum(1 for a in gruppo if a.segmento.endswith("pomeriggio"))
+    return interi + max(mattine, pomeriggi)
 
 
 def _qualifiche(assegnazioni, persone):
@@ -102,11 +145,11 @@ def _qualifiche(assegnazioni, persone):
         p = persone.get(a.persona_id)
         if p is None:
             out.append(Violazione("errore", "persona", f"Persona sconosciuta in {_descrivi(a)}", a.persona_id, a.data))
-        elif not p.puo_ricoprire(a.ruolo):
+        elif not p.puo_ricoprire(a.ruolo, a.postazione):
             out.append(Violazione("errore", "qualifica",
                                   f"{p.nome} non è autista ({_descrivi(a)})", p.id, a.data))
-        if a.fascia == "notte" and a.segmento != "intero":
-            out.append(Violazione("errore", "segmento", f"La notte non si può spezzare ({_descrivi(a)})",
+        if (a.fascia, a.segmento) not in turni_ammessi(a.postazione):
+            out.append(Violazione("errore", "segmento", f"Orario non valido per {a.postazione} ({_descrivi(a)})",
                                   a.persona_id, a.data))
     return out
 

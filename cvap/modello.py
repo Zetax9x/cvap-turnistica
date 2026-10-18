@@ -9,18 +9,59 @@ from datetime import date
 TIPI = ("dipendente", "volontario")
 QUALIFICHE = ("autista", "soccorritore")
 FASCE = ("giorno", "notte")
-SEGMENTI = ("intero", "mattina", "pomeriggio")
+SEGMENTI = ("intero", "mattina", "pomeriggio", "standby", "standby_mattina", "standby_pomeriggio",
+            "prog_mattina", "prog_pomeriggio")
 RUOLI = ("autista", "soccorritore")
 ORIGINI = ("volontario", "generato", "manuale")
 
 ORE_RIPOSO_MIN = 11
+
+# Postazioni "a richiesta": i posti esistono solo dove l'utente indica il fabbisogno (solo settimane A).
+STANDBY = "Standby"
+PROGRAMMATI = "Programmati"
+POSTAZIONI_A_RICHIESTA = (STANDBY, PROGRAMMATI)
 
 _ORARI = {
     ("giorno", "intero"): (8, 20),
     ("giorno", "mattina"): (8, 14),
     ("giorno", "pomeriggio"): (14, 20),
     ("notte", "intero"): (20, 32),  # 20:00 -> 08:00 del giorno dopo
+    ("giorno", "standby"): (7, 19),
+    ("giorno", "standby_mattina"): (7, 14),
+    ("giorno", "standby_pomeriggio"): (14, 19),
+    ("notte", "standby"): (19, 31),  # 19:00 -> 07:00
+    ("giorno", "prog_mattina"): (7, 14),
+    ("giorno", "prog_pomeriggio"): (14, 20),
 }
+
+# Turno intero di giorno -> le due metà in cui un volontario può spezzarlo (la notte non si spezza)
+META = {
+    "intero": ("mattina", "pomeriggio"),
+    "standby": ("standby_mattina", "standby_pomeriggio"),
+}
+INTERO_DI = {meta: intero for intero, coppia in META.items() for meta in coppia}
+
+_TURNI_AMMESSI = {
+    STANDBY: {("giorno", "standby"), ("giorno", "standby_mattina"), ("giorno", "standby_pomeriggio"),
+              ("notte", "standby")},
+    PROGRAMMATI: {("giorno", "prog_mattina"), ("giorno", "prog_pomeriggio")},
+}
+_TURNI_NORMALI = {("giorno", "intero"), ("giorno", "mattina"), ("giorno", "pomeriggio"), ("notte", "intero")}
+
+
+def turni_ammessi(postazione: str) -> set[tuple[str, str]]:
+    """Coppie (fascia, segmento) valide per la postazione."""
+    return _TURNI_AMMESSI.get(postazione, _TURNI_NORMALI)
+
+
+def segmento_intero(postazione: str, fascia: str) -> str:
+    """Segmento del turno intero di una fascia (per i Programmati non esiste: ogni metà è a sé)."""
+    return "standby" if postazione == STANDBY else "intero"
+
+
+def si_sovrappongono(seg_a: str, seg_b: str) -> bool:
+    """True se due segmenti dello stesso posto coprono in parte le stesse ore."""
+    return seg_a == seg_b or INTERO_DI.get(seg_a) == seg_b or INTERO_DI.get(seg_b) == seg_a
 
 
 def orario(d: date, fascia: str, segmento: str) -> tuple[int, int]:
@@ -38,20 +79,34 @@ class Persona:
     nome: str
     tipo: str
     qualifica: str
+    autista_programmati: bool = False  # può guidare nei Programmati anche se soccorritore
 
     @property
     def dipendente(self) -> bool:
         return self.tipo == "dipendente"
 
-    def puo_ricoprire(self, ruolo: str) -> bool:
+    def puo_ricoprire(self, ruolo: str, postazione: str | None = None) -> bool:
         # l'autista può fare anche il soccorritore, non viceversa
-        return ruolo == "soccorritore" or self.qualifica == "autista"
+        if ruolo == "soccorritore" or self.qualifica == "autista":
+            return True
+        return postazione == PROGRAMMATI and self.autista_programmati
 
 
 @dataclass(frozen=True)
 class Postazione:
     nome: str
     solo_settimane_b: bool = False
+
+
+@dataclass(frozen=True)
+class Fabbisogno:
+    """Quante persone servono in un turno di una postazione a richiesta."""
+    data: date
+    postazione: str
+    fascia: str
+    segmento: str
+    ruolo: str
+    quantita: int
 
 
 @dataclass(frozen=True)

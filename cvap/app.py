@@ -9,14 +9,15 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Response
+from fastapi import Depends, FastAPI, HTTPException, Path as PathParam, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, StringConstraints, model_validator
 
 from . import db
 from .calendario import giorni_settimana, lunedi, postazioni_attive, tipo_settimana
-from .modello import Assegnazione, Persona
+from .modello import (INTERO_DI, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, SEGMENTI, STANDBY, Assegnazione,
+                      Fabbisogno, Persona, si_sovrappongono, turni_ammessi)
 from .storico import CATEGORIE_WEEKEND, SettimanaPassata, calcola_storico, categoria_weekend
 from .vincoli import giorni_disponibili, valida_settimana
 
@@ -25,14 +26,19 @@ GIORNI_CONTESTO = 3
 DATA_MIN, DATA_MAX = date(2000, 1, 1), date(2100, 12, 31)
 DataValida = Annotated[date, Field(ge=DATA_MIN, le=DATA_MAX)]
 FERIE_GIORNI_MAX = 366
-
-_SOVRAPPOSTI = {
-    "intero": {"intero", "mattina", "pomeriggio"},
-    "mattina": {"intero", "mattina"},
-    "pomeriggio": {"intero", "pomeriggio"},
+FABBISOGNO_VOCI_MAX = 200
+QUANTITA_MAX = {STANDBY: 1, PROGRAMMATI: 20}
+# turni che si possono richiedere (le metà dello Standby sono solo per i volontari che lo spezzano)
+TURNI_RICHIEDIBILI = {
+    STANDBY: {("giorno", "standby"), ("notte", "standby")},
+    PROGRAMMATI: {("giorno", "prog_mattina"), ("giorno", "prog_pomeriggio")},
 }
 
-Nome = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+Nome = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100,
+                                        pattern=r"^[^\x00-\x1f\x7f]+$")]  # niente caratteri di controllo
+ID_MAX = 2 ** 63 - 1  # oltre, SQLite non accetta l'intero (OverflowError -> 500)
+Id = Annotated[int, Field(ge=1, le=ID_MAX)]
+IdPath = Annotated[int, PathParam(ge=1, le=ID_MAX)]
 Tipo = Literal["dipendente", "volontario"]
 Qualifica = Literal["autista", "soccorritore"]
 
@@ -41,10 +47,12 @@ class PersonaIn(BaseModel):
     nome: Nome
     tipo: Tipo
     qualifica: Qualifica
+    autista_programmati: bool = False
 
 
 class PersonaUpdate(PersonaIn):
     attivo: bool = True
+    autista_programmati: bool | None = None  # assente = resta com'è
 
 
 class ImpostazioniIn(BaseModel):
@@ -55,9 +63,9 @@ class AssegnazioneIn(BaseModel):
     data: DataValida
     postazione: Annotated[str, StringConstraints(min_length=1, max_length=100)]
     fascia: Literal["giorno", "notte"]
-    segmento: Literal["intero", "mattina", "pomeriggio"]
+    segmento: Literal[SEGMENTI]
     ruolo: Literal["autista", "soccorritore"]
-    persona_id: int | None = None
+    persona_id: Id | None = None
     nome_volontario: Nome | None = None  # volontario non registrato: si cerca per nome o si crea
 
     @model_validator(mode="after")
@@ -68,14 +76,27 @@ class AssegnazioneIn(BaseModel):
 
 
 class FerieIn(BaseModel):
-    persona_id: int
+    persona_id: Id
     dal: DataValida
     al: DataValida
 
 
 class IndisponibilitaIn(BaseModel):
-    persona_id: int
+    persona_id: Id
     date: Annotated[list[DataValida], Field(max_length=7)]
+
+
+class VoceFabbisognoIn(BaseModel):
+    data: DataValida
+    postazione: Annotated[str, StringConstraints(min_length=1, max_length=100)]
+    fascia: Literal["giorno", "notte"]
+    segmento: Literal[SEGMENTI]
+    ruolo: Literal["autista", "soccorritore"]
+    quantita: int = Field(ge=0, le=20)
+
+
+class FabbisognoIn(BaseModel):
+    voci: Annotated[list[VoceFabbisognoIn], Field(max_length=FABBISOGNO_VOCI_MAX)]
 
 
 class GeneraIn(BaseModel):
@@ -130,8 +151,22 @@ def _giorni_json(per_persona: dict[int, set[date]]) -> list[dict]:
             for pid, giorni in sorted(per_persona.items()) for d in sorted(giorni)]
 
 
+def _a_richiesta(tipo: str) -> list[str]:
+    """Postazioni a richiesta disponibili nella settimana (solo le settimane A)."""
+    return list(POSTAZIONI_A_RICHIESTA) if tipo == "A" else []
+
+
+def _fabbisogno_attivo(conn, giorni: list[date], tipo: str):
+    """Fabbisogno della settimana; nelle settimane B è vuoto anche se nel DB ne restano righe
+    (ad es. dopo un cambio della data di riferimento A)."""
+    if not _a_richiesta(tipo):
+        return []
+    return db.fabbisogno_periodo(conn, giorni[0], giorni[-1])
+
+
 def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
     giorni, tipo, attive = _info_settimana(conn, inizio)
+    fabbisogno = _fabbisogno_attivo(conn, giorni, tipo)
     righe = db.assegnazioni_periodo(conn, giorni[0], giorni[-1])
     assegnazioni = [a for _, a in righe]
     persone = {p["id"]: p for p in db.lista_persone(conn)}
@@ -143,7 +178,7 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
     rilevanti = {pid: db.a_persona(p) for pid, p in persone.items()
                  if p["tipo"] == "volontario" or p["attivo"] or pid in presenti}
     violazioni = valida_settimana(giorni, attive, assegnazioni, rilevanti, contesto=_contesto(conn, giorni),
-                                  ferie=ferie, indisponibili=indisponibili)
+                                  ferie=ferie, indisponibili=indisponibili, fabbisogno=fabbisogno)
 
     dipendenti_attivi = [p for p in persone.values() if p["tipo"] == "dipendente" and p["attivo"]]
     ids_riepilogo = presenti | {p["id"] for p in dipendenti_attivi}
@@ -179,6 +214,9 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
         "stato": riga["stato"] if riga else "nuova",
         "giorni": [g.isoformat() for g in giorni],
         "postazioni": attive,
+        "postazioni_a_richiesta": _a_richiesta(tipo),
+        "fabbisogno": [{"data": f.data.isoformat(), "postazione": f.postazione, "fascia": f.fascia,
+                        "segmento": f.segmento, "ruolo": f.ruolo, "quantita": f.quantita} for f in fabbisogno],
         "assegnazioni": [{
             "id": aid, "data": a.data.isoformat(), "postazione": a.postazione, "fascia": a.fascia,
             "segmento": a.segmento, "ruolo": a.ruolo, "persona_id": a.persona_id,
@@ -229,6 +267,24 @@ def _volontario_per_nome(conn, nome: str, ruolo: str) -> int:
     return p["id"]
 
 
+def _verifica_posto_richiesto(conn, body: "AssegnazioneIn", stesso_posto: list[Assegnazione]) -> None:
+    """Postazioni a richiesta: il turno dev'essere richiesto e avere ancora posti liberi."""
+    if body.postazione == PROGRAMMATI:
+        segmento_richiesto = body.segmento
+    else:  # Standby: le metà occupano il posto del turno intero
+        segmento_richiesto = INTERO_DI.get(body.segmento, body.segmento)
+    quantita = sum(f.quantita for f in db.fabbisogno_periodo(conn, body.data, body.data)
+                   if (f.postazione, f.fascia, f.segmento, f.ruolo)
+                   == (body.postazione, body.fascia, segmento_richiesto, body.ruolo))
+    if quantita <= 0:
+        raise _errore(f"Turno non richiesto: indica prima il fabbisogno di {body.postazione} per quel turno")
+    if body.postazione == PROGRAMMATI:
+        if sum(1 for a in stesso_posto if a.segmento == body.segmento) >= quantita:
+            raise _errore(f"I posti richiesti per quel turno di {body.postazione} sono già tutti occupati")
+    elif any(si_sovrappongono(a.segmento, body.segmento) for a in stesso_posto):
+        raise _errore("Il posto è già occupato in quella fascia")
+
+
 def _verifica_modificabile(conn, inizio: date) -> None:
     riga = db.get_settimana(conn, inizio)
     if riga and riga["stato"] == "confermata":
@@ -272,17 +328,18 @@ def create_app(db_path: str) -> FastAPI:
 
     @app.post("/api/persone", status_code=201)
     def crea_persona(body: PersonaIn, conn: Conn):
-        return db.crea_persona(conn, body.nome, body.tipo, body.qualifica)
+        return db.crea_persona(conn, body.nome, body.tipo, body.qualifica, body.autista_programmati)
 
     @app.put("/api/persone/{persona_id}")
-    def aggiorna_persona(persona_id: int, body: PersonaUpdate, conn: Conn):
-        p = db.aggiorna_persona(conn, persona_id, body.nome, body.tipo, body.qualifica, body.attivo)
+    def aggiorna_persona(persona_id: IdPath, body: PersonaUpdate, conn: Conn):
+        p = db.aggiorna_persona(conn, persona_id, body.nome, body.tipo, body.qualifica, body.attivo,
+                                body.autista_programmati)
         if p is None:
             raise HTTPException(404, "Persona non trovata")
         return p
 
     @app.delete("/api/persone/{persona_id}", status_code=204)
-    def elimina_persona(persona_id: int, conn: Conn):
+    def elimina_persona(persona_id: IdPath, conn: Conn):
         if not db.elimina_persona(conn, persona_id):
             raise HTTPException(404, "Persona non trovata")
         return Response(status_code=204)
@@ -313,14 +370,23 @@ def create_app(db_path: str) -> FastAPI:
             giorni, tipo, attive = _info_settimana(conn, inizio)
             if body.data not in giorni:
                 raise _errore("La data del turno non appartiene a questa settimana")
-            if body.postazione not in attive:
+            if body.postazione not in attive + _a_richiesta(tipo):
                 raise _errore(f"La postazione {body.postazione} non è attiva nella settimana {tipo}")
-            if body.fascia == "notte" and body.segmento != "intero":
-                raise _errore("Il turno di notte non si può spezzare in mattina/pomeriggio")
-            for _, a in db.assegnazioni_periodo(conn, body.data, body.data):
-                if ((a.postazione, a.fascia, a.ruolo) == (body.postazione, body.fascia, body.ruolo)
-                        and a.segmento in _SOVRAPPOSTI[body.segmento]):
-                    raise _errore("Il posto è già occupato in quella fascia")
+            if (body.fascia, body.segmento) not in turni_ammessi(body.postazione):
+                raise _errore(f"Turno {body.fascia}/{body.segmento} non valido per {body.postazione}")
+            stesso_posto = [a for _, a in db.assegnazioni_periodo(conn, body.data, body.data)
+                            if (a.postazione, a.fascia, a.ruolo) == (body.postazione, body.fascia, body.ruolo)]
+            if body.postazione in POSTAZIONI_A_RICHIESTA:
+                _verifica_posto_richiesto(conn, body, stesso_posto)
+            elif any(si_sovrappongono(a.segmento, body.segmento) for a in stesso_posto):
+                raise _errore("Il posto è già occupato in quella fascia")
+            # stessa persona due volte nello stesso turno (Programmati: più posti uguali)
+            if body.nome_volontario is not None:
+                gia = {p["id"] for p in db.persone_per_nome(conn, body.nome_volontario)}
+            else:
+                gia = {body.persona_id}
+            if any(a.persona_id in gia and si_sovrappongono(a.segmento, body.segmento) for a in stesso_posto):
+                raise _errore("Questa persona è già assegnata a quel turno")
             if body.nome_volontario is not None:
                 persona_id = _volontario_per_nome(conn, body.nome_volontario, body.ruolo)
                 origine = "volontario"
@@ -330,8 +396,8 @@ def create_app(db_path: str) -> FastAPI:
                     raise HTTPException(404, "Persona non trovata")
                 if not p["attivo"]:
                     raise _errore(f"{p['nome']} non è attivo: riattivalo in Personale per assegnarlo")
-                if not db.a_persona(p).puo_ricoprire(body.ruolo):
-                    raise _errore(f"{p['nome']} non è abilitato al ruolo di autista")
+                if not db.a_persona(p).puo_ricoprire(body.ruolo, body.postazione):
+                    raise _errore(f"{p['nome']} non è abilitato al ruolo di autista in {body.postazione}")
                 persona_id = p["id"]
                 origine = "volontario" if p["tipo"] == "volontario" else "manuale"
             db.crea_assegnazione(conn, Assegnazione(body.data, body.postazione, body.fascia, body.segmento,
@@ -339,7 +405,7 @@ def create_app(db_path: str) -> FastAPI:
             return payload_settimana(conn, inizio)
 
     @app.delete("/api/assegnazioni/{assegnazione_id}", status_code=204)
-    def elimina_assegnazione(assegnazione_id: int, conn: Conn):
+    def elimina_assegnazione(assegnazione_id: IdPath, conn: Conn):
         with scrittura():
             a = db.get_assegnazione(conn, assegnazione_id)
             if a is None:
@@ -355,7 +421,8 @@ def create_app(db_path: str) -> FastAPI:
         with scrittura(attendi=False):
             inizio = lunedi(_data(data))
             _verifica_modificabile(conn, inizio)
-            giorni, _, attive = _info_settimana(conn, inizio)
+            giorni, tipo, attive = _info_settimana(conn, inizio)
+            fabbisogno = _fabbisogno_attivo(conn, giorni, tipo)
             dipendenti = db.dipendenti_attivi(conn)
             fissi = [a for _, a in db.assegnazioni_periodo(conn, giorni[0], giorni[-1]) if a.origine != "generato"]
             storico = calcola_storico([_settimana_passata(conn, r) for r in db.lista_settimane(conn, prima_di=inizio)])
@@ -364,7 +431,8 @@ def create_app(db_path: str) -> FastAPI:
             t0 = time.monotonic()
             ris = solver.genera(giorni, attive, dipendenti, fissi=fissi, contesto=_contesto(conn, giorni),
                                 storico=storico, ferie=db.ferie_periodo(conn, giorni[0], giorni[-1]),
-                                indisponibili=db.indisponibili_periodo(conn, giorni[0], giorni[-1]), **kwargs)
+                                indisponibili=db.indisponibili_periodo(conn, giorni[0], giorni[-1]),
+                                fabbisogno=fabbisogno, **kwargs)
             durata = round(time.monotonic() - t0, 2)
             if ris.stato in ("impossibile", "nessuna_soluzione"):
                 # niente da salvare: si tengono i turni generati in precedenza
@@ -427,11 +495,34 @@ def create_app(db_path: str) -> FastAPI:
             return db.crea_ferie(conn, body.persona_id, body.dal, body.al)
 
     @app.delete("/api/ferie/{ferie_id}", status_code=204)
-    def elimina_ferie(ferie_id: int, conn: Conn):
+    def elimina_ferie(ferie_id: IdPath, conn: Conn):
         with scrittura():
             if not db.elimina_ferie(conn, ferie_id):
                 raise HTTPException(404, "Ferie non trovate")
         return Response(status_code=204)
+
+    # --- fabbisogno delle postazioni a richiesta ---
+    @app.put("/api/settimane/{data}/fabbisogno")
+    def imposta_fabbisogno(data: str, body: FabbisognoIn, conn: Conn):
+        with scrittura():
+            inizio = lunedi(_data(data))
+            _verifica_modificabile(conn, inizio)
+            giorni, tipo, _ = _info_settimana(conn, inizio)
+            if tipo != "A":
+                raise _errore("Standby e Programmati esistono solo nelle settimane A")
+            voci = []
+            for v in body.voci:
+                if v.data not in giorni:
+                    raise _errore("La data del fabbisogno non appartiene a questa settimana")
+                if v.postazione not in POSTAZIONI_A_RICHIESTA:
+                    raise _errore(f"{v.postazione} non è una postazione a richiesta")
+                if (v.fascia, v.segmento) not in TURNI_RICHIEDIBILI[v.postazione]:
+                    raise _errore(f"Turno {v.fascia}/{v.segmento} non valido per {v.postazione}")
+                if v.quantita > QUANTITA_MAX[v.postazione]:
+                    raise _errore(f"Quantità non valida per {v.postazione} (massimo {QUANTITA_MAX[v.postazione]})")
+                voci.append(Fabbisogno(v.data, v.postazione, v.fascia, v.segmento, v.ruolo, v.quantita))
+            db.imposta_fabbisogno(conn, voci)
+            return payload_settimana(conn, inizio)
 
     # --- indisponibilità ---
     @app.put("/api/settimane/{data}/indisponibilita")

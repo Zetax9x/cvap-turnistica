@@ -39,11 +39,18 @@ function selectQualifica(id, valore) {
     ["autista", "soccorritore"].map((q) => el("option", { value: q, selected: q === valore }, etichetta("qualifica", q))));
 }
 
+const DESCR_AUTISTA_PROG = "Può fare l’autista nei Programmati anche se è soccorritore";
+
+function checkAutistaProg(id, valore) {
+  return el("input", { id, type: "checkbox", name: "autista_programmati", checked: !!valore });
+}
+
 function render() {
   const root = clear(stato.root);
   root.append(el("header", { class: "view-header" },
     el("h1", {}, "Personale"),
-    el("p", { class: "muted" }, "Gli autisti possono coprire sia il ruolo di autista sia quello di soccorritore.")));
+    el("p", { class: "muted" }, "Gli autisti possono coprire sia il ruolo di autista sia quello di soccorritore. ",
+      "Con “Autista programmati” un soccorritore può fare l’autista anche nei Programmati.")));
 
   root.append(renderFormNuova());
 
@@ -86,6 +93,7 @@ function renderTabella(elenco) {
       el("th", { scope: "col" }, "Nome"),
       el("th", { scope: "col" }, "Tipo"),
       el("th", { scope: "col" }, "Qualifica"),
+      el("th", { scope: "col", title: DESCR_AUTISTA_PROG }, "Autista programmati"),
       el("th", { scope: "col" }, "Stato"),
       el("th", { scope: "col", class: "azioni" }, "Azioni"))),
     tbody));
@@ -95,6 +103,7 @@ function renderFormNuova() {
   const nome = el("input", { id: "nuova-nome", name: "nome", type: "text", required: true, autocomplete: "off", maxlength: "100" });
   const tipo = selectTipo("nuova-tipo", "dipendente");
   const qual = selectQualifica("nuova-qualifica", "soccorritore");
+  const autProg = checkAutistaProg("nuova-autista-prog", false);
   const invia = el("button", { type: "submit", class: "btn btn-primary" }, "Aggiungi persona");
   return el("form", {
     class: "card form-inline", "aria-labelledby": "titolo-nuova",
@@ -104,7 +113,9 @@ function renderFormNuova() {
       if (!valore) { nome.focus(); toast("Inserisci il nome.", "avviso"); return; }
       invia.disabled = true;
       try {
-        const p = await api.creaPersona({ nome: valore, tipo: tipo.value, qualifica: qual.value });
+        const p = await api.creaPersona({
+          nome: valore, tipo: tipo.value, qualifica: qual.value, autista_programmati: autProg.checked,
+        });
         toast(`${p && p.nome ? p.nome : valore} aggiunto.`, "ok");
         await ricarica();
         const n = document.getElementById("nuova-nome");
@@ -120,6 +131,8 @@ function renderFormNuova() {
     el("div", { class: "campo campo-largo" }, el("label", { for: "nuova-nome" }, "Nome e cognome"), nome),
     el("div", { class: "campo" }, el("label", { for: "nuova-tipo" }, "Tipo"), tipo),
     el("div", { class: "campo" }, el("label", { for: "nuova-qualifica" }, "Qualifica"), qual),
+    el("div", { class: "campo campo-check" },
+      el("label", { class: "check", for: "nuova-autista-prog", title: DESCR_AUTISTA_PROG }, autProg, " Autista programmati")),
     el("div", { class: "campo campo-azione" }, invia)));
 }
 
@@ -128,6 +141,9 @@ function rigaLettura(p) {
     el("th", { scope: "row" }, p.nome),
     el("td", {}, el("span", { class: `badge badge-${p.tipo}` }, etichetta("tipo", p.tipo))),
     el("td", {}, etichetta("qualifica", p.qualifica)),
+    el("td", {}, p.autista_programmati
+      ? el("span", { class: "badge badge-programmati", title: DESCR_AUTISTA_PROG }, "Sì")
+      : el("span", { class: "muted" }, "No")),
     el("td", {}, p.attivo ? el("span", { class: "badge badge-attivo" }, "Attivo") : el("span", { class: "badge badge-inattivo" }, "Non attivo")),
     el("td", { class: "azioni" },
       el("button", {
@@ -148,12 +164,16 @@ function rigaModifica(p) {
   const qual = selectQualifica(`${pre}-qualifica`, p.qualifica);
   qual.setAttribute("aria-label", "Qualifica");
   const attivo = el("input", { id: `${pre}-attivo`, type: "checkbox", checked: !!p.attivo });
+  const autProg = checkAutistaProg(`${pre}-autista-prog`, p.autista_programmati);
 
   const salva = async () => {
     const valore = nome.value.trim();
     if (!valore) { nome.focus(); toast("Il nome non può essere vuoto.", "avviso"); return; }
     try {
-      await api.aggiornaPersona(p.id, { nome: valore, tipo: tipo.value, qualifica: qual.value, attivo: attivo.checked });
+      await api.aggiornaPersona(p.id, {
+        nome: valore, tipo: tipo.value, qualifica: qual.value, attivo: attivo.checked,
+        autista_programmati: autProg.checked,
+      });
       stato.inModifica = null;
       toast("Modifiche salvate.", "ok");
       await ricarica();
@@ -171,6 +191,7 @@ function rigaModifica(p) {
     el("td", {}, nome),
     el("td", {}, tipo),
     el("td", {}, qual),
+    el("td", {}, el("label", { class: "check", for: `${pre}-autista-prog`, title: DESCR_AUTISTA_PROG }, autProg, " Autista programmati")),
     el("td", {}, el("label", { class: "check", for: `${pre}-attivo` }, attivo, " Attivo")),
     el("td", { class: "azioni" },
       el("button", { type: "button", class: "btn btn-small btn-primary", onclick: salva }, "Salva"),
@@ -184,7 +205,10 @@ function focusRiga(id) {
 
 async function cambiaAttivo(p, attivo) {
   try {
-    await api.aggiornaPersona(p.id, { nome: p.nome, tipo: p.tipo, qualifica: p.qualifica, attivo });
+    await api.aggiornaPersona(p.id, {
+      nome: p.nome, tipo: p.tipo, qualifica: p.qualifica, attivo,
+      autista_programmati: !!p.autista_programmati,
+    });
     toast(attivo ? `${p.nome} riattivato.` : `${p.nome} disattivato.`, "ok");
     await ricarica();
   } catch (err) {
