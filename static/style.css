@@ -479,7 +479,7 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
     color-scheme: light;
   }
   body { font-size: 10pt; background: #fff; }
-  .app-header, .skip-link, .toolbar, .week-nav, .legenda, .pannelli, .report, .banner,
+  .app-header, .skip-link, .toolbar, .week-nav, .legenda, .pannelli, .report, .banner, .disponibilita,
   .toast-area, .overlay, dialog, #view-personale, #view-statistiche, #view-impostazioni { display: none !important; }
   main { padding: 0; max-width: none; }
   .week-header { margin-bottom: 4mm; }
@@ -503,3 +503,22 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
 .viol-gruppo summary::after { content: "▾"; margin-left: auto; color: var(--muted); }
 .viol-gruppo[open] summary::after { content: "▴"; }
 .viol-sotto { margin: .4rem 0 0; padding-left: 1.2rem; max-height: 220px; overflow-y: auto; font-size: .85rem; }
+
+/* ---------- Disponibilità e ferie ---------- */
+.disponibilita { margin-bottom: 1rem; }
+.disponibilita > summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem; }
+.disponibilita-titolo { display: inline; margin: 0; }
+.tabella-disponibilita .disp-cella { text-align: center; }
+.tabella-disponibilita .weekend { background: var(--weekend); }
+.tabella-disponibilita input[type="checkbox"] { width: 1.15rem; height: 1.15rem; }
+.badge-ferie { background: var(--info-bg); color: var(--man-text); border-color: var(--man-border); }
+.riepilogo-assenze { font-weight: normal; font-size: .85em; }
+.ferie-passate > summary { cursor: pointer; margin: .75rem 0 .5rem; }
+
+/* ---------- Turni di un dipendente ---------- */
+.tabella-turni-persona tr.weekend { background: var(--weekend); }
+.turni-persona { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .25rem; }
+.tabella-turni-persona .badge-errore { margin-left: .5rem; }
+.totali-persona { display: grid; grid-template-columns: max-content 1fr; gap: .35rem 1.25rem; margin: 0; }
+.totali-persona dt { color: var(--muted); }
+.totali-persona dd { margin: 0; font-weight: 600; }

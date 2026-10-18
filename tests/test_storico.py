@@ -44,3 +44,21 @@ def test_volontari_non_entrano_nel_saldo_ore():
     a = [ass(GIORNI[0], "Acquasanta", "giorno", "autista", 50, origine="volontario")]
     s = calcola_storico([SettimanaPassata(media_ore=0, dipendenti=[1], assegnazioni=a)])
     assert 50 not in s
+
+
+def test_settimana_con_ferie_non_crea_ore_da_recuperare():
+    a = [ass(GIORNI[i], "Acquasanta", "giorno", "autista", 1) for i in (0, 2, 4, 6)]  # 48h
+    a += [ass(GIORNI[i], "Acquasanta", "notte", "autista", 2) for i in (5,)]          # 12h, ferie lun-ven
+    s = calcola_storico([SettimanaPassata(media_ore=48, dipendenti=[1, 2], assegnazioni=a,
+                                          giorni_ferie={2: 5})])
+    assert s[2].saldo_ore == 0
+    assert s[2].settimane == 1 and s[2].ore_notte == 12
+    assert s[1].saldo_ore == 0
+
+
+def test_settimana_tutta_in_ferie_non_conta():
+    a = [ass(GIORNI[i], "Acquasanta", "giorno", "autista", 1) for i in (0, 2, 4, 6)]
+    s = calcola_storico([SettimanaPassata(media_ore=48, dipendenti=[1, 2], assegnazioni=a,
+                                          giorni_ferie={2: 7})])
+    assert 2 not in s or (s[2].settimane == 0 and s[2].saldo_ore == 0)
+    assert s[1].saldo_ore == 0

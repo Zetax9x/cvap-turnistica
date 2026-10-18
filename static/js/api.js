@@ -68,5 +68,12 @@ export const api = {
   riapri: (data) => richiesta("POST", `/settimane/${enc(data)}/riapri`),
   rimuoviGenerati: (data) => richiesta("DELETE", `/settimane/${enc(data)}/generati`),
 
+  impostaIndisponibilita: (data, personaId, date) =>
+    richiesta("PUT", `/settimane/${enc(data)}/indisponibilita`, { persona_id: personaId, date }),
+
+  ferie: () => richiesta("GET", "/ferie"),
+  creaFerie: (dati) => richiesta("POST", "/ferie", dati),
+  eliminaFerie: (id) => richiesta("DELETE", `/ferie/${enc(id)}`),
+
   statistiche: () => richiesta("GET", "/statistiche"),
 };

@@ -113,3 +113,34 @@ def test_riposo_e_consecutivi_dei_volontari_sono_solo_avvisi():
     v = valida_settimana(GIORNI, STAZIONI, a, PERSONE)
     assert "riposo" in codici(v, "avviso")
     assert "riposo" not in codici(v)
+
+
+# --- ferie e indisponibilità ------------------------------------------------------
+
+def test_turno_in_un_giorno_di_ferie_e_un_errore():
+    a = [ass(GIORNI[2], "Acquasanta", "notte", "autista", 1)]
+    v = valida_settimana(GIORNI, STAZIONI, a, PERSONE, ferie={1: {GIORNI[2]}})
+    assert "ferie" in codici(v)
+
+
+def test_turno_in_un_giorno_indisponibile_e_un_errore():
+    a = [ass(GIORNI[3], "Acquasanta", "giorno", "autista", 1)]
+    v = valida_settimana(GIORNI, STAZIONI, a, PERSONE, indisponibili={1: {GIORNI[3]}})
+    assert "indisponibile" in codici(v)
+    assert "indisponibile" not in codici(valida_settimana(GIORNI, STAZIONI, a, PERSONE,
+                                                          indisponibili={1: {GIORNI[4]}}))
+
+
+def test_con_ferie_le_ore_si_confrontano_con_la_quota_proporzionale():
+    # Mario in ferie lun-gio (3 giorni disponibili): 24h; Luca tutta la settimana: 60h
+    # media a tempo pieno = 84 / (10/7) = 58.8 -> quota Mario 25.2h, Luca 58.8h: entro ±12
+    a = [ass(GIORNI[i], "Acquasanta", "giorno", "autista", 1) for i in (4, 6)]
+    a += [ass(GIORNI[i], "Acquasanta", "notte", "soccorritore", 2) for i in (0, 1, 2, 3, 4)]
+    ferie = {1: set(GIORNI[:4])}
+    assert "ore" not in codici(valida_settimana(GIORNI, STAZIONI, a, PERSONE, ferie=ferie))
+    assert "ore" in codici(valida_settimana(GIORNI, STAZIONI, a, PERSONE))
+
+
+def test_chi_e_in_ferie_tutta_la_settimana_non_entra_nella_media():
+    a = [ass(GIORNI[i], "Acquasanta", "giorno", "autista", 1) for i in (0, 2, 4, 6)]
+    assert "ore" not in codici(valida_settimana(GIORNI, STAZIONI, a, PERSONE, ferie={2: set(GIORNI)}))

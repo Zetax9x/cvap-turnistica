@@ -1,4 +1,4 @@
-// Vista "Settimana": griglia turni, generazione, conferma, violazioni, riepilogo.
+// Vista "Settimana": disponibilità, griglia turni, generazione, conferma, violazioni, riepilogo.
 
 import { api } from "./api.js";
 import {
@@ -18,6 +18,7 @@ const stato = {
   persone: [],
   occupato: false,
   cellaAperta: null,   // {data, postazione, fascia, ruolo}
+  dispAperta: {},      // lunedì ISO -> pannello disponibilità aperto/chiuso dall'utente
 };
 
 let dialogCella = null;
@@ -90,6 +91,7 @@ function render() {
       "Settimana confermata: le modifiche sono bloccate. Usa “Riapri” per modificarla."));
   }
   if (s.report) frammento.append(renderReport(s.report));
+  frammento.append(renderDisponibilita(s));
   frammento.append(renderLegenda());
 
   const griglie = el("div", { class: "griglie" });
@@ -354,10 +356,16 @@ function renderRiepilogo(s) {
   }
   const tbody = el("tbody", {}, righe.map((r) => {
     const dip = r.tipo === "dipendente";
-    const scarto = dip && media !== null && media !== undefined ? r.ore - media : null;
+    // con ferie la quota di ore è proporzionale ai giorni disponibili
+    const quota = dip && media !== null && media !== undefined ? media * (7 - (r.giorni_ferie || 0)) / 7 : null;
+    const scarto = quota !== null && r.giorni_ferie < 7 ? r.ore - quota : null;
+    const assenze = [r.giorni_ferie ? `ferie ${r.giorni_ferie}g` : null,
+      r.giorni_indisponibili ? `indisp. ${r.giorni_indisponibili}g` : null].filter(Boolean).join(", ");
     const fuori = scarto !== null && Math.abs(scarto) > SOGLIA_SCARTO;
     return el("tr", { class: fuori ? "fuori-media" : null },
-      el("th", { scope: "row" }, r.nome),
+      el("th", { scope: "row" },
+        dip ? el("a", { href: `#dipendente/${r.persona_id}/${s.inizio}`, title: "Vedi solo i suoi turni" }, r.nome) : r.nome,
+        assenze ? el("span", { class: "muted riepilogo-assenze" }, ` (${assenze})`) : null),
       el("td", {}, etichetta("tipo", r.tipo)),
       el("td", { class: "num" }, formatOre(r.ore)),
       el("td", { class: "num" }, formatOre(r.ore_giorno)),
@@ -365,7 +373,7 @@ function renderRiepilogo(s) {
       el("td", { class: "num" }, formatOre(r.turni_weekend)),
       el("td", { class: `num${fuori ? " scarto-alto" : ""}` },
         scarto === null ? "—" : formatSaldo(Math.round(scarto * 10) / 10),
-        fuori ? el("span", { class: "sr-only" }, " (oltre 12 ore dalla media)") : null),
+        fuori ? el("span", { class: "sr-only" }, " (oltre 12 ore dalla quota)") : null),
     );
   }));
   sezione.append(el("div", { class: "table-scroll" }, el("table", { class: "tabella" },
@@ -376,9 +384,83 @@ function renderRiepilogo(s) {
       el("th", { scope: "col", class: "num" }, "Giorno"),
       el("th", { scope: "col", class: "num" }, "Notte"),
       el("th", { scope: "col", class: "num" }, "Turni weekend"),
-      el("th", { scope: "col", class: "num" }, "Scarto media"))),
+      el("th", { scope: "col", class: "num", title: "Differenza dalla media, ridotta in proporzione ai giorni di ferie" }, "Scarto quota"))),
     tbody)));
   return sezione;
+}
+
+// ---------------------------------------------------------------- disponibilità
+
+/** Id delle persone che hanno `data` nella lista [{persona_id, data}]. */
+function giorniPersona(lista, data) {
+  return new Set((lista || []).filter((x) => x.data === data).map((x) => x.persona_id));
+}
+
+function renderDisponibilita(s) {
+  const confermata = s.stato === "confermata";
+  const dipendenti = stato.persone
+    .filter((p) => p.tipo === "dipendente" && p.attivo)
+    .sort((a, b) => a.nome.localeCompare(b.nome, "it"));
+  const ferie = new Set((s.ferie || []).map((x) => `${x.persona_id}|${x.data}`));
+  const indisp = new Set((s.indisponibilita || []).map((x) => `${x.persona_id}|${x.data}`));
+  const n = (s.indisponibilita || []).length;
+  const nFerie = new Set((s.ferie || []).map((x) => x.persona_id)).size;
+
+  const riepilogo = [n ? `${n} giorni indisponibili` : "nessuna indisponibilità",
+    nFerie ? `${nFerie} in ferie` : null].filter(Boolean).join(" · ");
+  const aperto = stato.dispAperta[s.inizio] ?? s.stato === "nuova";
+  const blocco = el("details", {
+    class: "pannello disponibilita", open: aperto,
+    ontoggle: (e) => { stato.dispAperta[s.inizio] = e.currentTarget.open; },
+  },
+    el("summary", {}, el("h2", { class: "disponibilita-titolo" }, "Disponibilità dipendenti"),
+      el("span", { class: "muted" }, ` ${riepilogo}`)),
+    el("p", { class: "muted" },
+      "Spunta i giorni in cui un dipendente non può lavorare: non riceverà turni che iniziano quel giorno. ",
+      "Le ferie si inseriscono in Personale e riducono anche la quota di ore."));
+  if (!dipendenti.length) {
+    blocco.append(el("p", { class: "muted" }, "Nessun dipendente attivo."));
+    return blocco;
+  }
+
+  const tbody = el("tbody", {}, dipendenti.map((p) => el("tr", {},
+    el("th", { scope: "row" }, p.nome),
+    s.giorni.map((g) => {
+      const i = indiceGiorno(g);
+      const classe = `disp-cella${i >= 5 ? " weekend" : ""}`;
+      if (ferie.has(`${p.id}|${g}`)) {
+        return el("td", { class: classe }, el("span", { class: "badge badge-ferie", title: "In ferie" }, "Ferie"));
+      }
+      return el("td", { class: classe }, el("input", {
+        type: "checkbox", checked: indisp.has(`${p.id}|${g}`), disabled: confermata || stato.occupato,
+        "aria-label": `${p.nome} indisponibile ${GIORNI_BREVI[i]} ${ddmm(g)}`,
+        onchange: (e) => onCambiaIndisponibilita(p, g, e.target),
+      }));
+    }))));
+
+  blocco.append(el("div", { class: "table-scroll" }, el("table", { class: "tabella tabella-disponibilita" },
+    el("thead", {}, el("tr", {},
+      el("th", { scope: "col" }, "Dipendente"),
+      s.giorni.map((g) => {
+        const i = indiceGiorno(g);
+        return el("th", { scope: "col", class: `disp-cella${i >= 5 ? " weekend" : ""}` }, `${GIORNI_BREVI[i]} ${ddmm(g)}`);
+      }))),
+    tbody)));
+  return blocco;
+}
+
+async function onCambiaIndisponibilita(p, data, checkbox) {
+  const s = stato.settimana;
+  const giorni = new Set((s.indisponibilita || []).filter((x) => x.persona_id === p.id).map((x) => x.data));
+  if (checkbox.checked) giorni.add(data); else giorni.delete(data);
+  checkbox.disabled = true;
+  try {
+    aggiorna(await api.impostaIndisponibilita(stato.data, p.id, [...giorni].sort()));
+  } catch (err) {
+    toastErrore(err);
+    checkbox.checked = !checkbox.checked;
+    checkbox.disabled = false;
+  }
 }
 
 // ---------------------------------------------------------------- dialog cella
@@ -392,7 +474,7 @@ function apriDialog(cella) {
   stato.cellaAperta = cella;
   renderDialog();
   if (!dialogCella.open) dialogCella.showModal();
-  const primo = dialogCella.querySelector("select, .btn-danger, .btn");
+  const primo = dialogCella.querySelector("#cella-volontario, .btn-danger, .btn");
   if (primo) primo.focus();
 }
 
@@ -446,33 +528,54 @@ function renderFormAggiunta(c, mancanti) {
   const s = stato.settimana;
   const oreSettimana = new Map((s.riepilogo || []).map((r) => [r.persona_id, r.ore]));
   const giaInCella = new Set(assegnazioniCella(s, c.data, c.postazione, c.fascia, c.ruolo).map((a) => a.persona_id));
-  const abilitate = stato.persone
-    .filter((p) => p.attivo && (c.ruolo === "soccorritore" || p.qualifica === "autista"))
+  const inFerie = giorniPersona(s.ferie, c.data);
+  const indisponibili = giorniPersona(s.indisponibilita, c.data);
+  const dipendenti = stato.persone
+    .filter((p) => p.tipo === "dipendente" && p.attivo && (c.ruolo === "soccorritore" || p.qualifica === "autista"))
+    .sort((a, b) => a.nome.localeCompare(b.nome, "it"));
+  const volontariNoti = stato.persone.filter((p) => p.tipo === "volontario")
     .sort((a, b) => a.nome.localeCompare(b.nome, "it"));
 
-  const select = el("select", { id: "cella-persona", name: "persona_id", required: true },
-    el("option", { value: "" }, "— Seleziona —"));
-  for (const [tipo, titolo] of [["volontario", "Volontari"], ["dipendente", "Dipendenti"]]) {
-    const gruppo = abilitate.filter((p) => p.tipo === tipo);
-    if (!gruppo.length) continue;
-    select.append(el("optgroup", { label: titolo }, gruppo.map((p) => {
+  // Volontario: basta scrivere il nome (se è nuovo viene registrato in automatico)
+  const nomeVol = el("input", {
+    id: "cella-volontario", type: "text", maxlength: "100", autocomplete: "off", list: "cella-volontari-noti",
+  });
+  const suggerimenti = el("datalist", { id: "cella-volontari-noti" },
+    volontariNoti.map((p) => el("option", { value: p.nome })));
+  const campoVol = el("div", { class: "campo campo-largo" },
+    el("label", { for: "cella-volontario" }, "Nome del volontario"), nomeVol, suggerimenti,
+    el("p", { class: "hint" }, "Se è la prima volta che fa un turno viene registrato in automatico."));
+
+  // Dipendente: elenco
+  const select = el("select", { id: "cella-persona", name: "persona_id" },
+    el("option", { value: "" }, "— Seleziona —"),
+    dipendenti.map((p) => {
       const ore = oreSettimana.get(p.id);
-      const extra = [p.qualifica === "autista" ? "autista" : null, ore ? `${formatOre(ore)} h` : null, giaInCella.has(p.id) ? "già qui" : null]
+      const extra = [inFerie.has(p.id) ? "IN FERIE" : null, indisponibili.has(p.id) ? "INDISPONIBILE" : null,
+        p.qualifica === "autista" ? "autista" : null, ore ? `${formatOre(ore)} h` : null, giaInCella.has(p.id) ? "già qui" : null]
         .filter(Boolean).join(", ");
       return el("option", { value: String(p.id) }, extra ? `${p.nome} (${extra})` : p.nome);
-    })));
-  }
+    }));
+  const campoDip = el("div", { class: "campo campo-largo", hidden: true },
+    el("label", { for: "cella-persona" }, "Dipendente"), select,
+    !dipendenti.length ? el("p", { class: "hint" }, c.ruolo === "autista"
+      ? "Nessun dipendente attivo con qualifica autista."
+      : "Nessun dipendente attivo. Aggiungilo nella sezione Personale.") : null,
+    c.ruolo === "autista" && dipendenti.length ? el("p", { class: "hint" }, "Sono elencati solo i dipendenti autisti.") : null);
 
-  const campi = [
-    el("div", { class: "campo" },
-      el("label", { for: "cella-persona" }, "Persona"),
-      select,
-      !abilitate.length ? el("p", { class: "hint" }, c.ruolo === "autista"
-        ? "Nessuna persona attiva con qualifica autista."
-        : "Nessuna persona attiva. Aggiungila nella sezione Personale.") : null,
-      c.ruolo === "autista" ? el("p", { class: "hint" }, "Sono elencate solo le persone con qualifica autista.") : null),
-  ];
+  let chi = "volontario";
+  const scegli = (valore) => {
+    chi = valore;
+    campoVol.hidden = valore !== "volontario";
+    campoDip.hidden = valore !== "dipendente";
+    (valore === "volontario" ? nomeVol : select).focus();
+  };
+  const interruttore = el("div", { class: "campo", role: "radiogroup", "aria-label": "Chi fa il turno" },
+    ["volontario", "dipendente"].map((v) => el("label", { class: "check" },
+      el("input", { type: "radio", name: "cella-chi", value: v, checked: v === chi, onchange: () => scegli(v) }),
+      ` ${etichetta("tipo", v)}`)));
 
+  const campi = [interruttore, campoVol, campoDip];
   let segSelect = null;
   if (c.fascia === "giorno") {
     const predefinito = mancanti.length === 1 ? mancanti[0] : "intero";
@@ -482,19 +585,27 @@ function renderFormAggiunta(c, mancanti) {
     campi.push(el("div", { class: "campo" }, el("label", { for: "cella-segmento" }, "Segmento"), segSelect));
   }
 
-  const invia = el("button", { type: "submit", class: "btn btn-primary", disabled: !abilitate.length }, "Aggiungi");
+  const invia = el("button", { type: "submit", class: "btn btn-primary" }, "Aggiungi");
   const form = el("form", {
     class: "dialog-section form-aggiunta",
     onsubmit: async (e) => {
       e.preventDefault();
-      if (!select.value) { select.focus(); toast("Seleziona una persona.", "avviso"); return; }
+      const turno = {
+        data: c.data, postazione: c.postazione, fascia: c.fascia,
+        segmento: segSelect ? segSelect.value : "intero", ruolo: c.ruolo,
+      };
+      if (chi === "volontario") {
+        const nome = nomeVol.value.trim();
+        if (!nome) { nomeVol.focus(); toast("Scrivi il nome del volontario.", "avviso"); return; }
+        turno.nome_volontario = nome;
+      } else {
+        if (!select.value) { select.focus(); toast("Seleziona un dipendente.", "avviso"); return; }
+        turno.persona_id = Number(select.value);
+      }
       invia.disabled = true;
       try {
-        const nuova = await api.aggiungiAssegnazione(stato.data, {
-          data: c.data, postazione: c.postazione, fascia: c.fascia,
-          segmento: segSelect ? segSelect.value : "intero", ruolo: c.ruolo,
-          persona_id: Number(select.value),
-        });
+        const nuova = await api.aggiungiAssegnazione(stato.data, turno);
+        if (turno.nome_volontario) stato.persone = await api.persone();  // può essere un volontario nuovo
         dialogCella.close();
         aggiorna(nuova);
         toast("Assegnazione aggiunta.", "ok");

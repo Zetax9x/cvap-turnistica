@@ -12,18 +12,19 @@ from typing import Annotated, Literal
 from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints, model_validator
 
 from . import db
 from .calendario import giorni_settimana, lunedi, postazioni_attive, tipo_settimana
 from .modello import Assegnazione, Persona
 from .storico import CATEGORIE_WEEKEND, SettimanaPassata, calcola_storico, categoria_weekend
-from .vincoli import valida_settimana
+from .vincoli import giorni_disponibili, valida_settimana
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 GIORNI_CONTESTO = 3
 DATA_MIN, DATA_MAX = date(2000, 1, 1), date(2100, 12, 31)
 DataValida = Annotated[date, Field(ge=DATA_MIN, le=DATA_MAX)]
+FERIE_GIORNI_MAX = 366
 
 _SOVRAPPOSTI = {
     "intero": {"intero", "mattina", "pomeriggio"},
@@ -56,7 +57,25 @@ class AssegnazioneIn(BaseModel):
     fascia: Literal["giorno", "notte"]
     segmento: Literal["intero", "mattina", "pomeriggio"]
     ruolo: Literal["autista", "soccorritore"]
+    persona_id: int | None = None
+    nome_volontario: Nome | None = None  # volontario non registrato: si cerca per nome o si crea
+
+    @model_validator(mode="after")
+    def _una_persona(self):
+        if (self.persona_id is None) == (self.nome_volontario is None):
+            raise ValueError("indicare persona_id oppure nome_volontario (uno solo)")
+        return self
+
+
+class FerieIn(BaseModel):
     persona_id: int
+    dal: DataValida
+    al: DataValida
+
+
+class IndisponibilitaIn(BaseModel):
+    persona_id: int
+    date: Annotated[list[DataValida], Field(max_length=7)]
 
 
 class GeneraIn(BaseModel):
@@ -100,17 +119,31 @@ def _info_settimana(conn, inizio: date) -> tuple[list[date], str, list[str]]:
     return giorni, tipo, postazioni_attive(tipo, db.postazioni(conn))
 
 
+def _media_tempo_pieno(ore: dict[int, int], disponibili: dict[int, int]) -> float:
+    """Media ore di un dipendente senza ferie: chi ha ferie pesa per i giorni disponibili."""
+    giorni = sum(disponibili[pid] for pid in ore)
+    return sum(ore.values()) / (giorni / 7) if giorni else 0.0
+
+
+def _giorni_json(per_persona: dict[int, set[date]]) -> list[dict]:
+    return [{"persona_id": pid, "data": d.isoformat()}
+            for pid, giorni in sorted(per_persona.items()) for d in sorted(giorni)]
+
+
 def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
     giorni, tipo, attive = _info_settimana(conn, inizio)
     righe = db.assegnazioni_periodo(conn, giorni[0], giorni[-1])
     assegnazioni = [a for _, a in righe]
     persone = {p["id"]: p for p in db.lista_persone(conn)}
     presenti = {a.persona_id for a in assegnazioni}
+    ferie = db.ferie_periodo(conn, giorni[0], giorni[-1])
+    indisponibili = db.indisponibili_periodo(conn, giorni[0], giorni[-1])
 
     # volontari + dipendenti attivi + chiunque (anche disattivato) abbia turni questa settimana
     rilevanti = {pid: db.a_persona(p) for pid, p in persone.items()
                  if p["tipo"] == "volontario" or p["attivo"] or pid in presenti}
-    violazioni = valida_settimana(giorni, attive, assegnazioni, rilevanti, contesto=_contesto(conn, giorni))
+    violazioni = valida_settimana(giorni, attive, assegnazioni, rilevanti, contesto=_contesto(conn, giorni),
+                                  ferie=ferie, indisponibili=indisponibili)
 
     dipendenti_attivi = [p for p in persone.values() if p["tipo"] == "dipendente" and p["attivo"]]
     ids_riepilogo = presenti | {p["id"] for p in dipendenti_attivi}
@@ -126,12 +159,17 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
             "ore_giorno": sum(a.ore for a in turni if a.fascia == "giorno"),
             "ore_notte": sum(a.ore for a in turni if a.fascia == "notte"),
             "turni_weekend": sum(1 for a in turni if a.data.weekday() >= 5),
+            "giorni_ferie": len(ferie.get(pid, ())),
+            "giorni_indisponibili": len(indisponibili.get(pid, ())),
         })
     riepilogo.sort(key=lambda r: (r["tipo"] != "dipendente", r["nome"].lower(), r["persona_id"]))
 
-    ids_attivi = {p["id"] for p in dipendenti_attivi}
-    ore_dip = sum(a.ore for a in assegnazioni if a.persona_id in ids_attivi)
-    media = ore_dip / len(ids_attivi) if ids_attivi else 0
+    disponibili = {p["id"]: giorni_disponibili(giorni, ferie.get(p["id"], set())) for p in dipendenti_attivi}
+    ore_dip = {pid: 0 for pid, g in disponibili.items() if g}
+    for a in assegnazioni:
+        if a.persona_id in ore_dip:
+            ore_dip[a.persona_id] += a.ore
+    media = _media_tempo_pieno(ore_dip, disponibili)
 
     riga = db.get_settimana(conn, giorni[0])
     return {
@@ -147,6 +185,8 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
             "persona_nome": persone[a.persona_id]["nome"] if a.persona_id in persone else f"#{a.persona_id}",
             "origine": a.origine, "ore": a.ore,
         } for aid, a in righe],
+        "ferie": _giorni_json(ferie),
+        "indisponibilita": _giorni_json(indisponibili),
         "violazioni": [{"livello": v.livello, "codice": v.codice, "messaggio": v.messaggio,
                         "persona_id": v.persona_id, "data": _iso(v.data)} for v in violazioni],
         "riepilogo": riepilogo,
@@ -158,11 +198,35 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
 def _settimana_passata(conn, riga: dict) -> SettimanaPassata:
     inizio = date.fromisoformat(riga["inizio"])
     assegnazioni = [a for _, a in db.assegnazioni_periodo(conn, inizio, inizio + timedelta(days=6))]
+    giorni = giorni_settimana(inizio)
     dipendenti = list(riga["dipendenti"])
-    presenti = set(dipendenti)
-    ore = sum(a.ore for a in assegnazioni if a.persona_id in presenti)
-    media = ore / len(dipendenti) if dipendenti else 0.0
-    return SettimanaPassata(media_ore=media, dipendenti=dipendenti, assegnazioni=assegnazioni)
+    ferie = db.ferie_periodo(conn, giorni[0], giorni[-1])
+    disponibili = {pid: giorni_disponibili(giorni, ferie.get(pid, set())) for pid in dipendenti}
+    ore = {pid: 0 for pid, g in disponibili.items() if g}
+    for a in assegnazioni:
+        if a.persona_id in ore:
+            ore[a.persona_id] += a.ore
+    return SettimanaPassata(media_ore=_media_tempo_pieno(ore, disponibili), dipendenti=dipendenti,
+                            assegnazioni=assegnazioni,
+                            giorni_ferie={pid: 7 - g for pid, g in disponibili.items() if g < 7})
+
+
+def _volontario_per_nome(conn, nome: str, ruolo: str) -> int:
+    """Id del volontario con quel nome (maiuscole e spazi non contano), creandolo se non esiste.
+
+    Chi fa l'autista diventa autista; un volontario disattivato viene riattivato.
+    """
+    nome = " ".join(nome.split())
+    omonimi = db.persone_per_nome(conn, nome)
+    if any(p["tipo"] == "dipendente" for p in omonimi):
+        raise _errore(f"{nome} è un dipendente: sceglilo dall'elenco dei dipendenti")
+    if not omonimi:
+        return db.crea_persona(conn, nome, "volontario", ruolo)["id"]
+    p = max(omonimi, key=lambda x: (x["attivo"], -x["id"]))  # preferisci l'attivo, poi il più vecchio
+    qualifica = "autista" if ruolo == "autista" else p["qualifica"]
+    if not p["attivo"] or qualifica != p["qualifica"]:
+        db.aggiorna_persona(conn, p["id"], p["nome"], p["tipo"], qualifica, True)
+    return p["id"]
 
 
 def _verifica_modificabile(conn, inizio: date) -> None:
@@ -253,19 +317,25 @@ def create_app(db_path: str) -> FastAPI:
                 raise _errore(f"La postazione {body.postazione} non è attiva nella settimana {tipo}")
             if body.fascia == "notte" and body.segmento != "intero":
                 raise _errore("Il turno di notte non si può spezzare in mattina/pomeriggio")
-            p = db.get_persona(conn, body.persona_id)
-            if p is None:
-                raise HTTPException(404, "Persona non trovata")
-            if not p["attivo"]:
-                raise _errore(f"{p['nome']} non è attivo: riattivalo in Personale per assegnarlo")
-            if not db.a_persona(p).puo_ricoprire(body.ruolo):
-                raise _errore(f"{p['nome']} non è abilitato al ruolo di autista")
-            nuova = Assegnazione(body.data, body.postazione, body.fascia, body.segmento, body.ruolo,
-                                 body.persona_id, "volontario" if p["tipo"] == "volontario" else "manuale")
             for _, a in db.assegnazioni_periodo(conn, body.data, body.data):
-                if a.chiave == nuova.chiave and a.segmento in _SOVRAPPOSTI[nuova.segmento]:
+                if ((a.postazione, a.fascia, a.ruolo) == (body.postazione, body.fascia, body.ruolo)
+                        and a.segmento in _SOVRAPPOSTI[body.segmento]):
                     raise _errore("Il posto è già occupato in quella fascia")
-            db.crea_assegnazione(conn, nuova)
+            if body.nome_volontario is not None:
+                persona_id = _volontario_per_nome(conn, body.nome_volontario, body.ruolo)
+                origine = "volontario"
+            else:
+                p = db.get_persona(conn, body.persona_id)
+                if p is None:
+                    raise HTTPException(404, "Persona non trovata")
+                if not p["attivo"]:
+                    raise _errore(f"{p['nome']} non è attivo: riattivalo in Personale per assegnarlo")
+                if not db.a_persona(p).puo_ricoprire(body.ruolo):
+                    raise _errore(f"{p['nome']} non è abilitato al ruolo di autista")
+                persona_id = p["id"]
+                origine = "volontario" if p["tipo"] == "volontario" else "manuale"
+            db.crea_assegnazione(conn, Assegnazione(body.data, body.postazione, body.fascia, body.segmento,
+                                                    body.ruolo, persona_id, origine))
             return payload_settimana(conn, inizio)
 
     @app.delete("/api/assegnazioni/{assegnazione_id}", status_code=204)
@@ -293,7 +363,8 @@ def create_app(db_path: str) -> FastAPI:
 
             t0 = time.monotonic()
             ris = solver.genera(giorni, attive, dipendenti, fissi=fissi, contesto=_contesto(conn, giorni),
-                                storico=storico, **kwargs)
+                                storico=storico, ferie=db.ferie_periodo(conn, giorni[0], giorni[-1]),
+                                indisponibili=db.indisponibili_periodo(conn, giorni[0], giorni[-1]), **kwargs)
             durata = round(time.monotonic() - t0, 2)
             if ris.stato in ("impossibile", "nessuna_soluzione"):
                 # niente da salvare: si tengono i turni generati in precedenza
@@ -332,6 +403,51 @@ def create_app(db_path: str) -> FastAPI:
             inizio = lunedi(_data(data))
             _verifica_modificabile(conn, inizio)
             db.elimina_generati(conn, inizio, inizio + timedelta(days=6))
+            return payload_settimana(conn, inizio)
+
+    # --- ferie ---
+    @app.get("/api/ferie")
+    def lista_ferie(conn: Conn):
+        return db.lista_ferie(conn)
+
+    @app.post("/api/ferie", status_code=201)
+    def crea_ferie(body: FerieIn, conn: Conn):
+        p = db.get_persona(conn, body.persona_id)
+        if p is None:
+            raise HTTPException(404, "Persona non trovata")
+        if p["tipo"] != "dipendente":
+            raise _errore("Le ferie si inseriscono solo per i dipendenti")
+        if body.dal > body.al:
+            raise _errore("La data di inizio delle ferie è dopo quella di fine")
+        if (body.al - body.dal).days >= FERIE_GIORNI_MAX:
+            raise _errore(f"Periodo di ferie troppo lungo (massimo {FERIE_GIORNI_MAX} giorni)")
+        with scrittura():
+            if db.ferie_sovrapposte(conn, body.persona_id, body.dal, body.al):
+                raise _errore(f"{p['nome']} ha già ferie in quel periodo")
+            return db.crea_ferie(conn, body.persona_id, body.dal, body.al)
+
+    @app.delete("/api/ferie/{ferie_id}", status_code=204)
+    def elimina_ferie(ferie_id: int, conn: Conn):
+        with scrittura():
+            if not db.elimina_ferie(conn, ferie_id):
+                raise HTTPException(404, "Ferie non trovate")
+        return Response(status_code=204)
+
+    # --- indisponibilità ---
+    @app.put("/api/settimane/{data}/indisponibilita")
+    def imposta_indisponibilita(data: str, body: IndisponibilitaIn, conn: Conn):
+        with scrittura():
+            inizio = lunedi(_data(data))
+            _verifica_modificabile(conn, inizio)
+            giorni = giorni_settimana(inizio)
+            p = db.get_persona(conn, body.persona_id)
+            if p is None:
+                raise HTTPException(404, "Persona non trovata")
+            if p["tipo"] != "dipendente":
+                raise _errore("Le indisponibilità si inseriscono solo per i dipendenti")
+            if any(d not in giorni for d in body.date):
+                raise _errore("Le date di indisponibilità devono essere in questa settimana")
+            db.imposta_indisponibilita(conn, body.persona_id, giorni[0], giorni[-1], body.date)
             return payload_settimana(conn, inizio)
 
     # --- statistiche ---

@@ -29,10 +29,21 @@ impostazioni(chiave TEXT PK, valore TEXT)        -- data_riferimento_a (default 
 settimane(inizio TEXT PK, stato TEXT ('bozza'|'confermata'), dipendenti TEXT /*JSON id*/, generata_il TEXT, report TEXT /*JSON*/)
 assegnazioni(id INTEGER PK, data TEXT, postazione TEXT, fascia TEXT, segmento TEXT, ruolo TEXT,
              persona_id INTEGER REFERENCES persone(id), origine TEXT)
+ferie(id INTEGER PK, persona_id INTEGER REFERENCES persone(id), dal TEXT, al TEXT)   -- estremi inclusi
+indisponibilita(persona_id INTEGER REFERENCES persone(id), data TEXT, PK(persona_id, data))
 ```
 
-Media ore di una settimana passata = ore dei dipendenti in `settimane.dipendenti` / numero di quei dipendenti
-(calcolata dalle assegnazioni reali, così le modifiche manuali contano).
+Con `TURSO_DATABASE_URL` (+ `TURSO_AUTH_TOKEN`) l'app usa Turso tramite `libsql` invece del file SQLite.
+
+**Ferie e indisponibilità** (solo dipendenti): in quei giorni non può iniziare nessun turno (vincolo rigido del
+generatore, `errore` nel validatore con codice `ferie` / `indisponibile`). Le indisponibilità non cambiano le ore;
+le ferie sì: la quota di ore della settimana è `media * giorni_disponibili / 7`, dove `media` è la media di un
+dipendente a tempo pieno (ore totali / (somma dei giorni disponibili / 7)); la banda ±12h vale sulla quota. Chi è in
+ferie tutta la settimana non entra nella media. Nello storico una settimana con ferie non modifica il saldo ore
+(niente recupero dopo) e una settimana tutta di ferie non conta.
+
+Media ore di una settimana passata = media a tempo pieno dei dipendenti in `settimane.dipendenti`, pesata sui giorni
+non di ferie (calcolata dalle assegnazioni reali, così le modifiche manuali contano).
 
 ## Endpoint REST (prefisso `/api`, JSON)
 
@@ -48,12 +59,17 @@ Media ore di una settimana passata = ore dei dipendenti in `settimane.dipendenti
     giorni: [iso x7], postazioni: [nomi attive],
     assegnazioni: [{id, data, postazione, fascia, segmento, ruolo, persona_id, persona_nome, origine, ore}],
     violazioni: [{livello, codice, messaggio, persona_id, data}],
-    riepilogo: [{persona_id, nome, tipo, qualifica, ore, ore_giorno, ore_notte, turni_weekend}],
-    media_ore,            // media ore dipendenti attivi nella settimana
+    ferie: [{persona_id, data}], indisponibilita: [{persona_id, data}],   // giorni di questa settimana
+    riepilogo: [{persona_id, nome, tipo, qualifica, ore, ore_giorno, ore_notte, turni_weekend,
+                 giorni_ferie, giorni_indisponibili}],
+    media_ore,            // media a tempo pieno dei dipendenti attivi nella settimana
     report                // ultimo report di generazione o null
   }
   ```
-- `POST /settimane/{data}/assegnazioni` `{data, postazione, fascia, segmento, ruolo, persona_id}` → 201 settimana aggiornata (stesso payload di GET).
+- `POST /settimane/{data}/assegnazioni` `{data, postazione, fascia, segmento, ruolo, persona_id | nome_volontario}` → 201 settimana aggiornata (stesso payload di GET).
+  Con `nome_volontario` (al posto di `persona_id`) il volontario si cerca per nome, senza distinguere maiuscole e spazi;
+  se non esiste viene creato (qualifica = ruolo del turno), se era disattivato viene riattivato, se fa l'autista diventa
+  autista. 400 se il nome è quello di un dipendente.
   `origine` automatica: `volontario` se la persona è volontaria, altrimenti `manuale` (fissata, la generazione non la tocca).
   400 se: settimana confermata, data fuori settimana, postazione non attiva quella settimana, fascia/segmento non validi,
   persona non abilitata al ruolo, posto già occupato (segmento sovrapposto). Le altre regole (riposo, ore…) appaiono come `violazioni`.
@@ -64,6 +80,11 @@ Media ore di una settimana passata = ore dei dipendenti in `settimane.dipendenti
   Salva le nuove assegnazioni, `stato='bozza'`, `dipendenti` = id dei dipendenti attivi. 400 se confermata.
 - `POST /settimane/{data}/conferma` · `POST /settimane/{data}/riapri` → settimana aggiornata
 - `DELETE /settimane/{data}/generati` → settimana aggiornata (rimuove solo le `generato`)
+- `PUT /settimane/{data}/indisponibilita` `{persona_id, date: [iso, max 7]}` → settimana aggiornata. Sostituisce le
+  indisponibilità della persona in quella settimana. 400 se confermata, date fuori settimana o persona non dipendente · 404
+- `GET /ferie` → `[{id, persona_id, dal, al}]` · `POST /ferie` `{persona_id, dal, al}` → 201
+  (400 se dal > al, periodo > 366 giorni, sovrapposto ad altre ferie della persona o persona non dipendente · 404) ·
+  `DELETE /ferie/{id}` → 204 · 404
 - `GET /statistiche` → `[{persona_id, nome, tipo, qualifica, settimane, ore_totali, saldo_ore, ore_giorno, ore_notte, weekend: {sab_giorno, sab_notte, dom_giorno, dom_notte}}]`
   su tutte le settimane in `settimane` (volontari: solo totali, saldo 0).
 

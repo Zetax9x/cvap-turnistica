@@ -322,3 +322,144 @@ def test_id_persona_non_riutilizzato(client):
     client.delete(f"/api/persone/{b['id']}")
     c = crea(client, "C")
     assert c["id"] > b["id"] > a["id"]
+
+
+# --- ferie ------------------------------------------------------------------------
+
+def test_crud_ferie(client):
+    p = crea(client, "Mario")
+    r = client.post("/api/ferie", json={"persona_id": p["id"], "dal": "2026-10-20", "al": "2026-10-22"})
+    assert r.status_code == 201, r.text
+    f = r.json()
+    assert f == {"id": f["id"], "persona_id": p["id"], "dal": "2026-10-20", "al": "2026-10-22"}
+    assert client.get("/api/ferie").json() == [f]
+    assert client.delete(f"/api/ferie/{f['id']}").status_code == 204
+    assert client.get("/api/ferie").json() == []
+    assert client.delete(f"/api/ferie/{f['id']}").status_code == 404
+
+
+def test_ferie_non_valide(client):
+    p = crea(client, "Mario")
+    v = crea(client, "Anna", "volontario", "soccorritore")
+    ok = {"persona_id": p["id"], "dal": "2026-10-20", "al": "2026-10-25"}
+    assert client.post("/api/ferie", json=ok).status_code == 201
+    casi = [
+        {**ok, "dal": "2026-10-23", "al": "2026-10-28"},             # si sovrappone
+        {**ok, "dal": "2026-11-05", "al": "2026-11-01"},             # dal dopo al
+        {**ok, "persona_id": v["id"], "dal": "2026-11-01", "al": "2026-11-02"},  # volontario
+    ]
+    for body in casi:
+        assert client.post("/api/ferie", json=body).status_code == 400, body
+    assert client.post("/api/ferie", json={**ok, "persona_id": 9999}).status_code == 404
+
+
+def test_settimana_mostra_ferie_e_quota(client):
+    p = crea(client, "Mario")
+    crea(client, "Luca")
+    client.post("/api/ferie", json={"persona_id": p["id"], "dal": "2026-10-14", "al": "2026-10-21"})
+    s = client.get(f"/api/settimane/{LUNEDI_A}").json()
+    assert sorted(x["data"] for x in s["ferie"] if x["persona_id"] == p["id"]) == \
+        ["2026-10-19", "2026-10-20", "2026-10-21"]
+    r = next(x for x in s["riepilogo"] if x["persona_id"] == p["id"])
+    assert r["giorni_ferie"] == 3
+
+
+# --- indisponibilità -----------------------------------------------------------------
+
+def test_indisponibilita_settimanale(client):
+    p = crea(client, "Mario")
+    url = f"/api/settimane/{LUNEDI_A}/indisponibilita"
+    r = client.put(url, json={"persona_id": p["id"], "date": ["2026-10-20", "2026-10-24"]})
+    assert r.status_code == 200, r.text
+    assert sorted(x["data"] for x in r.json()["indisponibilita"]) == ["2026-10-20", "2026-10-24"]
+    # sostituisce quelle della persona in quella settimana
+    r = client.put(url, json={"persona_id": p["id"], "date": ["2026-10-21"]})
+    assert [x["data"] for x in r.json()["indisponibilita"]] == ["2026-10-21"]
+    assert client.put(url, json={"persona_id": p["id"], "date": ["2026-10-27"]}).status_code == 400
+    assert client.put(url, json={"persona_id": 9999, "date": []}).status_code == 404
+
+
+def test_indisponibilita_bloccata_se_settimana_confermata(client):
+    p = crea(client, "Mario")
+    client.post(f"/api/settimane/{LUNEDI_A}/conferma")
+    r = client.put(f"/api/settimane/{LUNEDI_A}/indisponibilita", json={"persona_id": p["id"], "date": []})
+    assert r.status_code == 400
+
+
+def test_genera_rispetta_ferie_e_indisponibilita(client):
+    ids = staff_14(client)
+    client.post("/api/ferie", json={"persona_id": ids[0], "dal": "2026-10-19", "al": "2026-10-21"})
+    client.put(f"/api/settimane/{LUNEDI_A}/indisponibilita", json={"persona_id": ids[1], "date": ["2026-10-24"]})
+    r = client.post(f"/api/settimane/{LUNEDI_A}/genera", json={"tempo_max": 5})
+    assert r.status_code == 200, r.text
+    s = r.json()
+    assert s["report"]["scoperti"] == []
+    assert not [a for a in s["assegnazioni"]
+                if (a["persona_id"] == ids[0] and a["data"] <= "2026-10-21")
+                or (a["persona_id"] == ids[1] and a["data"] == "2026-10-24")]
+    assert not [v for v in s["violazioni"] if v["livello"] == "errore"]
+
+
+def test_ferie_non_fanno_recuperare_ore_la_settimana_dopo(client):
+    ids = staff_14(client)
+    client.post("/api/ferie", json={"persona_id": ids[0], "dal": "2026-10-19", "al": "2026-10-23"})
+    assert client.post(f"/api/settimane/{LUNEDI_A}/genera", json={"tempo_max": 5}).status_code == 200
+    stats = {x["persona_id"]: x for x in client.get("/api/statistiche").json()}
+    assert stats[ids[0]]["saldo_ore"] == 0
+
+
+# --- volontari scritti per nome ------------------------------------------------------
+
+def prenota_nome(client, nome, data=LUNEDI_A, postazione="Acquasanta", fascia="giorno",
+                 segmento="intero", ruolo="soccorritore"):
+    return client.post(f"/api/settimane/{LUNEDI_A}/assegnazioni", json={
+        "data": data, "postazione": postazione, "fascia": fascia,
+        "segmento": segmento, "ruolo": ruolo, "nome_volontario": nome,
+    })
+
+
+def test_volontario_si_prenota_scrivendo_solo_il_nome(client):
+    r = prenota_nome(client, "  Anna Verdi ")
+    assert r.status_code == 201, r.text
+    a = r.json()["assegnazioni"][0]
+    assert a["persona_nome"] == "Anna Verdi" and a["origine"] == "volontario"
+    vol = [p for p in client.get("/api/persone").json() if p["tipo"] == "volontario"]
+    assert [p["nome"] for p in vol] == ["Anna Verdi"]
+    # lo stesso nome (maiuscole/spazi diversi) riusa la stessa persona: lo storico resta unito
+    r = prenota_nome(client, "anna  verdi", data="2026-10-21")
+    assert r.status_code == 201, r.text
+    ids = {a["persona_id"] for a in r.json()["assegnazioni"]}
+    assert ids == {vol[0]["id"]}
+    assert len([p for p in client.get("/api/persone").json() if p["tipo"] == "volontario"]) == 1
+
+
+def test_volontario_per_nome_nel_posto_da_autista(client):
+    r = prenota_nome(client, "Paolo", ruolo="autista")
+    assert r.status_code == 201, r.text
+    p = next(p for p in client.get("/api/persone").json() if p["nome"] == "Paolo")
+    assert p["qualifica"] == "autista"
+    # un volontario già noto come soccorritore che fa l'autista diventa autista
+    assert prenota_nome(client, "Gino").status_code == 201
+    assert prenota_nome(client, "Gino", data="2026-10-22", ruolo="autista").status_code == 201
+    gino = next(p for p in client.get("/api/persone").json() if p["nome"] == "Gino")
+    assert gino["qualifica"] == "autista"
+
+
+def test_volontario_disattivato_viene_riattivato(client):
+    v = crea(client, "Lucia", "volontario", "soccorritore")
+    client.put(f"/api/persone/{v['id']}", json={**{k: v[k] for k in ("nome", "tipo", "qualifica")}, "attivo": False})
+    r = prenota_nome(client, "lucia")
+    assert r.status_code == 201, r.text
+    assert r.json()["assegnazioni"][0]["persona_id"] == v["id"]
+    assert next(p for p in client.get("/api/persone").json() if p["id"] == v["id"])["attivo"] is True
+
+
+def test_nome_volontario_non_valido(client):
+    crea(client, "Mario Rossi")  # dipendente
+    assert prenota_nome(client, "mario rossi").status_code == 400
+    assert prenota_nome(client, "   ").status_code in (400, 422)
+    body = {"data": LUNEDI_A, "postazione": "Acquasanta", "fascia": "giorno", "segmento": "intero",
+            "ruolo": "soccorritore"}
+    url = f"/api/settimane/{LUNEDI_A}/assegnazioni"
+    assert client.post(url, json=body).status_code in (400, 422)                       # nessuno dei due
+    assert client.post(url, json={**body, "persona_id": 1, "nome_volontario": "X"}).status_code in (400, 422)

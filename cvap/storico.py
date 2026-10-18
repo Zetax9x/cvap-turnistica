@@ -25,15 +25,17 @@ class StoricoPersona:
 
 @dataclass
 class SettimanaPassata:
-    media_ore: float
+    media_ore: float  # media di un dipendente a tempo pieno (senza ferie)
     dipendenti: list[int]
     assegnazioni: list[Assegnazione]
+    giorni_ferie: dict[int, int] = field(default_factory=dict)  # id -> giorni di ferie nella settimana
 
 
 def calcola_storico(settimane: list[SettimanaPassata]) -> dict[int, StoricoPersona]:
     storico: dict[int, StoricoPersona] = {}
     for s in settimane:
-        presenti = set(s.dipendenti)
+        # in ferie tutta la settimana: la settimana non conta per lui
+        presenti = {pid for pid in s.dipendenti if s.giorni_ferie.get(pid, 0) < 7}
         ore = {pid: 0 for pid in presenti}
         for pid in presenti:
             storico.setdefault(pid, StoricoPersona()).settimane += 1
@@ -50,5 +52,7 @@ def calcola_storico(settimane: list[SettimanaPassata]) -> dict[int, StoricoPerso
             if cat:
                 st.weekend[cat] += 1
         for pid, h in ore.items():
-            storico[pid].saldo_ore += h - s.media_ore
+            # con ferie nella settimana le ore mancanti non si recuperano dopo
+            if not s.giorni_ferie.get(pid):
+                storico[pid].saldo_ore += h - s.media_ore
     return storico

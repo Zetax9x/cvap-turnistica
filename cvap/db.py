@@ -6,7 +6,7 @@ dominio (`Persona`, `Postazione`, `Assegnazione` con date vere).
 import json
 import os
 import sqlite3
-from datetime import date
+from datetime import date, timedelta
 
 from .calendario import lunedi
 from .modello import Assegnazione, Persona, Postazione
@@ -49,6 +49,17 @@ CREATE TABLE IF NOT EXISTS assegnazioni (
     origine TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_assegnazioni_data ON assegnazioni(data);
+CREATE TABLE IF NOT EXISTS ferie (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    persona_id INTEGER NOT NULL REFERENCES persone(id),
+    dal TEXT NOT NULL,  -- inclusi entrambi
+    al TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS indisponibilita (
+    persona_id INTEGER NOT NULL REFERENCES persone(id),
+    data TEXT NOT NULL,
+    PRIMARY KEY (persona_id, data)
+);
 """
 
 _POSTAZIONI_SEED = (("Acquasanta", 0, 1), ("Venarotta", 0, 2), ("Ascoli", 1, 3))
@@ -198,8 +209,20 @@ def elimina_persona(conn: sqlite3.Connection, persona_id: int) -> bool:
         if usata:
             conn.execute("UPDATE persone SET attivo = 0 WHERE id = ?", (persona_id,))
         else:
+            conn.execute("DELETE FROM ferie WHERE persona_id = ?", (persona_id,))
+            conn.execute("DELETE FROM indisponibilita WHERE persona_id = ?", (persona_id,))
             conn.execute("DELETE FROM persone WHERE id = ?", (persona_id,))
     return True
+
+
+def _chiave_nome(nome: str) -> str:
+    return " ".join(nome.split()).casefold()
+
+
+def persone_per_nome(conn: sqlite3.Connection, nome: str) -> list[dict]:
+    """Persone con lo stesso nome, senza distinguere maiuscole e spazi (anche con lettere accentate)."""
+    chiave = _chiave_nome(nome)
+    return [p for p in lista_persone(conn) if _chiave_nome(p["nome"]) == chiave]
 
 
 def dipendenti_attivi(conn: sqlite3.Connection) -> list[Persona]:
@@ -333,3 +356,65 @@ def salva_generazione(conn: sqlite3.Connection, inizio: date, fine: date, nuove:
             "generata_il = excluded.generata_il, report = excluded.report",
             (inizio.isoformat(), json.dumps(dipendenti), generata_il, json.dumps(report)),
         )
+
+
+# --- ferie e indisponibilità -------------------------------------------------------
+
+def _ferie_dict(r) -> dict:
+    return {"id": r["id"], "persona_id": r["persona_id"], "dal": r["dal"], "al": r["al"]}
+
+
+def lista_ferie(conn: sqlite3.Connection) -> list[dict]:
+    rows = conn.execute("SELECT * FROM ferie ORDER BY dal, persona_id, id").fetchall()
+    return [_ferie_dict(r) for r in rows]
+
+
+def ferie_sovrapposte(conn: sqlite3.Connection, persona_id: int, dal: date, al: date) -> bool:
+    return conn.execute("SELECT 1 FROM ferie WHERE persona_id = ? AND dal <= ? AND al >= ? LIMIT 1",
+                        (persona_id, al.isoformat(), dal.isoformat())).fetchone() is not None
+
+
+def crea_ferie(conn: sqlite3.Connection, persona_id: int, dal: date, al: date) -> dict:
+    with conn:
+        cur = conn.execute("INSERT INTO ferie(persona_id, dal, al) VALUES (?, ?, ?)",
+                           (persona_id, dal.isoformat(), al.isoformat()))
+    return _ferie_dict(conn.execute("SELECT * FROM ferie WHERE id = ?", (cur.lastrowid,)).fetchone())
+
+
+def elimina_ferie(conn: sqlite3.Connection, ferie_id: int) -> bool:
+    with conn:
+        return conn.execute("DELETE FROM ferie WHERE id = ?", (ferie_id,)).rowcount > 0
+
+
+def ferie_periodo(conn: sqlite3.Connection, dal: date, al: date) -> dict[int, set[date]]:
+    """Giorni di ferie con data in [dal, al], per id persona."""
+    out: dict[int, set[date]] = {}
+    rows = conn.execute("SELECT persona_id, dal, al FROM ferie WHERE dal <= ? AND al >= ?",
+                        (al.isoformat(), dal.isoformat())).fetchall()
+    for r in rows:
+        d = max(dal, date.fromisoformat(r["dal"]))
+        fine = min(al, date.fromisoformat(r["al"]))
+        while d <= fine:
+            out.setdefault(r["persona_id"], set()).add(d)
+            d += timedelta(days=1)
+    return out
+
+
+def indisponibili_periodo(conn: sqlite3.Connection, dal: date, al: date) -> dict[int, set[date]]:
+    out: dict[int, set[date]] = {}
+    rows = conn.execute("SELECT persona_id, data FROM indisponibilita WHERE data >= ? AND data <= ?",
+                        (dal.isoformat(), al.isoformat())).fetchall()
+    for r in rows:
+        out.setdefault(r["persona_id"], set()).add(date.fromisoformat(r["data"]))
+    return out
+
+
+def imposta_indisponibilita(conn: sqlite3.Connection, persona_id: int, dal: date, al: date,
+                            giorni: list[date]) -> None:
+    """Sostituisce le indisponibilità della persona nel periodo [dal, al] con `giorni`."""
+    with conn:
+        conn.execute("DELETE FROM indisponibilita WHERE persona_id = ? AND data >= ? AND data <= ?",
+                     (persona_id, dal.isoformat(), al.isoformat()))
+        if giorni:
+            conn.executemany("INSERT INTO indisponibilita(persona_id, data) VALUES (?, ?)",
+                             [(persona_id, d.isoformat()) for d in sorted(set(giorni))])

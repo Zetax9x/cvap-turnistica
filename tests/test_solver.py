@@ -148,3 +148,36 @@ def test_weekend_fissati_a_mano_contano_per_l_equita(dipendenti_14):
     ]
     r = genera(GIORNI, STAZIONI_A, dipendenti_14, fissi=fissi, tempo_max=10)
     assert not [a for a in r.assegnazioni if a.persona_id == 1 and a.data in WEEKEND]
+
+
+# --- ferie e indisponibilità ------------------------------------------------------
+
+def test_indisponibile_non_riceve_turni_in_quel_giorno(dipendenti_14):
+    indisponibili = {1: {GIORNI[2]}, 2: {GIORNI[5], GIORNI[6]}}
+    r = genera(GIORNI, STAZIONI_A, dipendenti_14, indisponibili=indisponibili, tempo_max=10)
+    assert r.scoperti == []
+    assert not [a for a in r.assegnazioni if a.data in indisponibili.get(a.persona_id, set())]
+    # non sono ferie: la quota di ore resta piena
+    for pid in (1, 2):
+        assert abs(r.ore[pid] - r.media_ore) <= 12
+
+
+def test_ferie_parziali_niente_turni_e_ore_in_proporzione(dipendenti_14):
+    ferie = {1: set(GIORNI[:3])}  # 4 giorni disponibili su 7
+    r = genera(GIORNI, STAZIONI_A, dipendenti_14, ferie=ferie, tempo_max=10)
+    assert r.scoperti == []
+    assert not [a for a in r.assegnazioni if a.persona_id == 1 and a.data in ferie[1]]
+    assert r.media_ore == pytest.approx(672 / (13 + 4 / 7))
+    assert abs(r.ore[1] - r.media_ore * 4 / 7) <= 12
+    for p in dipendenti_14[1:]:
+        assert abs(r.ore[p.id] - r.media_ore) <= 12
+    mappa = {p.id: p for p in dipendenti_14}
+    v = valida_settimana(GIORNI, STAZIONI_A, r.assegnazioni, mappa, ferie=ferie)
+    assert not [x for x in v if x.livello == "errore"]
+
+
+def test_ferie_tutta_la_settimana_esclude_il_dipendente(dipendenti_14):
+    r = genera(GIORNI, STAZIONI_A, dipendenti_14, ferie={1: set(GIORNI)}, tempo_max=10)
+    assert r.scoperti == []
+    assert not [a for a in r.assegnazioni if a.persona_id == 1]
+    assert r.media_ore == pytest.approx(672 / 13)

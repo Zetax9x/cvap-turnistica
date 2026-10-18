@@ -2,11 +2,13 @@
 
 import * as settimana from "./js/settimana.js";
 import * as personale from "./js/personale.js";
+import * as dipendente from "./js/dipendente.js";
 import * as statistiche from "./js/statistiche.js";
 import * as impostazioni from "./js/impostazioni.js";
 
 const VISTE = {
   settimana: { modulo: settimana, titolo: "Settimana" },
+  dipendente: { modulo: dipendente, titolo: "Turni dipendente" },
   personale: { modulo: personale, titolo: "Personale" },
   statistiche: { modulo: statistiche, titolo: "Statistiche" },
   impostazioni: { modulo: impostazioni, titolo: "Impostazioni" },

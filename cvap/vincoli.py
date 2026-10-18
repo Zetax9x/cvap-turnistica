@@ -1,4 +1,4 @@
-"""Validazione di una settimana di turni: copertura, qualifiche, riposo, turni consecutivi, ore.
+"""Validazione di una settimana di turni: copertura, qualifiche, riposo, turni consecutivi, ore, assenze.
 
 Usato per controllare sia l'output del generatore sia le modifiche manuali.
 """
@@ -45,11 +45,20 @@ def valida_settimana(
     assegnazioni: list[Assegnazione],
     persone: dict[int, Persona],
     contesto: list[Assegnazione] = (),
+    ferie: dict[int, set[date]] | None = None,
+    indisponibili: dict[int, set[date]] | None = None,
 ) -> list[Violazione]:
+    """`ferie` e `indisponibili`: giorni (per id persona) in cui non può iniziare alcun turno.
+
+    Le ferie riducono anche la quota di ore della settimana, in proporzione ai giorni.
+    """
+    ferie, indisponibili = ferie or {}, indisponibili or {}
     violazioni: list[Violazione] = []
     violazioni += _copertura(giorni, postazioni, assegnazioni)
     violazioni += _doppioni(assegnazioni)
     violazioni += _qualifiche(assegnazioni, persone)
+    violazioni += _assenze(assegnazioni, persone, ferie, "ferie", "è in ferie")
+    violazioni += _assenze(assegnazioni, persone, indisponibili, "indisponibile", "è indisponibile")
 
     settimana = set(giorni)
     per_persona: dict[int, list[Assegnazione]] = defaultdict(list)
@@ -63,7 +72,7 @@ def valida_settimana(
         violazioni += _riposo(pid, nome, turni, settimana, livello)
         violazioni += _consecutivi(pid, nome, turni, settimana, livello)
 
-    violazioni += _ore(assegnazioni, persone)
+    violazioni += _ore(giorni, assegnazioni, persone, ferie)
     return violazioni
 
 
@@ -100,6 +109,22 @@ def _qualifiche(assegnazioni, persone):
             out.append(Violazione("errore", "segmento", f"La notte non si può spezzare ({_descrivi(a)})",
                                   a.persona_id, a.data))
     return out
+
+
+def _assenze(assegnazioni, persone, giorni_assenza, codice, testo):
+    out = []
+    for a in assegnazioni:
+        if a.data in giorni_assenza.get(a.persona_id, ()):
+            p = persone.get(a.persona_id)
+            nome = p.nome if p else f"#{a.persona_id}"
+            out.append(Violazione("errore", codice, f"{nome} {testo} il {_fmt(a.data)} ({_descrivi(a)})",
+                                  a.persona_id, a.data))
+    return out
+
+
+def giorni_disponibili(giorni: list[date], ferie: set[date]) -> int:
+    """Giorni della settimana non in ferie: la quota di ore è media * giorni / 7."""
+    return sum(1 for d in giorni if d not in ferie)
 
 
 def _riposo(pid, nome, turni, settimana, livello):
@@ -150,20 +175,24 @@ def _sequenze(date_ordinate: list[date]):
     return serie
 
 
-def _ore(assegnazioni, persone):
-    dipendenti = [p for p in persone.values() if p.dipendente]
+def _ore(giorni, assegnazioni, persone, ferie):
+    # chi è in ferie tutta la settimana non conta; gli altri hanno una quota proporzionale ai giorni
+    disponibili = {p.id: giorni_disponibili(giorni, ferie.get(p.id, set()))
+                   for p in persone.values() if p.dipendente}
+    dipendenti = [p for p in persone.values() if disponibili.get(p.id)]
     if not dipendenti:
         return []
     ore = {p.id: 0 for p in dipendenti}
     for a in assegnazioni:
         if a.persona_id in ore:
             ore[a.persona_id] += a.ore
-    media = sum(ore.values()) / len(dipendenti)
+    # media di un dipendente a tempo pieno (7 giorni disponibili)
+    media = sum(ore.values()) / (sum(disponibili[p.id] for p in dipendenti) / 7)
     out = []
     for p in dipendenti:
-        scarto = ore[p.id] - media
+        quota = media * disponibili[p.id] / 7
+        scarto = ore[p.id] - quota
         if abs(scarto) > SCARTO_ORE_MAX:
-            out.append(Violazione("errore", "ore",
-                                  f"{p.nome}: {ore[p.id]}h, scarto {scarto:+.1f}h dalla media ({media:.1f}h)",
-                                  p.id))
+            rif = f"dalla media ({media:.1f}h)" if disponibili[p.id] == 7 else f"dalla quota ({quota:.1f}h, ferie)"
+            out.append(Violazione("errore", "ore", f"{p.nome}: {ore[p.id]}h, scarto {scarto:+.1f}h {rif}", p.id))
     return out
