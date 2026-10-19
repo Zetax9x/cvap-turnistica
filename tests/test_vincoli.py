@@ -153,3 +153,33 @@ def test_le_ferie_valgono_6_ore_anche_se_la_media_e_alta():
 def test_chi_e_in_ferie_tutta_la_settimana_non_entra_nella_media():
     a = [ass(GIORNI[i], "Acquasanta", "giorno", "autista", 1) for i in (0, 2, 4, 6)]
     assert "ore" not in codici(valida_settimana(GIORNI, STAZIONI, a, PERSONE, ferie={2: set(GIORNI)}))
+
+
+# --- Ascoli: massimo 2 turni a settimana per dipendente (3 solo in extremis) ----------
+
+ASCOLI = ["Acquasanta", "Ascoli"]
+
+
+def test_due_turni_ad_ascoli_vanno_bene():
+    a = [ass(GIORNI[i], "Ascoli", "giorno", "autista", 1) for i in (0, 3)]
+    v = valida_settimana(GIORNI, ASCOLI, a, PERSONE)
+    assert "ascoli" not in codici(v) | codici(v, "avviso")
+
+
+def test_terzo_turno_ad_ascoli_e_un_avviso():
+    # anche mezzo turno conta come turno
+    a = [ass(GIORNI[i], "Ascoli", "giorno", "autista", 1) for i in (0, 3)]
+    a.append(ass(GIORNI[6], "Ascoli", "giorno", "autista", 1, segmento="mattina"))
+    v = valida_settimana(GIORNI, ASCOLI, a, PERSONE)
+    assert "ascoli" in codici(v, "avviso") and "ascoli" not in codici(v)
+
+
+def test_quattro_turni_ad_ascoli_sono_un_errore():
+    a = [ass(GIORNI[i], "Ascoli", "giorno", "autista", 1) for i in (0, 2, 4, 6)]
+    assert "ascoli" in codici(valida_settimana(GIORNI, ASCOLI, a, PERSONE))
+
+
+def test_il_limite_di_ascoli_non_vale_per_i_volontari():
+    a = [ass(GIORNI[i], "Ascoli", "giorno", "soccorritore", 3, origine="volontario") for i in (0, 2, 4, 6)]
+    v = valida_settimana(GIORNI, ASCOLI, a, PERSONE)
+    assert "ascoli" not in codici(v) | codici(v, "avviso")

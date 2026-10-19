@@ -118,6 +118,8 @@ def test_settimana_b_con_tre_postazioni(dipendenti_14):
     r = genera(GIORNI, STAZIONI_B, persone, tempo_max=15)
     assert r.scoperti == []
     assert errori(GIORNI, STAZIONI_B, r.assegnazioni, persone) == []
+    # 28 posti ad Ascoli e 20 dipendenti: nessuno ne fa più di 2
+    assert max(turni_ascoli(r).values()) <= 2
 
 
 def test_tutto_gia_coperto_riporta_comunque_la_media_ore():
@@ -181,3 +183,36 @@ def test_ferie_tutta_la_settimana_esclude_il_dipendente(dipendenti_14):
     assert r.scoperti == []
     assert not [a for a in r.assegnazioni if a.persona_id == 1]
     assert r.media_ore == pytest.approx(672 / 13)
+
+
+# --- Ascoli: massimo 2 turni per dipendente, 3 solo in extremis, mai di più ------------
+
+def turni_ascoli(r):
+    conta = {}
+    for a in r.assegnazioni:
+        if a.postazione == "Ascoli":
+            conta[a.persona_id] = conta.get(a.persona_id, 0) + 1
+    return conta
+
+
+def test_ascoli_al_massimo_due_turni_se_basta_il_personale():
+    # 28 posti ad Ascoli, 14 dipendenti: due a testa bastano
+    r = genera(GIORNI, ["Ascoli"], staff(7, 7), tempo_max=10)
+    assert r.scoperti == []
+    assert max(turni_ascoli(r).values()) <= 2
+
+
+def test_ascoli_tre_turni_solo_se_serve():
+    # 28 posti, 10 dipendenti: qualcuno deve farne 3, nessuno 4
+    r = genera(GIORNI, ["Ascoli"], staff(5, 5), tempo_max=10)
+    assert r.scoperti == []
+    conta = turni_ascoli(r)
+    assert max(conta.values()) == 3
+    assert sum(1 for n in conta.values() if n == 3) == 8  # il minimo: 28 = 8*3 + 2*2
+
+
+def test_ascoli_mai_piu_di_tre_turni_anche_se_resta_scoperto():
+    # 14 posti da autista e solo 4 autisti: meglio lasciare scoperto che fare il quarto turno
+    r = genera(GIORNI, ["Ascoli"], staff(4, 6), tempo_max=10)
+    assert r.scoperti
+    assert max(turni_ascoli(r).values()) <= 3
