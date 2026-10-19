@@ -209,6 +209,7 @@ def test_ascoli_tre_turni_solo_se_serve():
     conta = turni_ascoli(r)
     assert max(conta.values()) == 3
     assert sum(1 for n in conta.values() if n == 3) == 8  # il minimo: 28 = 8*3 + 2*2
+    assert "3 turni ad Ascoli" in r.messaggio
 
 
 def test_ascoli_mai_piu_di_tre_turni_anche_se_resta_scoperto():

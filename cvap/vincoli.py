@@ -16,6 +16,9 @@ MAX_CONSECUTIVI = 3       # oltre è vietato
 SOGLIA_CONSECUTIVI = 3    # da qui in su si segnala come eccezione
 SCARTO_ORE_MAX = 12
 ORE_FERIE_GIORNO = 6      # ore che conta ogni giorno di ferie nel confronto con la media
+ASCOLI = "Ascoli"
+MAX_TURNI_ASCOLI = 2      # turni a settimana per dipendente ad Ascoli
+MAX_TURNI_ASCOLI_EXTREMIS = 3  # solo se non c'è altra soluzione (avviso); oltre è vietato
 
 @dataclass(frozen=True)
 class Violazione:
@@ -79,6 +82,7 @@ def valida_settimana(
         violazioni += _consecutivi(pid, nome, turni, settimana, livello)
 
     violazioni += _ore(giorni, assegnazioni, persone, ferie)
+    violazioni += _ascoli(assegnazioni, persone)
     return violazioni
 
 
@@ -227,6 +231,21 @@ def _sequenze(date_ordinate: list[date]):
         else:
             serie.append((d, 1))
     return serie
+
+
+def _ascoli(assegnazioni, persone):
+    # ogni posto conta come un turno, anche mezzo turno; vale solo per i dipendenti
+    conta = Counter(a.persona_id for a in assegnazioni if a.postazione == ASCOLI)
+    out = []
+    for pid, n in conta.items():
+        p = persone.get(pid)
+        if not p or not p.dipendente or n <= MAX_TURNI_ASCOLI:
+            continue
+        livello = "errore" if n > MAX_TURNI_ASCOLI_EXTREMIS else "avviso"
+        out.append(Violazione(livello, "ascoli",
+                              f"{p.nome}: {n} turni ad Ascoli (massimo {MAX_TURNI_ASCOLI}, "
+                              f"{MAX_TURNI_ASCOLI_EXTREMIS} solo in extremis)", pid))
+    return out
 
 
 def _ore(giorni, assegnazioni, persone, ferie):

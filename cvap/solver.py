@@ -8,6 +8,7 @@ Vincoli rigidi (mai violati):
   - nessun turno nei giorni di ferie o di indisponibilità
   - nessuna sovrapposizione e almeno 11h di riposo tra due turni (anche rispetto alle settimane vicine)
   - al massimo 3 giorni (o 3 notti) di fila
+  - al massimo 3 turni ad Ascoli a settimana per dipendente
 Vincoli rigidi "con evidenza": se impossibili il modello resta risolvibile ma paga una penalità enorme
 e il risultato li segnala:
   - copertura di tutti i posti, con priorità: postazioni normali, poi Standby, poi Programmati
@@ -15,13 +16,14 @@ e il risultato li segnala:
   - ore di ogni dipendente entro ±12 dalla media della settimana; ogni giorno di ferie
     conta 6 ore
 Obiettivi (minimizzati insieme, in ordine di peso):
+  - il 3° turno ad Ascoli solo in extremis (pesa come 10 ore fuori banda, meno di un posto scoperto)
   - evitare 3 giorni/notti di fila
   - ore vicine alla media, recuperando il saldo delle settimane precedenti
   - equilibrio giorni/notti, nella settimana e nello storico
   - sabati e domeniche distribuiti in modo equo rispetto allo storico
 """
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -32,13 +34,15 @@ from ortools.sat.python import cp_model
 from .modello import PROGRAMMATI, STANDBY, Assegnazione, Fabbisogno, Persona, Unita, in_conflitto
 from .slot import unita_da_coprire
 from .storico import CATEGORIE_WEEKEND, StoricoPersona, categoria_weekend
-from .vincoli import MAX_CONSECUTIVI, SCARTO_ORE_MAX, giorni_disponibili, media_ore, ore_ferie, valida_settimana
+from .vincoli import (ASCOLI, MAX_CONSECUTIVI, MAX_TURNI_ASCOLI, MAX_TURNI_ASCOLI_EXTREMIS, SCARTO_ORE_MAX,
+                      giorni_disponibili, media_ore, ore_ferie, valida_settimana)
 
 __all__ = ["Risultato", "StoricoPersona", "genera"]
 
 # Pesi dell'obiettivo (per ora di scarto, per turno, ecc.)
 P_SCOPERTO = 10_000_000
 P_FUORI_BANDA = 100_000
+P_TERZO_ASCOLI = 1_000_000
 P_TRE_DI_FILA = 5_000
 P_DOPPIO_WEEKEND = 300
 P_ORE = 40
@@ -138,6 +142,12 @@ def genera(
         note.append(f"{len(scoperti)} posti non coperti: servono altri dipendenti o volontari.")
     if fuori_banda:
         note.append("Ore fuori dal limite di ±12h dalla media: " + ", ".join(fuori_banda) + ".")
+    nomi = {p.id: p.nome for p in dipendenti}
+    in_extremis = [nomi[pid] for pid, n in Counter(a.persona_id for a in fissi + assegnazioni
+                                                   if a.postazione == ASCOLI and a.persona_id in nomi).items()
+                   if n == MAX_TURNI_ASCOLI_EXTREMIS]  # oltre lo segnalano già i problemi dei turni fissati
+    if in_extremis:
+        note.append(f"{MAX_TURNI_ASCOLI_EXTREMIS} turni ad Ascoli (in extremis): " + ", ".join(in_extremis) + ".")
     if not note:
         note.append("Tutti i posti coperti nel rispetto delle regole.")
     if status == cp_model.FEASIBLE:
@@ -157,7 +167,7 @@ def genera(
 def _problemi_turni_fissi(giorni, postazioni, fissi, contesto, dipendenti, ferie, indisponibili) -> list[str]:
     """Violazioni già presenti nei turni che il generatore non può cambiare (fissati e settimane vicine)."""
     persone = {p.id: p for p in dipendenti}
-    regole = {"riposo", "sovrapposizione", "consecutivi", "ferie", "indisponibile"}
+    regole = {"riposo", "sovrapposizione", "consecutivi", "ferie", "indisponibile", "ascoli"}
     return [v.messaggio + "." for v in valida_settimana(giorni, postazioni, fissi, persone, contesto=contesto,
                                                          ferie=ferie, indisponibili=indisponibili)
             if v.livello == "errore" and v.codice in regole]
@@ -208,6 +218,7 @@ class _Modello:
         self._copertura()
         self._riposo()
         self._consecutivi()
+        self._ascoli()
         self._ore()
         self._giorni_notti()
         self._weekend()
@@ -234,6 +245,9 @@ class _Modello:
 
         settimana = set(self.giorni)
 
+        def ascoli(pid):
+            return sum(1 for t in presi[pid] if t.postazione == ASCOLI and t.data in settimana)
+
         def ore_fascia(pid, fascia):
             return sum(t.ore for t in presi[pid] if t.fascia == fascia and t.data in settimana)
 
@@ -244,11 +258,13 @@ class _Modello:
         for ui in ordine:
             u = self.unita[ui]
             validi = [pid for pid in candidati[ui]
-                      if not any(in_conflitto(u, t) for t in presi[pid]) and di_fila(pid, u) <= 2]
+                      if not any(in_conflitto(u, t) for t in presi[pid]) and di_fila(pid, u) <= 2
+                      and (u.postazione != ASCOLI or ascoli(pid) < MAX_TURNI_ASCOLI_EXTREMIS)]
             if not validi:
                 continue
             altra = "notte" if u.fascia == "giorno" else "giorno"
             pid = min(validi, key=lambda pid: (
+                u.postazione == ASCOLI and ascoli(pid) >= MAX_TURNI_ASCOLI,
                 ore[pid],
                 ore_fascia(pid, u.fascia) - ore_fascia(pid, altra),
                 # sui posti da soccorritore preferisci chi non è autista
@@ -309,6 +325,18 @@ class _Modello:
                             tre = self.model.NewBoolVar("")
                             self.model.Add(espr - 2 <= tre)
                             self.obiettivo.append((P_TRE_DI_FILA * self.scala, tre))
+
+    def _ascoli(self):
+        for p in self.dipendenti:
+            turni = [v for u, v in self._vars_di(p.id, lambda u: u.postazione == ASCOLI)]
+            if not turni:
+                continue
+            fissi = sum(1 for a in self.fissi_settimana if a.persona_id == p.id and a.postazione == ASCOLI)
+            # i turni fissati a mano oltre il limite restano (li segnala il validatore)
+            self.model.Add(sum(turni) + fissi <= max(MAX_TURNI_ASCOLI_EXTREMIS, fissi))
+            extra = self.model.NewIntVar(0, len(turni) + fissi, "")
+            self.model.Add(sum(turni) + fissi - MAX_TURNI_ASCOLI <= extra)
+            self.obiettivo.append((P_TERZO_ASCOLI * self.scala, extra))
 
     def _ore(self):
         n = self.scala
