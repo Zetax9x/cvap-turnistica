@@ -19,7 +19,7 @@ from .calendario import giorni_settimana, lunedi, postazioni_attive, tipo_settim
 from .modello import (INTERO_DI, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, SEGMENTI, STANDBY, Assegnazione,
                       Fabbisogno, Persona, si_sovrappongono, turni_ammessi)
 from .storico import CATEGORIE_WEEKEND, SettimanaPassata, calcola_storico, categoria_weekend
-from .vincoli import giorni_disponibili, valida_settimana
+from .vincoli import giorni_disponibili, media_ore, ore_ferie, valida_settimana
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 GIORNI_CONTESTO = 3
@@ -140,12 +140,6 @@ def _info_settimana(conn, inizio: date) -> tuple[list[date], str, list[str]]:
     return giorni, tipo, postazioni_attive(tipo, db.postazioni(conn))
 
 
-def _media_tempo_pieno(ore: dict[int, int], disponibili: dict[int, int]) -> float:
-    """Media ore di un dipendente senza ferie: chi ha ferie pesa per i giorni disponibili."""
-    giorni = sum(disponibili[pid] for pid in ore)
-    return sum(ore.values()) / (giorni / 7) if giorni else 0.0
-
-
 def _giorni_json(per_persona: dict[int, set[date]]) -> list[dict]:
     return [{"persona_id": pid, "data": d.isoformat()}
             for pid, giorni in sorted(per_persona.items()) for d in sorted(giorni)]
@@ -195,16 +189,16 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
             "ore_notte": sum(a.ore for a in turni if a.fascia == "notte"),
             "turni_weekend": sum(1 for a in turni if a.data.weekday() >= 5),
             "giorni_ferie": len(ferie.get(pid, ())),
+            "ore_ferie": ore_ferie(giorni, ferie.get(pid, set())) if p["tipo"] == "dipendente" else 0,
             "giorni_indisponibili": len(indisponibili.get(pid, ())),
         })
     riepilogo.sort(key=lambda r: (r["tipo"] != "dipendente", r["nome"].lower(), r["persona_id"]))
 
-    disponibili = {p["id"]: giorni_disponibili(giorni, ferie.get(p["id"], set())) for p in dipendenti_attivi}
-    ore_dip = {pid: 0 for pid, g in disponibili.items() if g}
+    ore_dip = {p["id"]: 0 for p in dipendenti_attivi if giorni_disponibili(giorni, ferie.get(p["id"], set()))}
     for a in assegnazioni:
         if a.persona_id in ore_dip:
             ore_dip[a.persona_id] += a.ore
-    media = _media_tempo_pieno(ore_dip, disponibili)
+    media = media_ore(ore_dip, {pid: ore_ferie(giorni, ferie.get(pid, set())) for pid in ore_dip})
 
     riga = db.get_settimana(conn, giorni[0])
     return {
@@ -244,7 +238,8 @@ def _settimana_passata(conn, riga: dict) -> SettimanaPassata:
     for a in assegnazioni:
         if a.persona_id in ore:
             ore[a.persona_id] += a.ore
-    return SettimanaPassata(media_ore=_media_tempo_pieno(ore, disponibili), dipendenti=dipendenti,
+    crediti = {pid: ore_ferie(giorni, ferie.get(pid, set())) for pid in ore}
+    return SettimanaPassata(media_ore=media_ore(ore, crediti), dipendenti=dipendenti,
                             assegnazioni=assegnazioni,
                             giorni_ferie={pid: 7 - g for pid, g in disponibili.items() if g < 7})
 

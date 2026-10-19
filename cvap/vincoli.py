@@ -15,6 +15,7 @@ from .slot import unita_da_coprire
 MAX_CONSECUTIVI = 3       # oltre è vietato
 SOGLIA_CONSECUTIVI = 3    # da qui in su si segnala come eccezione
 SCARTO_ORE_MAX = 12
+ORE_FERIE_GIORNO = 6      # ore che conta ogni giorno di ferie nel confronto con la media
 
 @dataclass(frozen=True)
 class Violazione:
@@ -53,7 +54,7 @@ def valida_settimana(
 ) -> list[Violazione]:
     """`ferie` e `indisponibili`: giorni (per id persona) in cui non può iniziare alcun turno.
 
-    Le ferie riducono anche la quota di ore della settimana, in proporzione ai giorni.
+    Ogni giorno di ferie conta ORE_FERIE_GIORNO ore nel confronto con la media.
     `fabbisogno`: posti richiesti nelle postazioni a richiesta (Standby, Programmati).
     """
     ferie, indisponibili = ferie or {}, indisponibili or {}
@@ -166,8 +167,18 @@ def _assenze(assegnazioni, persone, giorni_assenza, codice, testo):
 
 
 def giorni_disponibili(giorni: list[date], ferie: set[date]) -> int:
-    """Giorni della settimana non in ferie: la quota di ore è media * giorni / 7."""
+    """Giorni della settimana non in ferie (0 = in ferie tutta la settimana)."""
     return sum(1 for d in giorni if d not in ferie)
+
+
+def ore_ferie(giorni: list[date], ferie: set[date]) -> int:
+    """Ore accreditate per le ferie nella settimana: ORE_FERIE_GIORNO per giorno."""
+    return ORE_FERIE_GIORNO * (len(giorni) - giorni_disponibili(giorni, ferie))
+
+
+def media_ore(ore: dict[int, int], crediti: dict[int, int]) -> float:
+    """Media ore dei dipendenti, contando le ore di ferie (`crediti`) come lavorate."""
+    return sum(ore[pid] + crediti.get(pid, 0) for pid in ore) / len(ore) if ore else 0.0
 
 
 def _riposo(pid, nome, turni, settimana, livello):
@@ -219,23 +230,23 @@ def _sequenze(date_ordinate: list[date]):
 
 
 def _ore(giorni, assegnazioni, persone, ferie):
-    # chi è in ferie tutta la settimana non conta; gli altri hanno una quota proporzionale ai giorni
-    disponibili = {p.id: giorni_disponibili(giorni, ferie.get(p.id, set()))
-                   for p in persone.values() if p.dipendente}
-    dipendenti = [p for p in persone.values() if disponibili.get(p.id)]
+    # chi è in ferie tutta la settimana non conta; per gli altri ogni giorno di ferie vale ORE_FERIE_GIORNO
+    dipendenti = [p for p in persone.values()
+                  if p.dipendente and giorni_disponibili(giorni, ferie.get(p.id, set()))]
     if not dipendenti:
         return []
+    crediti = {p.id: ore_ferie(giorni, ferie.get(p.id, set())) for p in dipendenti}
     ore = {p.id: 0 for p in dipendenti}
     for a in assegnazioni:
         if a.persona_id in ore:
             ore[a.persona_id] += a.ore
-    # media di un dipendente a tempo pieno (7 giorni disponibili)
-    media = sum(ore.values()) / (sum(disponibili[p.id] for p in dipendenti) / 7)
+    media = media_ore(ore, crediti)
     out = []
     for p in dipendenti:
-        quota = media * disponibili[p.id] / 7
-        scarto = ore[p.id] - quota
+        scarto = ore[p.id] + crediti[p.id] - media
         if abs(scarto) > SCARTO_ORE_MAX:
-            rif = f"dalla media ({media:.1f}h)" if disponibili[p.id] == 7 else f"dalla quota ({quota:.1f}h, ferie)"
-            out.append(Violazione("errore", "ore", f"{p.nome}: {ore[p.id]}h, scarto {scarto:+.1f}h {rif}", p.id))
+            extra = f" + {crediti[p.id]}h ferie" if crediti[p.id] else ""
+            out.append(Violazione("errore", "ore",
+                                  f"{p.nome}: {ore[p.id]}h{extra}, scarto {scarto:+.1f}h dalla media ({media:.1f}h)",
+                                  p.id))
     return out

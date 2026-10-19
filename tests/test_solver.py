@@ -162,13 +162,13 @@ def test_indisponibile_non_riceve_turni_in_quel_giorno(dipendenti_14):
         assert abs(r.ore[pid] - r.media_ore) <= 12
 
 
-def test_ferie_parziali_niente_turni_e_ore_in_proporzione(dipendenti_14):
-    ferie = {1: set(GIORNI[:3])}  # 4 giorni disponibili su 7
+def test_ferie_parziali_niente_turni_e_6_ore_per_giorno(dipendenti_14):
+    ferie = {1: set(GIORNI[:3])}  # 3 giorni di ferie = 18h
     r = genera(GIORNI, STAZIONI_A, dipendenti_14, ferie=ferie, tempo_max=10)
     assert r.scoperti == []
     assert not [a for a in r.assegnazioni if a.persona_id == 1 and a.data in ferie[1]]
-    assert r.media_ore == pytest.approx(672 / (13 + 4 / 7))
-    assert abs(r.ore[1] - r.media_ore * 4 / 7) <= 12
+    assert r.media_ore == pytest.approx((672 + 18) / 14)
+    assert abs(r.ore[1] + 18 - r.media_ore) <= 12
     for p in dipendenti_14[1:]:
         assert abs(r.ore[p.id] - r.media_ore) <= 12
     mappa = {p.id: p for p in dipendenti_14}

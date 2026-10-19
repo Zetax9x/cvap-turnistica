@@ -510,10 +510,10 @@ function renderRiepilogo(s) {
   }
   const tbody = el("tbody", {}, righe.map((r) => {
     const dip = r.tipo === "dipendente";
-    // con ferie la quota di ore è proporzionale ai giorni disponibili
-    const quota = dip && media !== null && media !== undefined ? media * (7 - (r.giorni_ferie || 0)) / 7 : null;
-    const scarto = quota !== null && r.giorni_ferie < 7 ? r.ore - quota : null;
-    const assenze = [r.giorni_ferie ? `ferie ${r.giorni_ferie}g` : null,
+    // ogni giorno di ferie conta come ore lavorate (ore_ferie) nel confronto con la media
+    const scarto = dip && media !== null && media !== undefined && r.giorni_ferie < 7
+      ? r.ore + (r.ore_ferie || 0) - media : null;
+    const assenze = [r.giorni_ferie ? `ferie ${r.giorni_ferie}g = ${formatOre(r.ore_ferie || 0)}h` : null,
       r.giorni_indisponibili ? `indisp. ${r.giorni_indisponibili}g` : null].filter(Boolean).join(", ");
     const fuori = scarto !== null && Math.abs(scarto) > SOGLIA_SCARTO;
     return el("tr", { class: fuori ? "fuori-media" : null },
@@ -527,7 +527,7 @@ function renderRiepilogo(s) {
       el("td", { class: "num" }, formatOre(r.turni_weekend)),
       el("td", { class: `num${fuori ? " scarto-alto" : ""}` },
         scarto === null ? "—" : formatSaldo(Math.round(scarto * 10) / 10),
-        fuori ? el("span", { class: "sr-only" }, " (oltre 12 ore dalla quota)") : null),
+        fuori ? el("span", { class: "sr-only" }, " (oltre 12 ore dalla media)") : null),
     );
   }));
   sezione.append(el("div", { class: "table-scroll" }, el("table", { class: "tabella" },
@@ -538,7 +538,7 @@ function renderRiepilogo(s) {
       el("th", { scope: "col", class: "num" }, "Giorno"),
       el("th", { scope: "col", class: "num" }, "Notte"),
       el("th", { scope: "col", class: "num" }, "Turni weekend"),
-      el("th", { scope: "col", class: "num", title: "Differenza dalla media, ridotta in proporzione ai giorni di ferie" }, "Scarto quota"))),
+      el("th", { scope: "col", class: "num", title: "Differenza dalla media; ogni giorno di ferie conta 6 ore" }, "Scarto media"))),
     tbody)));
   return sezione;
 }
@@ -571,7 +571,7 @@ function renderDisponibilita(s) {
       el("span", { class: "muted" }, ` ${riepilogo}`)),
     el("p", { class: "muted" },
       "Spunta i giorni in cui un dipendente non può lavorare: non riceverà turni che iniziano quel giorno. ",
-      "Le ferie si inseriscono in Personale e riducono anche la quota di ore."));
+      "Le ferie si inseriscono in Personale: ogni giorno conta 6 ore."));
   if (!dipendenti.length) {
     blocco.append(el("p", { class: "muted" }, "Nessun dipendente attivo."));
     return blocco;

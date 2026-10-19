@@ -12,8 +12,8 @@ Vincoli rigidi "con evidenza": se impossibili il modello resta risolvibile ma pa
 e il risultato li segnala:
   - copertura di tutti i posti, con priorità: postazioni normali, poi Standby, poi Programmati
     (se manca personale restano scoperti prima i Programmati)
-  - ore di ogni dipendente entro ±12 dalla sua quota: la media della settimana, ridotta in
-    proporzione ai giorni di ferie
+  - ore di ogni dipendente entro ±12 dalla media della settimana; ogni giorno di ferie
+    conta 6 ore
 Obiettivi (minimizzati insieme, in ordine di peso):
   - evitare 3 giorni/notti di fila
   - ore vicine alla media, recuperando il saldo delle settimane precedenti
@@ -32,7 +32,7 @@ from ortools.sat.python import cp_model
 from .modello import PROGRAMMATI, STANDBY, Assegnazione, Fabbisogno, Persona, Unita, in_conflitto
 from .slot import unita_da_coprire
 from .storico import CATEGORIE_WEEKEND, StoricoPersona, categoria_weekend
-from .vincoli import MAX_CONSECUTIVI, SCARTO_ORE_MAX, giorni_disponibili, valida_settimana
+from .vincoli import MAX_CONSECUTIVI, SCARTO_ORE_MAX, giorni_disponibili, media_ore, ore_ferie, valida_settimana
 
 __all__ = ["Risultato", "StoricoPersona", "genera"]
 
@@ -77,27 +77,27 @@ def genera(
 
     `persone` deve contenere i dipendenti attivi (il chiamante esclude i non attivi). `ferie` e
     `indisponibili` sono i giorni, per id, in cui non possono iniziare turni; chi è in ferie tutta
-    la settimana viene escluso. `media_ore` è la media di un dipendente a tempo pieno.
+    la settimana viene escluso. `media_ore` è la media dei dipendenti, ferie comprese.
     `fabbisogno`: posti richiesti nelle postazioni a richiesta (Standby, Programmati).
     """
     avvio = time.monotonic()
     storico = storico or {}
     ferie, indisponibili = ferie or {}, indisponibili or {}
     fissi, contesto = list(fissi), list(contesto)
-    disponibili = {p.id: giorni_disponibili(giorni, ferie.get(p.id, set())) for p in persone if p.dipendente}
-    dipendenti = [p for p in persone if disponibili.get(p.id)]
+    dipendenti = [p for p in persone if p.dipendente and giorni_disponibili(giorni, ferie.get(p.id, set()))]
+    crediti = {p.id: ore_ferie(giorni, ferie.get(p.id, set())) for p in dipendenti}
     unita = unita_da_coprire(giorni, postazioni, fissi, fabbisogno)
     problemi_fissi = _problemi_turni_fissi(giorni, postazioni, fissi, contesto, dipendenti, ferie, indisponibili)
     if not unita:
         ore = _ore_fisse(dipendenti, fissi)
-        media = _media(ore, disponibili)
+        media = media_ore(ore, crediti)
         return Risultato("ottimo", media_ore=media, ore=ore,
                          messaggio=" ".join(["Tutti i posti sono già coperti."] + problemi_fissi))
     if not dipendenti:
         return Risultato("impossibile", scoperti=unita, messaggio="Nessun dipendente attivo disponibile.")
 
     bloccati = {p.id: set(ferie.get(p.id, ())) | set(indisponibili.get(p.id, ())) for p in dipendenti}
-    m = _Modello(giorni, unita, dipendenti, fissi, contesto, storico, disponibili, bloccati)
+    m = _Modello(giorni, unita, dipendenti, fissi, contesto, storico, crediti, bloccati)
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = tempo_max
     solver.parameters.num_search_workers = workers
@@ -130,14 +130,14 @@ def genera(
     ore = _ore_fisse(dipendenti, fissi)
     for a in assegnazioni:
         ore[a.persona_id] += a.ore
-    media = _media(ore, disponibili)
-    fuori_banda = [p.nome for p in dipendenti if abs(ore[p.id] - media * disponibili[p.id] / 7) > SCARTO_ORE_MAX]
+    media = media_ore(ore, crediti)
+    fuori_banda = [p.nome for p in dipendenti if abs(ore[p.id] + crediti[p.id] - media) > SCARTO_ORE_MAX]
 
     note = list(problemi_fissi)
     if scoperti:
         note.append(f"{len(scoperti)} posti non coperti: servono altri dipendenti o volontari.")
     if fuori_banda:
-        note.append("Ore fuori dal limite di ±12h dalla quota: " + ", ".join(fuori_banda) + ".")
+        note.append("Ore fuori dal limite di ±12h dalla media: " + ", ".join(fuori_banda) + ".")
     if not note:
         note.append("Tutti i posti coperti nel rispetto delle regole.")
     if status == cp_model.FEASIBLE:
@@ -168,12 +168,6 @@ def _priorita(u: Unita) -> int:
     return {STANDBY: 1, PROGRAMMATI: 2}.get(u.postazione, 0)
 
 
-def _media(ore: dict[int, int], disponibili: dict[int, int]) -> float:
-    """Media ore di un dipendente a tempo pieno: chi ha ferie pesa per i giorni disponibili."""
-    giorni = sum(disponibili[pid] for pid in ore)
-    return sum(ore.values()) / (giorni / 7) if giorni else 0.0
-
-
 def _ore_fisse(dipendenti, fissi) -> dict[int, int]:
     ore = {p.id: 0 for p in dipendenti}
     for a in fissi:
@@ -183,16 +177,16 @@ def _ore_fisse(dipendenti, fissi) -> dict[int, int]:
 
 
 class _Modello:
-    def __init__(self, giorni, unita, dipendenti, fissi, contesto, storico, disponibili, bloccati):
+    def __init__(self, giorni, unita, dipendenti, fissi, contesto, storico, crediti, bloccati):
         self.model = cp_model.CpModel()
         self.giorni = giorni
         self.unita = unita
         self.dipendenti = dipendenti
         self.storico = storico
-        self.disponibili = {p.id: disponibili[p.id] for p in dipendenti}
+        self.crediti = crediti  # ore di ferie di ogni dipendente, contate come lavorate
         # scala intera dei termini dell'obiettivo: le ore si misurano in unità di 1/scala
-        # (= 7 * numero di dipendenti senza ferie)
-        self.scala = sum(self.disponibili.values())
+        # (= numero di dipendenti)
+        self.scala = len(dipendenti)
         self.obiettivo = []  # (coefficiente, espressione)
 
         # turni già noti di ogni dipendente: fissati in settimana + settimane vicine
@@ -326,17 +320,18 @@ class _Modello:
             h = self.model.NewIntVar(0, 24 * 7, f"ore_{p.id}")
             self.model.Add(h == sum(u.ore * v for u, v in self._vars_di(p.id)) + fisse[p.id])
             self.ore[p.id] = h
-        totale = self.model.NewIntVar(0, 24 * 7 * m, "ore_totali")
-        self.model.Add(totale == sum(self.ore.values()))
-        limite = 24 * 7 * (n + 7 * m) + 4 * SCARTO_ORE_MAX * n  # supera ogni |scarto| possibile
+        crediti = sum(self.crediti.values())
+        totale = self.model.NewIntVar(crediti, 24 * 7 * m + crediti, "ore_totali")
+        self.model.Add(totale == sum(self.ore.values()) + crediti)
+        limite = 2 * (24 * 7 + max(self.crediti.values())) * n + 4 * SCARTO_ORE_MAX * n  # supera ogni |scarto| possibile
         massimo = self.model.NewIntVar(0, limite, "scarto_max")
         # i saldi si centrano sui dipendenti attuali: chi è entrato o uscito non sposta tutti dalla media
         saldi = {p.id: self.storico.get(p.id, StoricoPersona()).saldo_ore for p in self.dipendenti}
         saldo_medio = sum(saldi.values()) / m
         for p in self.dipendenti:
-            # quota = media * giorni/7 = giorni * totale / n, quindi
-            # n * (ore - quota) = n * ore - giorni * totale  (tutto intero)
-            scarto = n * self.ore[p.id] - self.disponibili[p.id] * totale
+            # media = totale / n (ferie comprese), quindi
+            # n * (ore + ferie - media) = n * (ore + ferie) - totale  (tutto intero)
+            scarto = n * (self.ore[p.id] + self.crediti[p.id]) - totale
             sopra = self.model.NewIntVar(0, limite, "")
             sotto = self.model.NewIntVar(0, limite, "")
             self.model.Add(scarto <= SCARTO_ORE_MAX * n + sopra)
@@ -344,7 +339,7 @@ class _Modello:
             self.obiettivo.append((P_FUORI_BANDA, sopra))
             self.obiettivo.append((P_FUORI_BANDA, sotto))
 
-            # obiettivo: quota - saldo delle settimane precedenti
+            # obiettivo: media - saldo delle settimane precedenti
             saldo = saldi[p.id] - saldo_medio
             saldo = max(-2 * SCARTO_ORE_MAX, min(2 * SCARTO_ORE_MAX, saldo))  # oltre non serve: la banda è rigida
             dev = self.model.NewIntVar(0, limite, "")

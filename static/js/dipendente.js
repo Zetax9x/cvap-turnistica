@@ -137,13 +137,13 @@ function renderTurni(s, persona) {
 function renderTotali(s, persona) {
   const r = (s.riepilogo || []).find((x) => x.persona_id === persona.id);
   const giorniFerie = r ? r.giorni_ferie || 0 : 0;
-  const quota = giorniFerie < 7 && s.media_ore ? s.media_ore * (7 - giorniFerie) / 7 : null;
   const voci = [
     ["Ore totali", `${formatOre(r ? r.ore : 0)} h`],
+    ...(giorniFerie ? [[`Ferie (${giorniFerie} gg)`, `${formatOre(r.ore_ferie || 0)} h`]] : []),
     ["Giorno / notte", r ? `${formatOre(r.ore_giorno)} h / ${formatOre(r.ore_notte)} h` : "—"],
     ["Turni nel weekend", r ? String(r.turni_weekend) : "0"],
-    [giorniFerie ? `Quota della settimana (${giorniFerie} gg di ferie)` : "Media dei dipendenti",
-      quota !== null ? `${formatOre(Math.round(quota * 10) / 10)} h` : "—"],
+    ["Media dei dipendenti",
+      giorniFerie < 7 && s.media_ore ? `${formatOre(Math.round(s.media_ore * 10) / 10)} h` : "—"],
   ];
   return el("section", { class: "pannello" },
     el("h2", {}, "Totali della settimana"),

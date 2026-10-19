@@ -25,7 +25,7 @@ class StoricoPersona:
 
 @dataclass
 class SettimanaPassata:
-    media_ore: float  # media di un dipendente a tempo pieno (senza ferie)
+    media_ore: float  # media ore dei dipendenti, ferie comprese
     dipendenti: list[int]
     assegnazioni: list[Assegnazione]
     giorni_ferie: dict[int, int] = field(default_factory=dict)  # id -> giorni di ferie nella settimana

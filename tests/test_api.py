@@ -363,6 +363,9 @@ def test_settimana_mostra_ferie_e_quota(client):
         ["2026-10-19", "2026-10-20", "2026-10-21"]
     r = next(x for x in s["riepilogo"] if x["persona_id"] == p["id"])
     assert r["giorni_ferie"] == 3
+    # 3 giorni di ferie = 18h che contano nella media: (18 + 0) / 2
+    assert r["ore_ferie"] == 18 and r["ore"] == 0
+    assert s["media_ore"] == 9
 
 
 # --- indisponibilità -----------------------------------------------------------------

@@ -131,14 +131,23 @@ def test_turno_in_un_giorno_indisponibile_e_un_errore():
                                                           indisponibili={1: {GIORNI[4]}}))
 
 
-def test_con_ferie_le_ore_si_confrontano_con_la_quota_proporzionale():
-    # Mario in ferie lun-gio (3 giorni disponibili): 24h; Luca tutta la settimana: 60h
-    # media a tempo pieno = 84 / (10/7) = 58.8 -> quota Mario 25.2h, Luca 58.8h: entro ±12
+def test_ogni_giorno_di_ferie_vale_6_ore():
+    # Mario in ferie lun-gio: 24h lavorate + 4 * 6h = 48h; Luca 60h -> media 54, scarto ±6
     a = [ass(GIORNI[i], "Acquasanta", "giorno", "autista", 1) for i in (4, 6)]
     a += [ass(GIORNI[i], "Acquasanta", "notte", "soccorritore", 2) for i in (0, 1, 2, 3, 4)]
     ferie = {1: set(GIORNI[:4])}
     assert "ore" not in codici(valida_settimana(GIORNI, STAZIONI, a, PERSONE, ferie=ferie))
     assert "ore" in codici(valida_settimana(GIORNI, STAZIONI, a, PERSONE))
+
+
+def test_le_ferie_valgono_6_ore_anche_se_la_media_e_alta():
+    # Luca 84h; Mario in ferie lun-gio con 24h -> 48h contate, media 66, scarto 18
+    # (con la quota proporzionale sarebbe stato entro i limiti)
+    a = [ass(GIORNI[i], "Acquasanta", "giorno", "autista", 1) for i in (4, 6)]
+    a += [ass(GIORNI[i], "Acquasanta", "notte", "soccorritore", 2) for i in range(7)]
+    v = [x for x in valida_settimana(GIORNI, STAZIONI, a, PERSONE, ferie={1: set(GIORNI[:4])})
+         if x.codice == "ore"]
+    assert v and "24h ferie" in v[0].messaggio
 
 
 def test_chi_e_in_ferie_tutta_la_settimana_non_entra_nella_media():
