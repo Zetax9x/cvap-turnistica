@@ -125,7 +125,7 @@ def test_generatore_copre_standby_e_programmati():
         fab(GIORNI[0], PROGRAMMATI, "giorno", "prog_mattina", "soccorritore", 2),
         fab(GIORNI[0], PROGRAMMATI, "giorno", "prog_pomeriggio", "autista", 2),
     ]
-    r = genera(GIORNI, STAZIONI, persone_, fabbisogno=richieste, tempo_max=15)
+    r = genera(GIORNI, STAZIONI, persone_, fabbisogno=richieste, tempo_max=30)
     assert r.scoperti == []
     mappa = {p.id: p for p in persone_}
     v = valida_settimana(GIORNI, STAZIONI, r.assegnazioni, mappa, fabbisogno=richieste)

@@ -19,7 +19,7 @@ from .calendario import giorni_settimana, lunedi, postazioni_attive, tipo_settim
 from .modello import (INTERO_DI, PARTI_TURNO, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, SEGMENTI, STANDBY,
                       TURNI_VIETABILI, Assegnazione, Fabbisogno, Persona, si_sovrappongono, turni_ammessi)
 from .storico import CATEGORIE_WEEKEND, SettimanaPassata, calcola_storico, categoria_weekend
-from .vincoli import giorni_disponibili, media_ore, ore_ferie, valida_settimana
+from .vincoli import differenza_ore, giorni_disponibili, media_ore, ore_ferie, valida_settimana
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 GIORNI_CONTESTO = 3
@@ -228,6 +228,10 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
             ore_dip[a.persona_id] += a.ore
     media = media_ore(ore_dip, {pid: ore_ferie(giorni, ferie.get(pid, set())) for pid in ore_dip})
 
+    differenza = differenza_ore(giorni, assegnazioni, rilevanti, ferie)
+    if differenza:
+        differenza = {**differenza, "limite": scarto_ore_max}
+
     riga = db.get_settimana(conn, giorni[0])
     return {
         "inizio": giorni[0].isoformat(),
@@ -254,6 +258,7 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
         "riepilogo": riepilogo,
         "media_ore": media,
         "scarto_ore_max": scarto_ore_max,
+        "differenza_ore": differenza,
         "report": riga["report"] if riga else None,
     }
 

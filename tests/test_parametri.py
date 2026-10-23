@@ -122,25 +122,34 @@ def test_le_ore_di_ferie_non_contano_nel_massimo():
     assert "ore_max" not in codici(v)
 
 
-def test_riferimento_della_banda_e_il_minimo_tra_media_e_massimo():
-    a = turni_ore(1, "Acquasanta", 1) + turni_ore(2, "Venarotta", 3) + turni_ore(3, "Acquasanta", 3)
-    # media 28: Mario (12h) è a -16 dalla media, ma con tetto 12 il suo riferimento è 12
-    assert [x for x in valida(tre_dipendenti(), a) if x.codice == "ore" and x.persona_id == 1]
-    assert not [x for x in valida(tre_dipendenti(max_mario=12), a) if x.codice == "ore" and x.persona_id == 1]
+def test_chi_e_in_ferie_tutta_la_settimana_non_e_controllato_sul_massimo():
+    # come nel generatore, che lo esclude: i turni in ferie li segnala già la regola delle ferie
+    persone = tre_dipendenti(max_mario=12)
+    v = valida(persone, turni_ore(1, "Acquasanta", 2), ferie={1: set(GIORNI)})
+    assert "ore_max" not in codici(v)
 
 
-def test_con_il_massimo_si_controlla_comunque_lo_scarto_dal_riferimento():
-    a = turni_ore(1, "Acquasanta", 1) + turni_ore(2, "Venarotta", 3) + turni_ore(3, "Acquasanta", 3)
-    persone = tre_dipendenti(max_mario=30)  # riferimento min(28, 30) = 28: Mario resta a -16
-    assert any(x.codice == "ore" and x.persona_id == 1 for x in valida(persone, a))
+def test_chi_ha_il_massimo_non_entra_nel_confronto_delle_ore():
+    a = turni_ore(1, "Acquasanta", 1) + turni_ore(2, "Venarotta", 3) + turni_ore(3, "Acquasanta", 2)
+    # Mario 12h, Luca 36h, Sara 24h: con tutti la differenza e' 24h, un errore
+    assert [x for x in valida(tre_dipendenti(), a) if x.codice == "ore" and x.persona_id == 2]
+    # con il massimo Mario resta fuori e Luca e Sara distano 12h
+    assert "ore" not in codici(valida(tre_dipendenti(max_mario=12), a))
+
+
+def test_il_massimo_ore_resta_un_tetto_rigido_anche_fuori_dal_confronto():
+    a = turni_ore(1, "Acquasanta", 3) + turni_ore(2, "Venarotta", 3) + turni_ore(3, "Acquasanta", 3)
+    v = valida(tre_dipendenti(max_mario=30), a)
+    assert any(x.codice == "ore_max" and x.persona_id == 1 for x in v)
+    assert "ore" not in codici(v)
 
 
 def test_scarto_ore_max_configurabile():
     persone = tre_dipendenti()[:2]
-    a = turni_ore(1, "Acquasanta", 2) + turni_ore(2, "Venarotta", 1)  # 24h e 12h: media 18, scarto 6
+    a = turni_ore(1, "Acquasanta", 2) + turni_ore(2, "Venarotta", 1)  # 24h e 12h: differenza 12
     assert "ore" not in codici(valida(persone, a))
-    assert "ore" not in codici(valida(persone, a, scarto_ore_max=6))
-    assert "ore" in codici(valida(persone, a, scarto_ore_max=5))
+    assert "ore" not in codici(valida(persone, a, scarto_ore_max=12))
+    assert "ore" in codici(valida(persone, a, scarto_ore_max=11))
 
 
 # --- generatore --------------------------------------------------------------------
@@ -192,8 +201,19 @@ def test_il_generatore_usa_la_banda_configurabile():
     persone = staff(8, 6)
     ris = genera(GIORNI, STAZIONI, persone, tempo_max=20, scarto_ore_max=6)
     assert ris.scoperti == []
-    for p in persone:
-        assert abs(ris.ore[p.id] - ris.media_ore) <= 6 + 1e-9
+    ore = [ris.ore[p.id] for p in persone]
+    assert max(ore) - min(ore) <= 6
+
+
+def test_il_generatore_lascia_fuori_dalla_differenza_chi_ha_il_massimo():
+    persone = staff(8, 6)
+    persone[0] = Persona(1, "Autista 1", "dipendente", "autista", max_ore_settimana=24)
+    ris = genera(GIORNI, STAZIONI, persone, tempo_max=20)
+    assert ris.scoperti == []
+    assert ris.ore[1] <= 24
+    ore = [ris.ore[p.id] for p in persone if p.id != 1]
+    assert max(ore) - min(ore) <= 12
+    assert "Differenza di ore" not in ris.messaggio
 
 
 # --- migrazione --------------------------------------------------------------------

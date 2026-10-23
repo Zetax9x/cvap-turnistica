@@ -2,7 +2,7 @@ from datetime import timedelta
 
 from cvap.calendario import giorni_settimana
 from cvap.modello import Persona
-from cvap.vincoli import valida_settimana
+from cvap.vincoli import differenza_ore, valida_settimana
 
 from .conftest import LUNEDI_A, ass
 
@@ -91,10 +91,62 @@ def test_giorni_e_notti_alternati_non_contano_come_consecutivi_dello_stesso_tipo
     assert "consecutivi" not in codici(v) | codici(v, "avviso")
 
 
-def test_scarto_ore_dipendenti_oltre_12_dalla_media_e_un_errore():
-    # Mario 48h, Luca 0h -> media 24, scarto 24
+def _turni(pid, giorni, ruolo):
+    return [ass(GIORNI[i], "Acquasanta", "giorno", ruolo, pid) for i in giorni]
+
+
+def test_differenza_ore_oltre_il_limite_e_un_errore():
+    # Mario 48h, Luca 0h -> differenza 48
     a = [ass(GIORNI[i], "Acquasanta", "giorno", "autista", 1) for i in (0, 2, 4, 6)]
     assert "ore" in codici(valida_settimana(GIORNI, STAZIONI, a, PERSONE))
+
+
+def test_differenza_di_24_ore_e_un_solo_errore_su_chi_ne_fa_di_piu():
+    a = _turni(1, range(5), "autista") + _turni(2, range(3), "soccorritore")  # Mario 60h, Luca 36h
+    v = [x for x in valida_settimana(GIORNI, STAZIONI, a, PERSONE) if x.codice == "ore"]
+    assert len(v) == 1 and v[0].livello == "errore" and v[0].persona_id == 1
+    assert v[0].messaggio == "Differenza di 24h tra Mario (60h) e Luca (36h): massimo 12h"
+
+
+def test_differenza_esattamente_12_ore_va_bene():
+    a = _turni(1, range(4), "autista") + _turni(2, range(3), "soccorritore")  # 48h e 36h
+    assert "ore" not in codici(valida_settimana(GIORNI, STAZIONI, a, PERSONE))
+    a = _turni(1, range(5), "autista") + _turni(2, range(3), "soccorritore")  # 60h e 36h
+    assert "ore" in codici(valida_settimana(GIORNI, STAZIONI, a, PERSONE))
+    assert "ore" not in codici(valida_settimana(GIORNI, STAZIONI, a, PERSONE, scarto_ore_max=24))
+
+
+def test_chi_ha_un_massimo_ore_resta_fuori_dal_confronto():
+    persone = {**PERSONE, 1: Persona(1, "Mario", "dipendente", "autista", max_ore_settimana=24)}
+    a = _turni(1, range(2), "autista") + _turni(2, range(5), "soccorritore")
+    v = valida_settimana(GIORNI, STAZIONI, a, persone)
+    assert "ore" not in codici(v) and "ore_max" not in codici(v)  # Luca resta solo nel confronto
+    a = _turni(1, range(3), "autista") + _turni(2, range(5), "soccorritore")
+    assert "ore_max" in codici(valida_settimana(GIORNI, STAZIONI, a, persone))
+
+
+def test_con_tre_dipendenti_il_massimo_ore_esclude_solo_lui():
+    persone = {**PERSONE, 4: Persona(4, "Sara", "dipendente", "soccorritore"),
+               1: Persona(1, "Mario", "dipendente", "autista", max_ore_settimana=12)}
+    a = _turni(1, range(1), "autista") + _turni(2, range(5), "soccorritore")
+    v = [x for x in valida_settimana(GIORNI, STAZIONI, a, persone) if x.codice == "ore"]
+    assert len(v) == 1 and v[0].persona_id == 2
+    assert v[0].messaggio == "Differenza di 60h tra Luca (60h) e Sara (0h): massimo 12h"
+
+
+def test_con_meno_di_due_partecipanti_nessun_errore():
+    a = _turni(1, range(5), "autista")
+    ferie = {2: set(GIORNI)}  # Luca in ferie tutta la settimana: non partecipa
+    assert "ore" not in codici(valida_settimana(GIORNI, STAZIONI, a, PERSONE, ferie=ferie))
+    assert differenza_ore(GIORNI, a, PERSONE, ferie) is None
+    assert differenza_ore(GIORNI, [], {}, {}) is None
+
+
+def test_differenza_ore_restituisce_massimo_minimo_e_differenza():
+    a = _turni(1, range(5), "autista") + _turni(2, range(2), "soccorritore")
+    assert differenza_ore(GIORNI, a, PERSONE, {}) == {
+        "differenza": 36, "massimo": {"persona_id": 1, "nome": "Mario", "ore": 60},
+        "minimo": {"persona_id": 2, "nome": "Luca", "ore": 24}}
 
 
 def test_prenotazione_doppia_sullo_stesso_posto():
@@ -162,7 +214,7 @@ def test_la_notte_indisponibile_vale_nel_giorno_di_inizio_del_turno():
 
 
 def test_ogni_giorno_di_ferie_vale_6_ore():
-    # Mario in ferie lun-gio: 24h lavorate + 4 * 6h = 48h; Luca 60h -> media 54, scarto ±6
+    # Mario in ferie lun-gio: 24h lavorate + 4 * 6h = 48h; Luca 60h -> differenza 12
     a = [ass(GIORNI[i], "Acquasanta", "giorno", "autista", 1) for i in (4, 6)]
     a += [ass(GIORNI[i], "Acquasanta", "notte", "soccorritore", 2) for i in (0, 1, 2, 3, 4)]
     ferie = {1: set(GIORNI[:4])}
@@ -170,14 +222,14 @@ def test_ogni_giorno_di_ferie_vale_6_ore():
     assert "ore" in codici(valida_settimana(GIORNI, STAZIONI, a, PERSONE))
 
 
-def test_le_ferie_valgono_6_ore_anche_se_la_media_e_alta():
-    # Luca 84h; Mario in ferie lun-gio con 24h -> 48h contate, media 66, scarto 18
-    # (con la quota proporzionale sarebbe stato entro i limiti)
+def test_le_ferie_valgono_6_ore_nella_differenza():
+    # Luca 84h; Mario in ferie lun-gio con 24h -> 48h contate, differenza 36
     a = [ass(GIORNI[i], "Acquasanta", "giorno", "autista", 1) for i in (4, 6)]
     a += [ass(GIORNI[i], "Acquasanta", "notte", "soccorritore", 2) for i in range(7)]
     v = [x for x in valida_settimana(GIORNI, STAZIONI, a, PERSONE, ferie={1: set(GIORNI[:4])})
          if x.codice == "ore"]
-    assert v and "24h ferie" in v[0].messaggio
+    assert len(v) == 1 and v[0].persona_id == 2
+    assert v[0].messaggio == "Differenza di 36h tra Luca (84h) e Mario (48h): massimo 12h"
 
 
 def test_chi_e_in_ferie_tutta_la_settimana_non_entra_nella_media():
