@@ -487,6 +487,29 @@ def test_statistiche_partono_dalla_prima_settimana_generata(client):
     assert stats[ids[0]]["weekend"]["dom_giorno"] + stats[ids[8]]["weekend"]["dom_notte"] <= 2
 
 
+def test_settimana_manuale_di_avvio_e_solo_contesto_per_il_generatore(client, monkeypatch):
+    from cvap import solver
+    ids = staff_14(client)
+    prima = "2026-10-12"
+    # domenica notte inserita a mano: il lunedì di giorno deve riposare
+    assert prenota(client, prima, ids[8], data="2026-10-18", fascia="notte").status_code == 201
+    assert client.post(f"/api/settimane/{prima}/conferma").status_code == 200
+    visti = {}
+    originale = solver.genera
+
+    def spia(*args, **kwargs):
+        visti.update(kwargs)
+        return originale(*args, **kwargs)
+
+    monkeypatch.setattr(solver, "genera", spia)
+    r = client.post(f"/api/settimane/{LUNEDI_A}/genera", json={"tempo_max": 5})
+    assert r.status_code == 200, r.text
+    assert visti["storico"] == {}
+    assert any(a.persona_id == ids[8] for a in visti["contesto"])
+    assert not [a for a in r.json()["assegnazioni"]
+                if a["persona_id"] == ids[8] and a["data"] == LUNEDI_A and a["fascia"] == "giorno"]
+
+
 # --- volontari scritti per nome ------------------------------------------------------
 
 def prenota_nome(client, nome, data=LUNEDI_A, postazione="Acquasanta", fascia="giorno",

@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 from cvap.calendario import giorni_settimana
-from cvap.storico import SettimanaPassata, calcola_storico
+from cvap.storico import SettimanaPassata, calcola_storico, dalla_prima_generata
 
 from .conftest import LUNEDI_A, ass
 
@@ -114,3 +114,15 @@ def test_dopo_la_prima_generata_contano_anche_le_settimane_manuali():
     s = calcola_storico([w1, w2])
     assert s[1].settimane == 2
     assert s[1].weekend["sab_giorno"] == 1
+
+
+def test_settimana_con_turni_misti_conta_come_generata():
+    w = SettimanaPassata(12, [1, 2], [_manuale(GIORNI, 6, "giorno", 1),
+                                      ass(GIORNI[0], "Acquasanta", "giorno", "autista", 2)])
+    assert dalla_prima_generata([w]) == [w]
+    assert calcola_storico([w])[1].weekend["dom_giorno"] == 1
+
+
+def test_nessuna_settimana_nessuno_storico():
+    assert dalla_prima_generata([]) == []
+    assert calcola_storico([]) == {}
