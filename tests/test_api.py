@@ -261,6 +261,7 @@ def test_statistiche(generata):
     assert all(x["settimane"] == 1 for x in dip)
     assert abs(sum(x["saldo_ore"] for x in dip)) < 1e-6
     assert set(dip[0]["weekend"]) == {"sab_giorno", "sab_notte", "dom_giorno", "dom_notte"}
+    assert all(x["standby"] == 0 and x["programmati"] == 0 for x in stats)
 
 
 def test_genera_settimana_successiva_usa_storico(generata):

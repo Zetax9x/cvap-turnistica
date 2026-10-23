@@ -6,7 +6,7 @@ import pytest
 from cvap.calendario import giorni_settimana
 from cvap.modello import PROGRAMMATI, STANDBY, Fabbisogno, Persona, Unita, orario
 from cvap.slot import unita_da_coprire
-from cvap.solver import genera
+from cvap.solver import StoricoPersona, genera
 from cvap.vincoli import valida_settimana
 
 from .conftest import LUNEDI_A, ass, staff
@@ -188,3 +188,41 @@ def test_standby_con_piu_posti_conta_interi_e_meta():
     due = [ass(LUNEDI_A, STANDBY, "giorno", "autista", pid, segmento="standby") for pid in (1, 2)]
     v = valida_settimana(GIORNI, [], due, persone(*staff(2, 0)), fabbisogno=richieste)
     assert not [x for x in v if x.livello == "errore"]
+
+
+# --- equità di Standby e Programmati nel tempo (come i weekend) ---------------------
+
+def turni_in(r, postazione):
+    conta = {}
+    for a in r.assegnazioni:
+        if a.postazione == postazione:
+            conta[a.persona_id] = conta.get(a.persona_id, 0) + 1
+    return conta
+
+
+def test_standby_distribuito_tra_tutti_nella_settimana():
+    persone = staff(10, 8)
+    richieste = [f for d in GIORNI for f in standby(d, "giorno")]  # 14 posti, 18 dipendenti
+    r = genera(GIORNI, STAZIONI, persone, fabbisogno=richieste, tempo_max=10)
+    assert r.scoperti == []
+    assert max(turni_in(r, STANDBY).values()) == 1
+
+
+def test_chi_ha_fatto_molti_standby_in_passato_ne_fa_meno():
+    persone = staff(10, 8)
+    storico = {p.id: StoricoPersona(settimane=10, richieste={STANDBY: 3}) for p in persone}
+    storico[1] = StoricoPersona(settimane=10, richieste={STANDBY: 20})
+    richieste = [f for d in GIORNI for f in standby(d, "giorno")]
+    r = genera(GIORNI, STAZIONI, persone, fabbisogno=richieste, storico=storico, tempo_max=10)
+    assert r.scoperti == []
+    assert turni_in(r, STANDBY).get(1, 0) == 0
+
+
+def test_chi_ha_fatto_molti_programmati_in_passato_ne_fa_meno():
+    persone = staff(10, 8)
+    storico = {p.id: StoricoPersona(settimane=10, richieste={PROGRAMMATI: 3}) for p in persone}
+    storico[11] = StoricoPersona(settimane=10, richieste={PROGRAMMATI: 20})  # un soccorritore
+    richieste = [fab(d, PROGRAMMATI, "giorno", "prog_mattina", "soccorritore", 2) for d in GIORNI[:5]]
+    r = genera(GIORNI, STAZIONI, persone, fabbisogno=richieste, storico=storico, tempo_max=10)
+    assert r.scoperti == []
+    assert turni_in(r, PROGRAMMATI).get(11, 0) == 0

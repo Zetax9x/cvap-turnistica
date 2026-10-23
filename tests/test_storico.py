@@ -62,3 +62,13 @@ def test_settimana_tutta_in_ferie_non_conta():
                                           giorni_ferie={2: 7})])
     assert 2 not in s or (s[2].settimane == 0 and s[2].saldo_ore == 0)
     assert s[1].saldo_ore == 0
+
+
+def test_conta_i_turni_standby_e_programmati():
+    a = [ass(GIORNI[1], "Standby", "giorno", "autista", 1, segmento="standby"),
+         ass(GIORNI[2], "Standby", "notte", "autista", 1, segmento="standby"),
+         ass(GIORNI[2], "Programmati", "giorno", "soccorritore", 2, segmento="prog_mattina"),
+         ass(GIORNI[3], "Acquasanta", "giorno", "autista", 2)]
+    s = calcola_storico([SettimanaPassata(media_ore=0, dipendenti=[1, 2], assegnazioni=a)])
+    assert s[1].richieste == {"Standby": 2, "Programmati": 0}
+    assert s[2].richieste == {"Standby": 0, "Programmati": 1}
