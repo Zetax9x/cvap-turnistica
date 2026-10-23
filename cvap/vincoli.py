@@ -80,6 +80,8 @@ def valida_settimana(
         livello = "errore" if persona and persona.dipendente else "avviso"
         violazioni += _riposo(pid, nome, turni, settimana, livello)
         violazioni += _consecutivi(pid, nome, turni, settimana, livello)
+        if persona and persona.dipendente:
+            violazioni += _ascoli_di_fila(pid, nome, turni, settimana)
 
     violazioni += _ore(giorni, assegnazioni, persone, ferie)
     violazioni += _ascoli(assegnazioni, persone)
@@ -219,6 +221,21 @@ def _consecutivi(pid, nome, turni, settimana, livello):
                 out.append(Violazione("avviso", "consecutivi",
                                       f"{nome}: {lunghezza} {etichetta} di fila dal {_fmt(inizio)} (eccezione)",
                                       pid, inizio))
+    return out
+
+
+def _ascoli_di_fila(pid, nome, turni, settimana):
+    """Ad Ascoli mai due turni della stessa fascia in giorni consecutivi (anche mezzo turno)."""
+    out = []
+    for fascia in ("giorno", "notte"):
+        date_ascoli = {t.data for t in turni if t.postazione == ASCOLI and t.fascia == fascia}
+        for d in sorted(date_ascoli):
+            dopo = d + timedelta(days=1)
+            if dopo in date_ascoli and {d, dopo} & settimana:
+                etichetta = "giorni" if fascia == "giorno" else "notti"
+                out.append(Violazione("errore", "ascoli_di_fila",
+                                      f"{nome}: due {etichetta} di fila ad Ascoli ({_fmt(d)} e {_fmt(dopo)})",
+                                      pid, dopo))
     return out
 
 

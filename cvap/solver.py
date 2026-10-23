@@ -9,6 +9,7 @@ Vincoli rigidi (mai violati):
   - nessuna sovrapposizione e almeno 11h di riposo tra due turni (anche rispetto alle settimane vicine)
   - al massimo 3 giorni (o 3 notti) di fila
   - al massimo 3 turni ad Ascoli a settimana per dipendente
+  - ad Ascoli mai due giorni (o due notti) di fila allo stesso dipendente
 Vincoli rigidi "con evidenza": se impossibili il modello resta risolvibile ma paga una penalità enorme
 e il risultato li segnala:
   - copertura di tutti i posti, con priorità: postazioni normali, poi Standby, poi Programmati
@@ -167,7 +168,7 @@ def genera(
 def _problemi_turni_fissi(giorni, postazioni, fissi, contesto, dipendenti, ferie, indisponibili) -> list[str]:
     """Violazioni già presenti nei turni che il generatore non può cambiare (fissati e settimane vicine)."""
     persone = {p.id: p for p in dipendenti}
-    regole = {"riposo", "sovrapposizione", "consecutivi", "ferie", "indisponibile", "ascoli"}
+    regole = {"riposo", "sovrapposizione", "consecutivi", "ferie", "indisponibile", "ascoli", "ascoli_di_fila"}
     return [v.messaggio + "." for v in valida_settimana(giorni, postazioni, fissi, persone, contesto=contesto,
                                                          ferie=ferie, indisponibili=indisponibili)
             if v.livello == "errore" and v.codice in regole]
@@ -248,6 +249,10 @@ class _Modello:
         def ascoli(pid):
             return sum(1 for t in presi[pid] if t.postazione == ASCOLI and t.data in settimana)
 
+        def ascoli_vicino(pid, u):
+            return any(t.postazione == ASCOLI and t.fascia == u.fascia and abs((t.data - u.data).days) == 1
+                       for t in presi[pid])
+
         def ore_fascia(pid, fascia):
             return sum(t.ore for t in presi[pid] if t.fascia == fascia and t.data in settimana)
 
@@ -259,7 +264,8 @@ class _Modello:
             u = self.unita[ui]
             validi = [pid for pid in candidati[ui]
                       if not any(in_conflitto(u, t) for t in presi[pid]) and di_fila(pid, u) <= 2
-                      and (u.postazione != ASCOLI or ascoli(pid) < MAX_TURNI_ASCOLI_EXTREMIS)]
+                      and (u.postazione != ASCOLI or (ascoli(pid) < MAX_TURNI_ASCOLI_EXTREMIS
+                                                      and not ascoli_vicino(pid, u)))]
             if not validi:
                 continue
             altra = "notte" if u.fascia == "giorno" else "giorno"
@@ -337,6 +343,32 @@ class _Modello:
             extra = self.model.NewIntVar(0, len(turni) + fissi, "")
             self.model.Add(sum(turni) + fissi - MAX_TURNI_ASCOLI <= extra)
             self.obiettivo.append((P_TERZO_ASCOLI * self.scala, extra))
+        self._ascoli_di_fila()
+
+    def _ascoli_di_fila(self):
+        settimana = set(self.giorni)
+        giorni = [self.giorni[0] + timedelta(days=i) for i in range(-1, 8)]
+        for p in self.dipendenti:
+            for fascia in ("giorno", "notte"):
+                note = {a.data for a in self.fissi_di[p.id] if a.postazione == ASCOLI and a.fascia == fascia}
+                # 1 se quel giorno fa (almeno mezzo) turno ad Ascoli in quella fascia
+                ad_ascoli = {}
+                for d in giorni:
+                    vars_d = [v for u, v in self._vars_di(
+                        p.id, lambda u, d=d: u.data == d and u.fascia == fascia and u.postazione == ASCOLI)]
+                    if d in note:
+                        ad_ascoli[d] = 1
+                    elif vars_d:
+                        b = self.model.NewBoolVar("")
+                        self.model.AddMaxEquality(b, vars_d)
+                        ad_ascoli[d] = b
+                    else:
+                        ad_ascoli[d] = 0
+                for d, dopo in zip(giorni, giorni[1:]):
+                    espr = ad_ascoli[d] + ad_ascoli[dopo]
+                    # due turni fissati di fila restano (li segnala il validatore)
+                    if not isinstance(espr, int) and {d, dopo} & settimana:
+                        self.model.Add(espr <= 1)
 
     def _ore(self):
         n = self.scala
