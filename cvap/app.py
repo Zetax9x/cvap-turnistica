@@ -16,8 +16,8 @@ from pydantic import BaseModel, Field, StringConstraints, model_validator
 
 from . import db
 from .calendario import giorni_settimana, lunedi, postazioni_attive, tipo_settimana
-from .modello import (INTERO_DI, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, SEGMENTI, STANDBY, Assegnazione,
-                      Fabbisogno, Persona, si_sovrappongono, turni_ammessi)
+from .modello import (INTERO_DI, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, SEGMENTI, STANDBY, TURNI_VIETABILI,
+                      Assegnazione, Fabbisogno, Persona, si_sovrappongono, turni_ammessi)
 from .storico import CATEGORIE_WEEKEND, SettimanaPassata, calcola_storico, categoria_weekend
 from .vincoli import giorni_disponibili, media_ore, ore_ferie, valida_settimana
 
@@ -55,8 +55,27 @@ class PersonaUpdate(PersonaIn):
     autista_programmati: bool | None = None  # assente = resta com'è
 
 
+class ParametriIn(BaseModel):
+    max_ore_settimana: int | None = Field(ge=1, le=24 * 7)  # obbligatorio; null = nessun limite
+
+
+class DivietoIn(BaseModel):
+    persona_id: Id
+    postazione: Annotated[str, StringConstraints(min_length=1, max_length=100)] | None = None
+    turno: Literal[TURNI_VIETABILI] | None = None
+
+
 class ImpostazioniIn(BaseModel):
-    data_riferimento_a: DataValida
+    data_riferimento_a: DataValida | None = None
+    scarto_ore_max: int | None = Field(default=None, ge=db.SCARTO_ORE_MAX_RANGE[0], le=db.SCARTO_ORE_MAX_RANGE[1])
+
+    @model_validator(mode="after")
+    def _almeno_una(self):
+        if not self.model_fields_set & {"data_riferimento_a", "scarto_ore_max"}:
+            raise ValueError("indicare data_riferimento_a e/o scarto_ore_max")
+        if self.data_riferimento_a is None and self.scarto_ore_max is None:
+            raise ValueError("i valori indicati non possono essere null")
+        return self
 
 
 class AssegnazioneIn(BaseModel):
@@ -169,10 +188,13 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
     indisponibili = db.indisponibili_periodo(conn, giorni[0], giorni[-1])
 
     # volontari + dipendenti attivi + chiunque (anche disattivato) abbia turni questa settimana
-    rilevanti = {pid: db.a_persona(p) for pid, p in persone.items()
+    divieti = db.divieti_per_persona(conn)
+    scarto_ore_max = db.get_scarto_ore_max(conn)
+    rilevanti = {pid: db.a_persona(p, divieti.get(pid, ())) for pid, p in persone.items()
                  if p["tipo"] == "volontario" or p["attivo"] or pid in presenti}
     violazioni = valida_settimana(giorni, attive, assegnazioni, rilevanti, contesto=_contesto(conn, giorni),
-                                  ferie=ferie, indisponibili=indisponibili, fabbisogno=fabbisogno)
+                                  ferie=ferie, indisponibili=indisponibili, fabbisogno=fabbisogno,
+                                  scarto_ore_max=scarto_ore_max)
 
     dipendenti_attivi = [p for p in persone.values() if p["tipo"] == "dipendente" and p["attivo"]]
     ids_riepilogo = presenti | {p["id"] for p in dipendenti_attivi}
@@ -191,6 +213,7 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
             "giorni_ferie": len(ferie.get(pid, ())),
             "ore_ferie": ore_ferie(giorni, ferie.get(pid, set())) if p["tipo"] == "dipendente" else 0,
             "giorni_indisponibili": len(indisponibili.get(pid, ())),
+            "max_ore_settimana": p["max_ore_settimana"] if p["tipo"] == "dipendente" else None,
         })
     riepilogo.sort(key=lambda r: (r["tipo"] != "dipendente", r["nome"].lower(), r["persona_id"]))
 
@@ -223,6 +246,7 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
                         "persona_id": v.persona_id, "data": _iso(v.data)} for v in violazioni],
         "riepilogo": riepilogo,
         "media_ore": media,
+        "scarto_ore_max": scarto_ore_max,
         "report": riga["report"] if riga else None,
     }
 
@@ -333,6 +357,13 @@ def create_app(db_path: str) -> FastAPI:
             raise HTTPException(404, "Persona non trovata")
         return p
 
+    @app.put("/api/persone/{persona_id}/parametri")
+    def imposta_parametri(persona_id: IdPath, body: ParametriIn, conn: Conn):
+        p = db.imposta_max_ore(conn, persona_id, body.max_ore_settimana)
+        if p is None:
+            raise HTTPException(404, "Persona non trovata")
+        return p
+
     @app.delete("/api/persone/{persona_id}", status_code=204)
     def elimina_persona(persona_id: IdPath, conn: Conn):
         if not db.elimina_persona(conn, persona_id):
@@ -344,13 +375,48 @@ def create_app(db_path: str) -> FastAPI:
     def lista_postazioni(conn: Conn):
         return db.lista_postazioni(conn)
 
+    def impostazioni(conn) -> dict:
+        return {"data_riferimento_a": db.get_riferimento_a(conn).isoformat(),
+                "scarto_ore_max": db.get_scarto_ore_max(conn)}
+
     @app.get("/api/impostazioni")
     def get_impostazioni(conn: Conn):
-        return {"data_riferimento_a": db.get_riferimento_a(conn).isoformat()}
+        return impostazioni(conn)
 
     @app.put("/api/impostazioni")
     def put_impostazioni(body: ImpostazioniIn, conn: Conn):
-        return {"data_riferimento_a": db.set_riferimento_a(conn, body.data_riferimento_a).isoformat()}
+        if body.data_riferimento_a is not None:
+            db.set_riferimento_a(conn, body.data_riferimento_a)
+        if body.scarto_ore_max is not None:
+            db.set_scarto_ore_max(conn, body.scarto_ore_max)
+        return impostazioni(conn)
+
+    # --- divieti ---
+    @app.get("/api/divieti")
+    def lista_divieti(conn: Conn):
+        return db.lista_divieti(conn)
+
+    @app.post("/api/divieti", status_code=201)
+    def crea_divieto(body: DivietoIn, conn: Conn):
+        if body.postazione is None and body.turno is None:
+            raise _errore("Indica almeno la postazione o il tipo di turno")
+        p = db.get_persona(conn, body.persona_id)
+        if p is None:
+            raise HTTPException(404, "Persona non trovata")
+        if p["tipo"] != "dipendente":
+            raise _errore("I divieti si inseriscono solo per i dipendenti")
+        if body.postazione is not None and body.postazione not in (
+                [x["nome"] for x in db.lista_postazioni(conn)] + list(POSTAZIONI_A_RICHIESTA)):
+            raise _errore(f"Postazione sconosciuta: {body.postazione}")
+        if db.divieto_esiste(conn, body.persona_id, body.postazione, body.turno):
+            raise _errore("Questo divieto esiste già")
+        return db.crea_divieto(conn, body.persona_id, body.postazione, body.turno)
+
+    @app.delete("/api/divieti/{divieto_id}", status_code=204)
+    def elimina_divieto(divieto_id: IdPath, conn: Conn):
+        if not db.elimina_divieto(conn, divieto_id):
+            raise HTTPException(404, "Divieto non trovato")
+        return Response(status_code=204)
 
     # --- settimane ---
     @app.get("/api/settimane/{data}")
@@ -427,7 +493,7 @@ def create_app(db_path: str) -> FastAPI:
             ris = solver.genera(giorni, attive, dipendenti, fissi=fissi, contesto=_contesto(conn, giorni),
                                 storico=storico, ferie=db.ferie_periodo(conn, giorni[0], giorni[-1]),
                                 indisponibili=db.indisponibili_periodo(conn, giorni[0], giorni[-1]),
-                                fabbisogno=fabbisogno, **kwargs)
+                                fabbisogno=fabbisogno, scarto_ore_max=db.get_scarto_ore_max(conn), **kwargs)
             durata = round(time.monotonic() - t0, 2)
             if ris.stato in ("impossibile", "nessuna_soluzione"):
                 # niente da salvare: si tengono i turni generati in precedenza

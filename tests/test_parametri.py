@@ -161,7 +161,9 @@ def test_le_ferie_non_contano_nel_massimo_del_generatore():
     ferie = {1: {giorno(5), giorno(6)}}  # 12h accreditate: lavorate possono comunque arrivare a 24
     ris = genera(GIORNI, STAZIONI, persone, tempo_max=10, ferie=ferie)
     assert ris.ore[1] <= 24
-    assert ris.ore[1] + 12 >= ris.media_ore - 12 - 1e-9  # banda sul totale con le ferie
+    mappa = {p.id: p for p in persone}
+    v = valida_settimana(GIORNI, STAZIONI, ris.assegnazioni, mappa, ferie=ferie)
+    assert [x for x in v if x.livello == "errore"] == []
 
 
 def test_il_generatore_non_assegna_turni_vietati():
@@ -192,3 +194,26 @@ def test_il_generatore_usa_la_banda_configurabile():
     assert ris.scoperti == []
     for p in persone:
         assert abs(ris.ore[p.id] - ris.media_ore) <= 6 + 1e-9
+
+
+# --- migrazione --------------------------------------------------------------------
+
+def test_migrazione_di_un_database_precedente(tmp_path):
+    import sqlite3
+
+    from cvap import db
+
+    percorso = str(tmp_path / "vecchio.db")
+    vecchio = sqlite3.connect(percorso)
+    vecchio.execute("CREATE TABLE persone (id INTEGER PRIMARY KEY AUTOINCREMENT, nome TEXT NOT NULL, "
+                    "tipo TEXT NOT NULL, qualifica TEXT NOT NULL, attivo INTEGER NOT NULL DEFAULT 1, "
+                    "autista_programmati INTEGER NOT NULL DEFAULT 0)")
+    vecchio.execute("INSERT INTO persone(nome, tipo, qualifica) VALUES ('Mario', 'dipendente', 'autista')")
+    vecchio.commit()
+    vecchio.close()
+    conn = db.connetti(percorso)
+    assert db.lista_persone(conn)[0]["max_ore_settimana"] is None
+    assert db.imposta_max_ore(conn, 1, 30)["max_ore_settimana"] == 30
+    assert db.lista_divieti(conn) == []
+    assert db.get_scarto_ore_max(conn) == 12
+    conn.close()

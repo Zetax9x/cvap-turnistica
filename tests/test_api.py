@@ -834,7 +834,7 @@ def test_turno_manuale_vietato_segnalato(client):
 
 def test_la_generazione_rispetta_massimo_ore_divieti_e_banda(client):
     ids = staff_14(client)
-    client.put("/api/impostazioni", json={"scarto_ore_max": 8})
+    client.put("/api/impostazioni", json={"scarto_ore_max": 14})
     client.put(f"/api/persone/{ids[0]}/parametri", json={"max_ore_settimana": 24})
     client.post("/api/divieti", json={"persona_id": ids[1], "turno": "notte"})
     r = client.post(f"/api/settimane/{LUNEDI_A}/genera", json={"tempo_max": 10})

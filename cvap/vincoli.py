@@ -54,11 +54,13 @@ def valida_settimana(
     ferie: dict[int, set[date]] | None = None,
     indisponibili: dict[int, set[date]] | None = None,
     fabbisogno: Sequence[Fabbisogno] = (),
+    scarto_ore_max: int = SCARTO_ORE_MAX,
 ) -> list[Violazione]:
     """`ferie` e `indisponibili`: giorni (per id persona) in cui non può iniziare alcun turno.
 
     Ogni giorno di ferie conta ORE_FERIE_GIORNO ore nel confronto con la media.
     `fabbisogno`: posti richiesti nelle postazioni a richiesta (Standby, Programmati).
+    `scarto_ore_max`: ore di scarto ammesse dalla media (riferimento: min(media, massimo ore della persona)).
     """
     ferie, indisponibili = ferie or {}, indisponibili or {}
     violazioni: list[Violazione] = []
@@ -66,6 +68,7 @@ def valida_settimana(
     violazioni += _doppioni(assegnazioni, postazioni)
     violazioni += _eccessi(giorni, assegnazioni, postazioni, fabbisogno)
     violazioni += _qualifiche(assegnazioni, persone)
+    violazioni += _divieti(assegnazioni, persone)
     violazioni += _assenze(assegnazioni, persone, ferie, "ferie", "è in ferie")
     violazioni += _assenze(assegnazioni, persone, indisponibili, "indisponibile", "è indisponibile")
 
@@ -83,7 +86,7 @@ def valida_settimana(
         if persona and persona.dipendente:
             violazioni += _ascoli_di_fila(pid, nome, turni, settimana)
 
-    violazioni += _ore(giorni, assegnazioni, persone, ferie)
+    violazioni += _ore(giorni, assegnazioni, persone, ferie, scarto_ore_max)
     violazioni += _ascoli(assegnazioni, persone)
     return violazioni
 
@@ -158,6 +161,16 @@ def _qualifiche(assegnazioni, persone):
         if (a.fascia, a.segmento) not in turni_ammessi(a.postazione):
             out.append(Violazione("errore", "segmento", f"Orario non valido per {a.postazione} ({_descrivi(a)})",
                                   a.persona_id, a.data))
+    return out
+
+
+def _divieti(assegnazioni, persone):
+    out = []
+    for a in assegnazioni:
+        p = persone.get(a.persona_id)
+        if p and p.dipendente and p.vieta(a.postazione, a.fascia, a.segmento):
+            out.append(Violazione("errore", "divieto",
+                                  f"{p.nome} non può fare questo turno ({_descrivi(a)})", p.id, a.data))
     return out
 
 
@@ -265,7 +278,7 @@ def _ascoli(assegnazioni, persone):
     return out
 
 
-def _ore(giorni, assegnazioni, persone, ferie):
+def _ore(giorni, assegnazioni, persone, ferie, scarto_ore_max=SCARTO_ORE_MAX):
     # chi è in ferie tutta la settimana non conta; per gli altri ogni giorno di ferie vale ORE_FERIE_GIORNO
     dipendenti = [p for p in persone.values()
                   if p.dipendente and giorni_disponibili(giorni, ferie.get(p.id, set()))]
@@ -279,10 +292,16 @@ def _ore(giorni, assegnazioni, persone, ferie):
     media = media_ore(ore, crediti)
     out = []
     for p in dipendenti:
-        scarto = ore[p.id] + crediti[p.id] - media
-        if abs(scarto) > SCARTO_ORE_MAX:
+        tetto = p.max_ore_settimana
+        if tetto is not None and ore[p.id] > tetto:  # le ore di ferie non contano nel tetto
+            out.append(Violazione("errore", "ore_max",
+                                  f"{p.nome}: {ore[p.id]}h, oltre il massimo di {tetto}h a settimana", p.id))
+        riferimento = media if tetto is None else min(media, tetto)
+        scarto = ore[p.id] + crediti[p.id] - riferimento
+        if abs(scarto) > scarto_ore_max:
             extra = f" + {crediti[p.id]}h ferie" if crediti[p.id] else ""
+            dove = "dalla media" if riferimento == media else "dal massimo"
             out.append(Violazione("errore", "ore",
-                                  f"{p.nome}: {ore[p.id]}h{extra}, scarto {scarto:+.1f}h dalla media ({media:.1f}h)",
+                                  f"{p.nome}: {ore[p.id]}h{extra}, scarto {scarto:+.1f}h {dove} ({riferimento:.1f}h)",
                                   p.id))
     return out
