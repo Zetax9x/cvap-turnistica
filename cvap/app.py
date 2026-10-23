@@ -577,8 +577,9 @@ def create_app(db_path: str) -> FastAPI:
                 cat = categoria_weekend(a)
                 if cat:
                     v["weekend"][cat] += 1
-                if a.postazione in (STANDBY, PROGRAMMATI):
-                    v[a.postazione.lower()] += 1
+                chiave = {STANDBY: "standby", PROGRAMMATI: "programmati"}.get(a.postazione)
+                if chiave:
+                    v[chiave] += 1
         out += volontari.values()
         out.sort(key=lambda r: (r["tipo"] != "dipendente", r["nome"].lower(), r["persona_id"]))
         return out
