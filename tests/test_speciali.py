@@ -85,7 +85,7 @@ def test_piu_persone_del_richiesto_e_un_errore():
     richieste = [fab(LUNEDI_A, PROGRAMMATI, "giorno", "prog_mattina", "autista", 2)]
     a = [ass(LUNEDI_A, PROGRAMMATI, "giorno", "autista", pid, segmento="prog_mattina") for pid in (1, 2)]
     v = valida_settimana(GIORNI, [], a, p, fabbisogno=richieste)
-    assert not [x for x in v if x.livello == "errore"]
+    assert not [x for x in v if x.livello == "errore" and x.codice != "ore_min"]  # settimana di prova: poche ore
     a.append(ass(LUNEDI_A, PROGRAMMATI, "giorno", "autista", 3, segmento="prog_mattina"))
     v = valida_settimana(GIORNI, [], a, p, fabbisogno=richieste)
     assert "eccesso" in {x.codice for x in v if x.livello == "errore"}
@@ -187,7 +187,7 @@ def test_standby_con_piu_posti_conta_interi_e_meta():
     assert sorted(u.segmento for u in unita_da_coprire(GIORNI, [], meta, richieste)) == ["standby", "standby_pomeriggio"]
     due = [ass(LUNEDI_A, STANDBY, "giorno", "autista", pid, segmento="standby") for pid in (1, 2)]
     v = valida_settimana(GIORNI, [], due, persone(*staff(2, 0)), fabbisogno=richieste)
-    assert not [x for x in v if x.livello == "errore"]
+    assert not [x for x in v if x.livello == "errore" and x.codice != "ore_min"]  # settimana di prova: poche ore
 
 
 # --- equità di Standby e Programmati nel tempo (come i weekend) ---------------------
