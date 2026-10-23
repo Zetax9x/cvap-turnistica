@@ -518,27 +518,36 @@ function vietato(personaId, postazione, fascia, segmento) {
 
 function renderRiepilogo(s) {
   const media = s.media_ore;
-  const soglia = s.scarto_ore_max ?? SCARTO_PREDEFINITO;
+  const diff = s.differenza_ore || null;
+  const limite = diff ? diff.limite : (s.scarto_ore_max ?? SCARTO_PREDEFINITO);
+  const oltre = !!diff && diff.differenza > limite;
+  // chi è il massimo o il minimo conta solo quando la differenza supera il limite
+  const estremi = new Map();
+  if (oltre) {
+    estremi.set(diff.massimo.persona_id, "ha più ore");
+    estremi.set(diff.minimo.persona_id, "ha meno ore");
+  }
   const righe = (s.riepilogo || []).slice().sort((a, b) =>
     (a.tipo === b.tipo ? 0 : a.tipo === "dipendente" ? -1 : 1) || b.ore - a.ore || a.nome.localeCompare(b.nome, "it"));
   const sezione = el("section", { class: "pannello", "aria-labelledby": "titolo-riepilogo" },
     el("h2", { id: "titolo-riepilogo" }, "Riepilogo ore",
-      media !== null && media !== undefined ? el("span", { class: "conteggi muted" }, `Media dipendenti: ${formatOre(media)} h`) : null));
+      media !== null && media !== undefined ? el("span", { class: "conteggi muted" }, `Media dipendenti: ${formatOre(media)} h`) : null,
+      diff ? el("span", { class: `conteggi ${oltre ? "scarto-alto" : "muted"}`,
+        title: "Tra chi fa più ore e chi ne fa meno; ferie 6 h al giorno; chi ha un massimo di ore non è confrontato" },
+      `Differenza max−min: ${formatOre(diff.differenza)} h (limite ${formatOre(limite)} h)`,
+      oltre ? el("span", { class: "sr-only" }, " oltre il limite") : null) : null));
   if (!righe.length) {
     sezione.append(el("p", { class: "muted" }, "Nessuna assegnazione in questa settimana."));
     return sezione;
   }
   const tbody = el("tbody", {}, righe.map((r) => {
     const dip = r.tipo === "dipendente";
-    // ogni giorno di ferie conta come ore lavorate (ore_ferie) nel confronto con la media
-    // con un massimo ore il riferimento è il più basso tra media e massimo
-    const riferimento = r.max_ore_settimana ? Math.min(media, r.max_ore_settimana) : media;
-    const scarto = dip && media !== null && media !== undefined && r.giorni_ferie < 7
-      ? r.ore + (r.ore_ferie || 0) - riferimento : null;
+    // ore contate = ore lavorate + ferie (6 h al giorno): sono quelle confrontate tra i dipendenti
+    const contate = dip && r.giorni_ferie < 7 ? r.ore + (r.ore_ferie || 0) : null;
+    const estremo = dip ? estremi.get(r.persona_id) : null;
     const assenze = [r.giorni_ferie ? `ferie ${r.giorni_ferie}g = ${formatOre(r.ore_ferie || 0)}h` : null,
       r.giorni_indisponibili ? `indisp. ${r.giorni_indisponibili}g` : null].filter(Boolean).join(", ");
-    const fuori = scarto !== null && Math.abs(scarto) > soglia;
-    return el("tr", { class: fuori ? "fuori-media" : null },
+    return el("tr", { class: estremo ? "fuori-media" : null },
       el("th", { scope: "row" },
         dip ? el("a", { href: `#dipendente/${r.persona_id}/${s.inizio}`, title: "Vedi solo i suoi turni" }, r.nome) : r.nome,
         assenze ? el("span", { class: "muted riepilogo-assenze" }, ` (${assenze})`) : null),
@@ -547,9 +556,10 @@ function renderRiepilogo(s) {
       el("td", { class: "num" }, formatOre(r.ore_giorno)),
       el("td", { class: "num" }, formatOre(r.ore_notte)),
       el("td", { class: "num" }, formatOre(r.turni_weekend)),
-      el("td", { class: `num${fuori ? " scarto-alto" : ""}` },
-        scarto === null ? "—" : formatSaldo(Math.round(scarto * 10) / 10),
-        fuori ? el("span", { class: "sr-only" }, ` (oltre ${soglia} ore dalla media)`) : null),
+      el("td", { class: `num${estremo ? " scarto-alto" : ""}`,
+        title: r.max_ore_settimana ? "Ha un massimo di ore: non entra nel confronto" : null },
+      contate === null ? "—" : formatOre(contate),
+      estremo ? el("span", { class: "sr-only" }, ` (${estremo}: differenza oltre ${formatOre(limite)} ore)`) : null),
     );
   }));
   sezione.append(el("div", { class: "table-scroll" }, el("table", { class: "tabella" },
@@ -560,7 +570,7 @@ function renderRiepilogo(s) {
       el("th", { scope: "col", class: "num" }, "Giorno"),
       el("th", { scope: "col", class: "num" }, "Notte"),
       el("th", { scope: "col", class: "num" }, "Turni weekend"),
-      el("th", { scope: "col", class: "num", title: "Differenza dalla media; ogni giorno di ferie conta 6 ore" }, "Scarto media"))),
+      el("th", { scope: "col", class: "num", title: "Ore lavorate più 6 ore per ogni giorno di ferie: sono le ore confrontate tra i dipendenti" }, "Ore contate"))),
     tbody)));
   return sezione;
 }

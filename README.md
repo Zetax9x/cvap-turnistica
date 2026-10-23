@@ -38,11 +38,12 @@ per la pianificazione): considera tutta la settimana insieme, non un turno alla 
 
 **Rispettate se il personale basta (altrimenti segnalate nel report)**
 - tutti i posti coperti
-- ore di ogni dipendente entro ±12 h (impostabile da 1 a 24) dalla media della settimana, o dal suo massimo ore se più basso
+- differenza di ore tra chi ne fa di più e chi ne fa meno nella settimana al massimo 12 h (impostabile da 1 a 24);
+  le ferie contano 6 h al giorno e chi ha un massimo di ore non entra nel confronto
 
 **Ottimizzate**
 - 3 di fila solo come eccezione (preferibilmente massimo 2)
-- ore vicine alla media, recuperando chi ha fatto più o meno ore nelle settimane passate
+- ore vicine tra i dipendenti, recuperando chi ha fatto più o meno ore nelle settimane passate
   (così a fine mese tutti hanno circa le stesse ore)
 - equilibrio tra giorni e notti, nella settimana e nello storico
 - sabati e domeniche (giorno e notte) distribuiti in modo equo su tutto lo storico

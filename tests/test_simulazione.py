@@ -7,4 +7,4 @@ def test_simulazione_di_una_settimana_produce_il_report():
     assert s.tipo == "A" and s.stato in ("ottimo", "ammissibile")
     assert s.scarti and esito.statistiche
     pagina = report_html([esito])
-    assert "Banda ±12 ore" in pagina and "Autista 1" in pagina
+    assert "Differenza massima 12 ore" in pagina and "Autista 1" in pagina

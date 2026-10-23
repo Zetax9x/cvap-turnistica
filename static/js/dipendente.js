@@ -146,9 +146,15 @@ function renderTotali(s, persona) {
     ...(giorniFerie ? [[`Ferie (${giorniFerie} gg)`, `${formatOre(r.ore_ferie || 0)} h`]] : []),
     ["Giorno / notte", r ? `${formatOre(r.ore_giorno)} h / ${formatOre(r.ore_notte)} h` : "—"],
     ["Turni nel weekend", r ? String(r.turni_weekend) : "0"],
-    ["Media dei dipendenti",
+    ["Media dei dipendenti (informativa)",
       giorniFerie < 7 && s.media_ore ? `${formatOre(Math.round(s.media_ore * 10) / 10)} h` : "—"],
   ];
+  const d = s.differenza_ore;
+  if (d && (d.massimo.persona_id === persona.id || d.minimo.persona_id === persona.id)) {
+    const massimo = d.massimo.persona_id === persona.id;
+    voci.push(["Nel confronto tra dipendenti",
+      `${massimo ? "Ha più ore" : "Ha meno ore"} della settimana (differenza max−min ${formatOre(d.differenza)} h, limite ${formatOre(d.limite)} h)`]);
+  }
   return el("section", { class: "pannello" },
     el("h2", {}, "Totali della settimana"),
     el("dl", { class: "totali-persona" }, voci.map(([k, v]) => [el("dt", {}, k), el("dd", {}, v)])));

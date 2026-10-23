@@ -127,7 +127,7 @@ function renderScarto(imp) {
       invia.disabled = true;
       try {
         dati.imp = await api.salvaImpostazioni({ scarto_ore_max: n });
-        toast("Scarto massimo salvato.", "ok");
+        toast("Differenza massima salvata.", "ok");
         render(dati.imp);
       } catch (err) {
         toastErrore(err);
@@ -135,12 +135,12 @@ function renderScarto(imp) {
       }
     },
   },
-  el("h2", { class: "card-title" }, "Scarto massimo dalla media"),
+  el("h2", { class: "card-title" }, "Differenza massima tra dipendenti"),
   el("div", { class: "campo" },
-    el("label", { for: "scarto-max" }, "Scarto massimo ore dalla media"),
+    el("label", { for: "scarto-max" }, "Differenza massima di ore tra dipendenti"),
     input,
-    el("p", { class: "hint" }, `Ogni dipendente deve restare entro ±${valore} ore dalla media della settimana `
-      + `(o dal suo massimo ore, se più basso). Valori ammessi da ${SCARTO_MIN} a ${SCARTO_MAX}; predefinito ${SCARTO_PREDEFINITO}.`)),
+    el("p", { class: "hint" }, `Tra chi fa più ore e chi ne fa meno nella settimana (ferie: 6 h al giorno). `
+      + `Chi ha un massimo di ore non entra nel confronto. Attualmente ${valore} h. Valori ammessi da ${SCARTO_MIN} a ${SCARTO_MAX}; predefinito ${SCARTO_PREDEFINITO}.`)),
   el("div", { class: "form-actions" }, invia));
 }
 

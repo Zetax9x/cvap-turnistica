@@ -3,8 +3,8 @@
 Serve a vedere come si comporta il sistema (regole, storico, ore, Ascoli, ferie) senza toccare il
 database vero: lavora su un file temporaneo e passa dalle stesse API usate dalla pagina.
 
-    python -m cvap.simulazione                       # 4 settimane, scarto ±12, report in simulazione.html
-    python -m cvap.simulazione --scarto 12 6         # confronta le due bande nello stesso report
+    python -m cvap.simulazione                       # 4 settimane, differenza massima 12 h, report in simulazione.html
+    python -m cvap.simulazione --scarto 12 6         # confronta due limiti nello stesso report
     python -m cvap.simulazione --settimane 4 --tempo 30 --out report.html
 """
 import argparse
@@ -50,7 +50,9 @@ class Settimana:
     messaggio: str
     errori: Counter
     avvisi: Counter
-    scarti: dict[str, float]          # nome -> ore + ferie - media (dipendenti presenti)
+    scarti: dict[str, float]          # nome -> ore + ferie - media (dipendenti presenti, solo informativo)
+    differenza: float                 # ore contate del dipendente con più ore meno quelle di chi ne ha meno
+    limite: int                       # differenza massima ammessa
     ore: dict[str, int]
     ascoli: dict[str, int]            # nome -> turni ad Ascoli
     notti: dict[str, int]
@@ -76,7 +78,7 @@ def _prepara(client: TestClient, scarto: int) -> dict[str, int]:
     if "scarto_ore_max" in imp:
         _ok(client.put("/api/impostazioni", json={**imp, "scarto_ore_max": scarto}))
     elif scarto != 12:
-        raise SystemExit("Questa versione non ha l'impostazione dello scarto ore: si può simulare solo ±12.")
+        raise SystemExit("Questa versione non ha l'impostazione dello scarto ore: si può simulare solo una differenza di 12 ore.")
 
     ids = {}
     for nome, qualifica in DIPENDENTI:
@@ -137,7 +139,7 @@ def _richieste(client, inizio: date, tipo: str):
 def _riassumi(s: dict) -> Settimana:
     nomi = {r["persona_id"]: r["nome"] for r in s["riepilogo"]}
     media = s["media_ore"] or 0.0
-    scarti, ore = {}, {}
+    scarti, ore, senza_max = {}, {}, []
     for r in s["riepilogo"]:
         if r["tipo"] != "dipendente":
             continue
@@ -146,6 +148,15 @@ def _riassumi(s: dict) -> Settimana:
             # con un massimo di ore il riferimento è il minore tra media e massimo
             rif = min(media, r["max_ore_settimana"]) if r.get("max_ore_settimana") else media
             scarti[r["nome"]] = r["ore"] + r.get("ore_ferie", 0) - rif
+            if not r.get("max_ore_settimana"):
+                senza_max.append(r["ore"] + r.get("ore_ferie", 0))
+    diff = s.get("differenza_ore")
+    if diff is not None:
+        differenza = float(diff["differenza"])
+    else:
+        # server senza il campo: la stessa differenza, calcolata dalle ore contate (solo senza massimo ore)
+        differenza = float(max(senza_max) - min(senza_max)) if len(senza_max) >= 2 else 0.0
+    limite = int((diff or {}).get("limite", s.get("scarto_ore_max") or 12))
     ascoli, notti = Counter(), Counter()
     dipendenti = {r["persona_id"] for r in s["riepilogo"] if r["tipo"] == "dipendente"}
     volontari = 0
@@ -165,7 +176,7 @@ def _riassumi(s: dict) -> Settimana:
         messaggio=report.get("messaggio", ""),
         errori=Counter(v["codice"] for v in s["violazioni"] if v["livello"] == "errore"),
         avvisi=Counter(v["codice"] for v in s["violazioni"] if v["livello"] == "avviso"),
-        scarti=scarti, ore=ore, ascoli=dict(ascoli), notti=dict(notti), turni_volontari=volontari,
+        scarti=scarti, differenza=differenza, limite=limite, ore=ore, ascoli=dict(ascoli), notti=dict(notti), turni_volontari=volontari,
     )
 
 
@@ -216,27 +227,26 @@ def _conta(c: Counter) -> str:
 
 
 def _sezione(es: Esito) -> str:
-    parti = [f'<section><h2>Banda ±{es.scarto_max} ore</h2>']
-    tutti_scarti = [abs(v) for s in es.settimane for v in s.scarti.values()]
-    fuori = sum(1 for v in tutti_scarti if v > es.scarto_max)
+    parti = [f'<section><h2>Differenza massima {es.scarto_max} ore</h2>']
+    fuori = sum(1 for s in es.settimane if s.differenza > es.scarto_max)
     ascoli_max = max((n for s in es.settimane for n in s.ascoli.values()), default=0)
     parti.append('<div class="kpi">' + "".join(
         f'<div><span>{_e(t)}</span><strong>{_e(v)}</strong></div>' for t, v in [
             ("Posti scoperti (totale)", sum(s.scoperti for s in es.settimane)),
-            ("Scarto massimo dalla media", f"{max(tutti_scarti, default=0):.1f} h"),
-            ("Casi fuori banda", fuori),
+            ("Differenza max−min peggiore", f"{max((s.differenza for s in es.settimane), default=0):.1f} h"),
+            ("Settimane oltre il limite", fuori),
             ("Max turni Ascoli a testa", ascoli_max),
             ("Tempo totale", f"{es.durata_s:.0f} s"),
         ]) + "</div>")
 
     parti.append("<h3>Settimane</h3>")
     parti.append(_tabella(
-        ["Settimana", "Tipo", "Esito", "Tempo", "Scoperti", "Media ore", "Scarto max", "Turni volontari",
+        ["Settimana", "Tipo", "Esito", "Tempo", "Scoperti", "Media ore", "Differenza max−min", "Limite", "Turni volontari",
          "Errori", "Avvisi"],
         [[s.inizio, s.tipo, s.stato, f"{s.durata_s:.0f} s", s.scoperti, f"{s.media_ore:.1f}",
-          f"{max((abs(v) for v in s.scarti.values()), default=0):.1f}", s.turni_volontari,
+          f"{s.differenza:.1f} h", f"{es.scarto_max} h", s.turni_volontari,
           _conta(s.errori), _conta(s.avvisi)] for s in es.settimane],
-        ["male" if s.scoperti or s.errori else "" for s in es.settimane]))
+        ["male" if s.scoperti or s.errori or s.differenza > es.scarto_max else "" for s in es.settimane]))
 
     nomi = [n for n, _ in DIPENDENTI]
     stat = {r["nome"]: r for r in es.statistiche}
@@ -252,11 +262,11 @@ def _sezione(es: Esito) -> str:
                         r.get("standby", 0), r.get("programmati", 0),
                         " ".join(str(s.ascoli.get(nome, 0)) for s in es.settimane),
                         " ".join("—" if v is None else f"{v:+.0f}" for v in sc)])
-        classi.append("male" if any(v is not None and abs(v) > es.scarto_max for v in sc) else "")
+        classi.append("")
     parti.append("<h3>Dipendenti</h3>")
     parti.append(_tabella(["Dipendente"] + [f"Ore sett. {i + 1}" for i in range(len(es.settimane))]
                           + ["Ore totali", "Saldo", "Ore giorno / notte", "Turni weekend", "Standby", "Programmati",
-                             "Ascoli per settimana", "Scarto per settimana"], righe, classi))
+                             "Ascoli per settimana", "Differenza dalla media (informativa)"], righe, classi))
 
     parti.append("<h3>Messaggi del generatore</h3><ul>")
     parti += [f"<li><strong>{_e(s.inizio)}</strong>: {_e(s.messaggio)}</li>" for s in es.settimane]
@@ -299,7 +309,7 @@ th {{ color:var(--muted); font-weight:600; }} tr.male td {{ background:var(--bad
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--settimane", type=int, default=4)
-    ap.add_argument("--scarto", type=int, nargs="+", default=[12], help="bande da confrontare, es. 12 6")
+    ap.add_argument("--scarto", type=int, nargs="+", default=[12], help="differenze massime da confrontare, es. 12 6")
     ap.add_argument("--tempo", type=float, default=30, help="tempo massimo di generazione per settimana (s)")
     ap.add_argument("--out", default="simulazione.html")
     args = ap.parse_args(argv)

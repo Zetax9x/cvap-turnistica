@@ -297,7 +297,7 @@ function renderFerie() {
   return el("section", { class: "card", "aria-labelledby": "titolo-ferie" },
     el("h2", { id: "titolo-ferie", class: "card-title" }, "Ferie"),
     el("p", { class: "muted" },
-      "Nei giorni di ferie il dipendente non riceve turni e ogni giorno di ferie conta 6 ore nel confronto con la media. ",
+      "Nei giorni di ferie il dipendente non riceve turni e ogni giorno di ferie conta 6 ore nel confronto tra le ore dei dipendenti. ",
       "Le ore che mancano non vanno recuperate nelle settimane successive."),
     form,
     correnti.length ? tabella(correnti) : el("p", { class: "muted" }, "Nessuna ferie in corso o in programma."),
