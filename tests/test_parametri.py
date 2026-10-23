@@ -217,3 +217,14 @@ def test_migrazione_di_un_database_precedente(tmp_path):
     assert db.lista_divieti(conn) == []
     assert db.get_scarto_ore_max(conn) == 12
     conn.close()
+
+
+def test_divieto_doppio_rifiutato_dal_database(tmp_path):
+    # anche due richieste uguali in contemporanea non creano due righe
+    from cvap import db
+    conn = db.connetti(str(tmp_path / "d.db"))
+    p = db.crea_persona(conn, "Mario", "dipendente", "autista")
+    assert db.crea_divieto(conn, p["id"], None, "notte") is not None
+    assert db.crea_divieto(conn, p["id"], None, "notte") is None
+    assert db.crea_divieto(conn, p["id"], "Ascoli", None) is not None
+    assert len(db.lista_divieti(conn)) == 2

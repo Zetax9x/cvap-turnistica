@@ -72,3 +72,12 @@ def test_conta_i_turni_standby_e_programmati():
     s = calcola_storico([SettimanaPassata(media_ore=0, dipendenti=[1, 2], assegnazioni=a)])
     assert s[1].richieste == {"Standby": 2, "Programmati": 0}
     assert s[2].richieste == {"Standby": 0, "Programmati": 1}
+
+
+def test_con_un_massimo_di_ore_il_saldo_si_misura_dal_massimo():
+    # media 48h; il dipendente 1 ha un massimo di 24h e ne fa 24: non resta indietro
+    a = [ass(GIORNI[i], "Acquasanta", "giorno", "autista", 1) for i in (0, 2)]
+    a += [ass(GIORNI[i], "Acquasanta", "notte", "autista", 2) for i in range(6)]
+    s = calcola_storico([SettimanaPassata(media_ore=48, dipendenti=[1, 2], assegnazioni=a, max_ore={1: 24})])
+    assert s[1].saldo_ore == 0
+    assert s[2].saldo_ore == 24
