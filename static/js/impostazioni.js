@@ -1,16 +1,34 @@
-// Vista "Impostazioni": data di riferimento della settimana A.
+// Vista "Impostazioni": data di riferimento della settimana A, scarto ore e parametri dei dipendenti.
 
 import { api } from "./api.js";
 import { el, clear, toast, toastErrore, mondayOf, todayISO, dataLunga, parseISO } from "./util.js";
 
+const SCARTO_PREDEFINITO = 12;
+const SCARTO_MIN = 1;
+const SCARTO_MAX = 24;
+const ORE_SETTIMANA_MAX = 168;
+const TURNI_DIVIETO = [
+  ["mattina", "Mattina (8–14)"],
+  ["pomeriggio", "Pomeriggio (14–20)"],
+  ["giorno", "Giorno (qualsiasi turno di giorno)"],
+  ["notte", "Notte"],
+];
+const A_RICHIESTA = ["Standby", "Programmati"];
+
 let root = null;
+const dati = { imp: null, persone: [], divieti: [], postazioni: [] };
+
+async function carica() {
+  [dati.imp, dati.persone, dati.divieti, dati.postazioni] =
+    await Promise.all([api.impostazioni(), api.persone(), api.divieti(), api.postazioni()]);
+  render(dati.imp);
+}
 
 export async function mostra(container) {
   root = container;
   clear(root).append(el("p", { class: "muted loading" }, "Caricamento delle impostazioni…"));
   try {
-    const imp = await api.impostazioni();
-    render(imp);
+    await carica();
   } catch (err) {
     clear(root).append(el("div", { class: "banner banner-errore", role: "alert" },
       el("strong", {}, "Impossibile caricare le impostazioni. "), err.message));
@@ -50,7 +68,8 @@ function render(imp) {
       try {
         const nuovo = await api.salvaImpostazioni({ data_riferimento_a: input.value });
         toast("Impostazioni salvate.", "ok");
-        render(nuovo && nuovo.data_riferimento_a ? nuovo : { data_riferimento_a: mondayOf(input.value) });
+        dati.imp = nuovo && nuovo.data_riferimento_a ? nuovo : { ...dati.imp, data_riferimento_a: mondayOf(input.value) };
+        render(dati.imp);
       } catch (err) {
         toastErrore(err);
         invia.disabled = false;
@@ -67,6 +86,9 @@ function render(imp) {
   clear(root).append(
     el("header", { class: "view-header" }, el("h1", {}, "Impostazioni")),
     form,
+    renderScarto(imp),
+    renderMassimiOre(),
+    renderDivieti(),
     el("section", { class: "card info", "aria-labelledby": "titolo-info" },
       el("h2", { id: "titolo-info", class: "card-title" }, "Come funziona"),
       el("ul", {},
@@ -76,4 +98,193 @@ function render(imp) {
         el("li", {}, "La settimana che contiene la data di riferimento è una settimana A; qualsiasi data scelta viene riportata al lunedì."),
         el("li", {}, "Turni: giorno 8–20 (divisibile in mattina 8–14 e pomeriggio 14–20 per i volontari) e notte 20–8."))),
   );
+}
+
+// ---------------------------------------------------------------- parametri dei dipendenti
+
+function dipendentiAttivi() {
+  return dati.persone.filter((p) => p.tipo === "dipendente" && p.attivo)
+    .sort((a, b) => a.nome.localeCompare(b.nome, "it"));
+}
+
+function renderScarto(imp) {
+  const valore = imp.scarto_ore_max ?? SCARTO_PREDEFINITO;
+  const input = el("input", {
+    type: "number", id: "scarto-max", name: "scarto_ore_max", required: true, inputmode: "numeric",
+    min: String(SCARTO_MIN), max: String(SCARTO_MAX), step: "1", value: String(valore),
+  });
+  const invia = el("button", { type: "submit", class: "btn btn-primary" }, "Salva");
+  return el("form", {
+    class: "card",
+    onsubmit: async (e) => {
+      e.preventDefault();
+      const n = Number(input.value);
+      if (!Number.isInteger(n) || n < SCARTO_MIN || n > SCARTO_MAX) {
+        input.focus();
+        toast(`Indica un numero intero di ore da ${SCARTO_MIN} a ${SCARTO_MAX}.`, "avviso");
+        return;
+      }
+      invia.disabled = true;
+      try {
+        dati.imp = await api.salvaImpostazioni({ scarto_ore_max: n });
+        toast("Scarto massimo salvato.", "ok");
+        render(dati.imp);
+      } catch (err) {
+        toastErrore(err);
+        invia.disabled = false;
+      }
+    },
+  },
+  el("h2", { class: "card-title" }, "Scarto massimo dalla media"),
+  el("div", { class: "campo" },
+    el("label", { for: "scarto-max" }, "Scarto massimo ore dalla media"),
+    input,
+    el("p", { class: "hint" }, `Ogni dipendente deve restare entro ±${valore} ore dalla media della settimana `
+      + `(o dal suo massimo ore, se più basso). Valori ammessi da ${SCARTO_MIN} a ${SCARTO_MAX}; predefinito ${SCARTO_PREDEFINITO}.`)),
+  el("div", { class: "form-actions" }, invia));
+}
+
+function renderMassimiOre() {
+  const dip = dipendentiAttivi();
+  const sezione = el("section", { class: "card", "aria-labelledby": "titolo-parametri" },
+    el("h2", { id: "titolo-parametri", class: "card-title" }, "Parametri dipendenti"));
+  if (!dip.length) {
+    sezione.append(el("p", { class: "muted" }, "Nessun dipendente attivo. Aggiungilo nella sezione Personale."));
+    return sezione;
+  }
+  const campi = new Map(dip.map((p) => [p.id, el("input", {
+    type: "number", id: `max-ore-${p.id}`, name: "max_ore_settimana", inputmode: "numeric",
+    min: "1", max: String(ORE_SETTIMANA_MAX), step: "1", placeholder: "nessun limite",
+    value: p.max_ore_settimana ? String(p.max_ore_settimana) : "",
+  })]));
+  const invia = el("button", { type: "submit", class: "btn btn-primary" }, "Salva massimi ore");
+  const form = el("form", {
+    onsubmit: async (e) => {
+      e.preventDefault();
+      const cambi = [];
+      for (const p of dip) {
+        const campo = campi.get(p.id);
+        const testo = campo.value.trim();
+        const n = testo === "" ? null : Number(testo);
+        if (n !== null && (!Number.isInteger(n) || n < 1 || n > ORE_SETTIMANA_MAX)) {
+          campo.focus();
+          toast(`${p.nome}: indica un numero intero di ore da 1 a ${ORE_SETTIMANA_MAX}, oppure lascia vuoto.`, "avviso");
+          return;
+        }
+        if (n !== (p.max_ore_settimana || null)) cambi.push([p, n]);
+      }
+      if (!cambi.length) { toast("Nessuna modifica da salvare.", "info"); return; }
+      invia.disabled = true;
+      try {
+        for (const [p, n] of cambi) await api.impostaParametri(p.id, n);
+        toast("Massimi ore salvati.", "ok");
+        await carica();
+      } catch (err) {
+        toastErrore(err);
+        invia.disabled = false;
+      }
+    },
+  },
+  el("p", { class: "hint" }, "Massimo di ore lavorate a settimana (le ore di ferie non contano). "
+    + "Lascia vuoto per nessun limite."),
+  el("div", { class: "table-scroll" }, el("table", { class: "tabella" },
+    el("caption", { class: "sr-only" }, "Massimo di ore a settimana per dipendente"),
+    el("thead", {}, el("tr", {},
+      el("th", { scope: "col" }, "Dipendente"),
+      el("th", { scope: "col" }, "Max ore/settimana"))),
+    el("tbody", {}, dip.map((p) => el("tr", {},
+      el("th", { scope: "row" }, el("label", { for: `max-ore-${p.id}` }, p.nome)),
+      el("td", {}, campi.get(p.id))))))),
+  el("div", { class: "form-actions" }, invia));
+  sezione.append(form);
+  return sezione;
+}
+
+function etichettaDivieto(d) {
+  const nome = (dati.persone.find((p) => p.id === d.persona_id) || {}).nome || `#${d.persona_id}`;
+  const turno = d.turno ? (TURNI_DIVIETO.find(([v]) => v === d.turno) || [])[1] || d.turno : "qualsiasi turno";
+  return { nome, postazione: d.postazione || "qualsiasi postazione", turno };
+}
+
+function renderDivieti() {
+  const dip = dipendentiAttivi();
+  const sezione = el("section", { class: "card", "aria-labelledby": "titolo-divieti" },
+    el("h2", { id: "titolo-divieti", class: "card-title" }, "Divieti dei dipendenti"),
+    el("p", { class: "hint" }, "Turni che un dipendente non può fare: il generatore non glieli assegna e "
+      + "i turni inseriti a mano vengono segnalati."));
+
+  if (!dati.divieti.length) {
+    sezione.append(el("p", { class: "muted" }, "Nessun divieto."));
+  } else {
+    sezione.append(el("div", { class: "table-scroll" }, el("table", { class: "tabella" },
+      el("caption", { class: "sr-only" }, "Divieti dei dipendenti"),
+      el("thead", {}, el("tr", {},
+        el("th", { scope: "col" }, "Dipendente"),
+        el("th", { scope: "col" }, "Postazione"),
+        el("th", { scope: "col" }, "Turno"),
+        el("th", { scope: "col" }, el("span", { class: "sr-only" }, "Azioni")))),
+      el("tbody", {}, dati.divieti.map((d) => {
+        const e = etichettaDivieto(d);
+        const btn = el("button", {
+          type: "button", class: "btn btn-small btn-danger",
+          "aria-label": `Elimina il divieto di ${e.nome}: ${e.postazione}, ${e.turno}`,
+          onclick: async () => {
+            btn.disabled = true;
+            try {
+              await api.eliminaDivieto(d.id);
+              toast("Divieto eliminato.", "ok");
+              await carica();
+            } catch (err) {
+              toastErrore(err);
+              btn.disabled = false;
+            }
+          },
+        }, "Elimina");
+        return el("tr", {},
+          el("th", { scope: "row" }, e.nome), el("td", {}, e.postazione), el("td", {}, e.turno),
+          el("td", { class: "azioni" }, btn));
+      })))));
+  }
+
+  if (!dip.length) return sezione;
+  const persona = el("select", { id: "div-persona", name: "persona_id", required: true },
+    dip.map((p) => el("option", { value: String(p.id) }, p.nome)));
+  const postazione = el("select", { id: "div-postazione", name: "postazione" },
+    el("option", { value: "" }, "Qualsiasi"),
+    [...dati.postazioni.map((p) => p.nome), ...A_RICHIESTA].map((n) => el("option", { value: n }, n)));
+  const turno = el("select", { id: "div-turno", name: "turno" },
+    el("option", { value: "" }, "Qualsiasi"),
+    TURNI_DIVIETO.map(([v, t]) => el("option", { value: v }, t)));
+  const invia = el("button", { type: "submit", class: "btn btn-primary" }, "Aggiungi divieto");
+  sezione.append(el("form", {
+    class: "form-aggiunta",
+    onsubmit: async (e) => {
+      e.preventDefault();
+      if (!postazione.value && !turno.value) {
+        postazione.focus();
+        toast("Indica almeno la postazione o il turno.", "avviso");
+        return;
+      }
+      invia.disabled = true;
+      try {
+        await api.creaDivieto({
+          persona_id: Number(persona.value),
+          postazione: postazione.value || null,
+          turno: turno.value || null,
+        });
+        toast("Divieto aggiunto.", "ok");
+        await carica();
+      } catch (err) {
+        toastErrore(err);
+        invia.disabled = false;
+      }
+    },
+  },
+  el("h3", {}, "Aggiungi un divieto"),
+  el("div", { class: "campi" },
+    el("div", { class: "campo" }, el("label", { for: "div-persona" }, "Dipendente"), persona),
+    el("div", { class: "campo" }, el("label", { for: "div-postazione" }, "Postazione"), postazione),
+    el("div", { class: "campo" }, el("label", { for: "div-turno" }, "Turno"), turno)),
+  el("div", { class: "form-actions" }, invia)));
+  return sezione;
 }

@@ -33,10 +33,12 @@ per la pianificazione): considera tutta la settimana insieme, non un turno alla 
 - un autista e un soccorritore per turno; l'autista può fare il soccorritore, non viceversa
 - una persona un solo ruolo per turno, almeno 11 ore di riposo tra turni (anche tra una settimana e l'altra)
 - mai più di 3 giorni (o 3 notti) di fila
+- massimo di ore settimanali di un dipendente, se impostato (le ferie non contano)
+- turni vietati a un dipendente (per postazione e/o tipo di turno: mattina, pomeriggio, giorno, notte)
 
 **Rispettate se il personale basta (altrimenti segnalate nel report)**
 - tutti i posti coperti
-- ore di ogni dipendente entro ±12 h dalla media della settimana
+- ore di ogni dipendente entro ±12 h (impostabile da 1 a 24) dalla media della settimana, o dal suo massimo ore se più basso
 
 **Ottimizzate**
 - 3 di fila solo come eccezione (preferibilmente massimo 2)
