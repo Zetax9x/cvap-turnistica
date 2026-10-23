@@ -103,6 +103,39 @@ export function formatSaldo(n) {
   return (v > 0 ? "+" : "−") + formatOre(Math.abs(v));
 }
 
+// ---------- Indisponibilità per parte del turno ----------
+
+export const PARTI_TURNO = ["mattina", "pomeriggio", "notte"];
+
+/** Parti della giornata coperte da un turno (come `parti_turno` del server). */
+export function partiTurno(fascia, segmento) {
+  if (fascia === "notte") return ["notte"];
+  if (["mattina", "standby_mattina", "prog_mattina"].includes(segmento)) return ["mattina"];
+  if (["pomeriggio", "standby_pomeriggio", "prog_pomeriggio"].includes(segmento)) return ["pomeriggio"];
+  return ["mattina", "pomeriggio"];
+}
+
+// Scelte del menu di un giorno: il valore è l'elenco delle parti indisponibili ("" = disponibile)
+export const SCELTE_INDISPONIBILITA = [
+  ["", "Disponibile"], ["mattina", "Mattina"], ["pomeriggio", "Pomeriggio"],
+  ["mattina+pomeriggio", "Giorno intero"], ["notte", "Notte"],
+  ["mattina+pomeriggio+notte", "Tutto il giorno"],
+];
+// combinazioni salvate che il menu non offre di base (es. mattina e notte)
+const ALTRE_SCELTE = { "mattina+notte": "Mattina e notte", "pomeriggio+notte": "Pomeriggio e notte" };
+
+/** Valore del menu per un insieme di parti (nell'ordine di PARTI_TURNO). */
+export function valoreParti(parti) {
+  return PARTI_TURNO.filter((p) => parti.has(p)).join("+");
+}
+
+/** Etichetta leggibile per un insieme di parti indisponibili ("" -> "Disponibile"). */
+export function etichettaParti(parti) {
+  const valore = valoreParti(parti);
+  const scelta = SCELTE_INDISPONIBILITA.find(([v]) => v === valore);
+  return scelta ? scelta[1] : (ALTRE_SCELTE[valore] || valore);
+}
+
 // ---------- Etichette ----------
 
 export const ETICHETTE = {

@@ -3,7 +3,7 @@
 import { api } from "./api.js";
 import {
   el, clear, addDays, mondayOf, todayISO, ddmm, dataLunga, dataEstesa, indiceGiorno, etichetta, formatOre,
-  orarioTurno, oraInizio,
+  orarioTurno, oraInizio, etichettaParti,
 } from "./util.js";
 
 const CHIAVE_SETTIMANA = "cvap.settimana";
@@ -102,7 +102,11 @@ function descriviTurno(a) {
 
 function renderTurni(s, persona) {
   const ferie = new Set((s.ferie || []).filter((x) => x.persona_id === persona.id).map((x) => x.data));
-  const indisp = new Set((s.indisponibilita || []).filter((x) => x.persona_id === persona.id).map((x) => x.data));
+  const indisp = new Map();  // data -> parti indisponibili
+  for (const x of (s.indisponibilita || []).filter((x) => x.persona_id === persona.id)) {
+    if (!indisp.has(x.data)) indisp.set(x.data, new Set());
+    indisp.get(x.data).add(x.parte);
+  }
   const errori = new Set((s.violazioni || [])
     .filter((v) => v.persona_id === persona.id && v.livello === "errore" && v.data).map((v) => v.data));
 
@@ -116,7 +120,7 @@ function renderTurni(s, persona) {
     } else if (ferie.has(g)) {
       contenuto = el("span", { class: "badge badge-ferie" }, "Ferie");
     } else {
-      contenuto = el("span", { class: "muted" }, indisp.has(g) ? "Indisponibile" : "Riposo");
+      contenuto = el("span", { class: "muted" }, indisp.has(g) ? `Indisponibile: ${etichettaParti(indisp.get(g)).toLowerCase()}` : "Riposo");
     }
     return el("tr", { class: indiceGiorno(g) >= 5 ? "weekend" : null },
       el("th", { scope: "row" }, dataEstesa(g)),

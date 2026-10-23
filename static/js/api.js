@@ -68,8 +68,9 @@ export const api = {
   riapri: (data) => richiesta("POST", `/settimane/${enc(data)}/riapri`),
   rimuoviGenerati: (data) => richiesta("DELETE", `/settimane/${enc(data)}/generati`),
 
-  impostaIndisponibilita: (data, personaId, date) =>
-    richiesta("PUT", `/settimane/${enc(data)}/indisponibilita`, { persona_id: personaId, date }),
+  // turni: [{data, parte}] con parte "mattina" | "pomeriggio" | "notte"
+  impostaIndisponibilita: (data, personaId, turni) =>
+    richiesta("PUT", `/settimane/${enc(data)}/indisponibilita`, { persona_id: personaId, turni }),
 
   impostaFabbisogno: (data, voci) => richiesta("PUT", `/settimane/${enc(data)}/fabbisogno`, { voci }),
 

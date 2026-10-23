@@ -61,6 +61,12 @@ CREATE TABLE IF NOT EXISTS indisponibilita (
     data TEXT NOT NULL,
     PRIMARY KEY (persona_id, data)
 );
+CREATE TABLE IF NOT EXISTS indisponibilita_turni (  -- parti della giornata (mattina, pomeriggio, notte)
+    persona_id INTEGER NOT NULL REFERENCES persone(id),
+    data TEXT NOT NULL,
+    parte TEXT NOT NULL,
+    PRIMARY KEY (persona_id, data, parte)
+);
 CREATE TABLE IF NOT EXISTS fabbisogno (  -- posti richiesti nelle postazioni a richiesta (Standby, Programmati)
     data TEXT NOT NULL,
     postazione TEXT NOT NULL,
@@ -187,6 +193,16 @@ def _migra(conn) -> None:
             # due avvii in contemporanea (es. due istanze Vercel): l'altro l'ha già aggiunta
             if "autista_programmati" not in _colonne(conn, "persone"):
                 raise
+    # la vecchia indisponibilità a giorno intero diventa tre parti; poi la tabella si svuota
+    # (idempotente: un avvio concorrente ricopia le stesse righe senza duplicarle)
+    try:
+        conn.execute("INSERT OR IGNORE INTO indisponibilita_turni(persona_id, data, parte) "
+                     "SELECT i.persona_id, i.data, parte FROM indisponibilita i, "
+                     "(SELECT 'mattina' AS parte UNION ALL SELECT 'pomeriggio' UNION ALL SELECT 'notte')")
+        conn.execute("DELETE FROM indisponibilita")
+    except Exception:
+        if conn.execute("SELECT 1 FROM indisponibilita LIMIT 1").fetchone():
+            raise
 
 
 # --- persone ---------------------------------------------------------------
@@ -243,7 +259,7 @@ def elimina_persona(conn: sqlite3.Connection, persona_id: int) -> bool:
             conn.execute("UPDATE persone SET attivo = 0 WHERE id = ?", (persona_id,))
         else:
             conn.execute("DELETE FROM ferie WHERE persona_id = ?", (persona_id,))
-            conn.execute("DELETE FROM indisponibilita WHERE persona_id = ?", (persona_id,))
+            conn.execute("DELETE FROM indisponibilita_turni WHERE persona_id = ?", (persona_id,))
             conn.execute("DELETE FROM persone WHERE id = ?", (persona_id,))
     return True
 
@@ -433,24 +449,25 @@ def ferie_periodo(conn: sqlite3.Connection, dal: date, al: date) -> dict[int, se
     return out
 
 
-def indisponibili_periodo(conn: sqlite3.Connection, dal: date, al: date) -> dict[int, set[date]]:
-    out: dict[int, set[date]] = {}
-    rows = conn.execute("SELECT persona_id, data FROM indisponibilita WHERE data >= ? AND data <= ?",
+def indisponibili_periodo(conn: sqlite3.Connection, dal: date, al: date) -> dict[int, set[tuple[date, str]]]:
+    """Coppie (giorno, parte) di indisponibilità con data in [dal, al], per id persona."""
+    out: dict[int, set[tuple[date, str]]] = {}
+    rows = conn.execute("SELECT persona_id, data, parte FROM indisponibilita_turni WHERE data >= ? AND data <= ?",
                         (dal.isoformat(), al.isoformat())).fetchall()
     for r in rows:
-        out.setdefault(r["persona_id"], set()).add(date.fromisoformat(r["data"]))
+        out.setdefault(r["persona_id"], set()).add((date.fromisoformat(r["data"]), r["parte"]))
     return out
 
 
 def imposta_indisponibilita(conn: sqlite3.Connection, persona_id: int, dal: date, al: date,
-                            giorni: list[date]) -> None:
-    """Sostituisce le indisponibilità della persona nel periodo [dal, al] con `giorni`."""
+                            turni: list[tuple[date, str]]) -> None:
+    """Sostituisce le indisponibilità della persona nel periodo [dal, al] con le coppie (giorno, parte) `turni`."""
     with conn:
-        conn.execute("DELETE FROM indisponibilita WHERE persona_id = ? AND data >= ? AND data <= ?",
+        conn.execute("DELETE FROM indisponibilita_turni WHERE persona_id = ? AND data >= ? AND data <= ?",
                      (persona_id, dal.isoformat(), al.isoformat()))
-        if giorni:
-            conn.executemany("INSERT INTO indisponibilita(persona_id, data) VALUES (?, ?)",
-                             [(persona_id, d.isoformat()) for d in sorted(set(giorni))])
+        if turni:
+            conn.executemany("INSERT INTO indisponibilita_turni(persona_id, data, parte) VALUES (?, ?, ?)",
+                             [(persona_id, d.isoformat(), parte) for d, parte in sorted(set(turni))])
 
 
 # --- fabbisogno delle postazioni a richiesta -------------------------------------------

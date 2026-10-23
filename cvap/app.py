@@ -16,8 +16,8 @@ from pydantic import BaseModel, Field, StringConstraints, model_validator
 
 from . import db
 from .calendario import giorni_settimana, lunedi, postazioni_attive, tipo_settimana
-from .modello import (INTERO_DI, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, SEGMENTI, STANDBY, Assegnazione,
-                      Fabbisogno, Persona, si_sovrappongono, turni_ammessi)
+from .modello import (INTERO_DI, PARTI_TURNO, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, SEGMENTI, STANDBY,
+                      Assegnazione, Fabbisogno, Persona, si_sovrappongono, turni_ammessi)
 from .storico import CATEGORIE_WEEKEND, SettimanaPassata, calcola_storico, categoria_weekend
 from .vincoli import giorni_disponibili, media_ore, ore_ferie, valida_settimana
 
@@ -81,9 +81,14 @@ class FerieIn(BaseModel):
     al: DataValida
 
 
+class TurnoIndisponibileIn(BaseModel):
+    data: DataValida
+    parte: Literal[PARTI_TURNO]
+
+
 class IndisponibilitaIn(BaseModel):
     persona_id: Id
-    date: Annotated[list[DataValida], Field(max_length=7)]
+    turni: Annotated[list[TurnoIndisponibileIn], Field(max_length=21)]  # 7 giorni x 3 parti
 
 
 class VoceFabbisognoIn(BaseModel):
@@ -190,7 +195,7 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
             "turni_weekend": sum(1 for a in turni if a.data.weekday() >= 5),
             "giorni_ferie": len(ferie.get(pid, ())),
             "ore_ferie": ore_ferie(giorni, ferie.get(pid, set())) if p["tipo"] == "dipendente" else 0,
-            "giorni_indisponibili": len(indisponibili.get(pid, ())),
+            "giorni_indisponibili": len({d for d, _ in indisponibili.get(pid, ())}),
         })
     riepilogo.sort(key=lambda r: (r["tipo"] != "dipendente", r["nome"].lower(), r["persona_id"]))
 
@@ -218,7 +223,9 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
             "origine": a.origine, "ore": a.ore,
         } for aid, a in righe],
         "ferie": _giorni_json(ferie),
-        "indisponibilita": _giorni_json(indisponibili),
+        "indisponibilita": [{"persona_id": pid, "data": d.isoformat(), "parte": parte}
+                            for pid, turni in sorted(indisponibili.items())
+                            for d, parte in sorted(turni, key=lambda t: (t[0], PARTI_TURNO.index(t[1])))],
         "violazioni": [{"livello": v.livello, "codice": v.codice, "messaggio": v.messaggio,
                         "persona_id": v.persona_id, "data": _iso(v.data)} for v in violazioni],
         "riepilogo": riepilogo,
@@ -531,9 +538,10 @@ def create_app(db_path: str) -> FastAPI:
                 raise HTTPException(404, "Persona non trovata")
             if p["tipo"] != "dipendente":
                 raise _errore("Le indisponibilità si inseriscono solo per i dipendenti")
-            if any(d not in giorni for d in body.date):
+            if any(t.data not in giorni for t in body.turni):
                 raise _errore("Le date di indisponibilità devono essere in questa settimana")
-            db.imposta_indisponibilita(conn, body.persona_id, giorni[0], giorni[-1], body.date)
+            db.imposta_indisponibilita(conn, body.persona_id, giorni[0], giorni[-1],
+                                    [(t.data, t.parte) for t in body.turni])
             return payload_settimana(conn, inizio)
 
     # --- statistiche ---

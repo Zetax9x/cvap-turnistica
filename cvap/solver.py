@@ -5,7 +5,7 @@ il modello assegna solo i posti rimasti, ai dipendenti.
 
 Vincoli rigidi (mai violati):
   - un solo dipendente per posto, abilitato al ruolo (l'autista può fare il soccorritore, non viceversa)
-  - nessun turno nei giorni di ferie o di indisponibilità
+  - nessun turno nei giorni di ferie né nelle parti (mattina, pomeriggio, notte) indisponibili
   - nessuna sovrapposizione e almeno 11h di riposo tra due turni (anche rispetto alle settimane vicine)
   - al massimo 3 giorni (o 3 notti) di fila
   - al massimo 3 turni ad Ascoli a settimana per dipendente
@@ -32,7 +32,8 @@ from itertools import combinations
 
 from ortools.sat.python import cp_model
 
-from .modello import PROGRAMMATI, STANDBY, Assegnazione, Fabbisogno, Persona, Unita, in_conflitto
+from .modello import (PROGRAMMATI, STANDBY, Assegnazione, Fabbisogno, Persona, Unita, in_conflitto,
+                      parti_turno)
 from .slot import unita_da_coprire
 from .storico import CATEGORIE_WEEKEND, StoricoPersona, categoria_weekend
 from .vincoli import (ASCOLI, MAX_CONSECUTIVI, MAX_TURNI_ASCOLI, MAX_TURNI_ASCOLI_EXTREMIS, SCARTO_ORE_MAX,
@@ -75,14 +76,15 @@ def genera(
     seed: int = 0,
     workers: int = 8,
     ferie: dict[int, set[date]] | None = None,
-    indisponibili: dict[int, set[date]] | None = None,
+    indisponibili: dict[int, set[tuple[date, str]]] | None = None,
     fabbisogno: Sequence[Fabbisogno] = (),
 ) -> Risultato:
     """Genera i turni dei dipendenti.
 
     `persone` deve contenere i dipendenti attivi (il chiamante esclude i non attivi). `ferie` e
-    `indisponibili` sono i giorni, per id, in cui non possono iniziare turni; chi è in ferie tutta
-    la settimana viene escluso. `media_ore` è la media dei dipendenti, ferie comprese.
+    `ferie` sono i giorni, per id, in cui non possono iniziare turni; chi è in ferie tutta la
+    settimana viene escluso. `indisponibili` sono le coppie (giorno, parte), per id: non può iniziare
+    un turno che copre una di quelle parti. `media_ore` è la media dei dipendenti, ferie comprese.
     `fabbisogno`: posti richiesti nelle postazioni a richiesta (Standby, Programmati).
     """
     avvio = time.monotonic()
@@ -101,8 +103,8 @@ def genera(
     if not dipendenti:
         return Risultato("impossibile", scoperti=unita, messaggio="Nessun dipendente attivo disponibile.")
 
-    bloccati = {p.id: set(ferie.get(p.id, ())) | set(indisponibili.get(p.id, ())) for p in dipendenti}
-    m = _Modello(giorni, unita, dipendenti, fissi, contesto, storico, crediti, bloccati)
+    ferie_di = {p.id: set(ferie.get(p.id, ())) for p in dipendenti}
+    m = _Modello(giorni, unita, dipendenti, fissi, contesto, storico, crediti, ferie_di, indisponibili)
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = tempo_max
     solver.parameters.num_search_workers = workers
@@ -188,7 +190,11 @@ def _ore_fisse(dipendenti, fissi) -> dict[int, int]:
 
 
 class _Modello:
-    def __init__(self, giorni, unita, dipendenti, fissi, contesto, storico, crediti, bloccati):
+    @staticmethod
+    def _indisponibile(indisp, u: Unita) -> bool:
+        return any((u.data, parte) in indisp for parte in parti_turno(u.fascia, u.segmento))
+
+    def __init__(self, giorni, unita, dipendenti, fissi, contesto, storico, crediti, ferie, indisponibili):
         self.model = cp_model.CpModel()
         self.giorni = giorni
         self.unita = unita
@@ -209,7 +215,8 @@ class _Modello:
         self.x: dict[tuple[int, int], cp_model.IntVar] = {}
         for ui, u in enumerate(unita):
             for p in dipendenti:
-                if (p.puo_ricoprire(u.ruolo, u.postazione) and u.data not in bloccati[p.id]
+                if (p.puo_ricoprire(u.ruolo, u.postazione) and u.data not in ferie[p.id]
+                        and not self._indisponibile(indisponibili.get(p.id, ()), u)
                         and not any(in_conflitto(u, f) for f in self.fissi_di[p.id])):
                     self.x[p.id, ui] = self.model.NewBoolVar(f"x_{p.id}_{ui}")
         self.per_persona: dict[int, list[tuple[Unita, cp_model.IntVar]]] = defaultdict(list)
