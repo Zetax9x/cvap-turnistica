@@ -22,6 +22,7 @@ Obiettivi (minimizzati insieme, in ordine di peso):
   - ore vicine alla media, recuperando il saldo delle settimane precedenti
   - equilibrio giorni/notti, nella settimana e nello storico
   - sabati e domeniche distribuiti in modo equo rispetto allo storico
+  - turni Standby e Programmati distribuiti allo stesso modo, tra chi li può fare
 """
 import time
 from collections import Counter, defaultdict
@@ -34,7 +35,7 @@ from ortools.sat.python import cp_model
 
 from .modello import PROGRAMMATI, STANDBY, Assegnazione, Fabbisogno, Persona, Unita, in_conflitto
 from .slot import unita_da_coprire
-from .storico import CATEGORIE_WEEKEND, StoricoPersona, categoria_weekend
+from .storico import CATEGORIE_RICHIESTA, CATEGORIE_WEEKEND, StoricoPersona, categoria_weekend
 from .vincoli import (ASCOLI, MAX_CONSECUTIVI, MAX_TURNI_ASCOLI, MAX_TURNI_ASCOLI_EXTREMIS, SCARTO_ORE_MAX,
                       giorni_disponibili, media_ore, ore_ferie, valida_settimana)
 
@@ -51,6 +52,8 @@ P_ORE_MAX = 40
 P_GIORNO_NOTTE = 20
 P_GIORNO_NOTTE_STORICO = 5
 P_WEEKEND = 30
+P_RICHIESTE = 30
+P_DOPPIA_RICHIESTA = 300
 
 
 @dataclass
@@ -223,6 +226,7 @@ class _Modello:
         self._ore()
         self._giorni_notti()
         self._weekend()
+        self._richieste()
         self.model.Minimize(sum(c * e for c, e in self.obiettivo))
         self._suggerimento_iniziale()
 
@@ -425,6 +429,30 @@ class _Modello:
             self.model.AddAbsEquality(cumul, ore_g - ore_n + (st.ore_giorno - st.ore_notte))
             self.obiettivo.append((P_GIORNO_NOTTE * n, sett))
             self.obiettivo.append((P_GIORNO_NOTTE_STORICO * n, cumul))
+
+    def _richieste(self):
+        n = self.scala
+        for cat in CATEGORIE_RICHIESTA:
+            # contano solo i dipendenti che questa settimana possono fare quel turno (ruolo, ferie, ...)
+            vars_di = {p.id: [v for u, v in self._vars_di(p.id, lambda u, cat=cat: u.postazione == cat)]
+                       for p in self.dipendenti}
+            idonei = [p for p in self.dipendenti if vars_di[p.id]]
+            if not idonei:
+                continue
+            storici = {p.id: self.storico.get(p.id, StoricoPersona()) for p in idonei}
+            settimane_tot = sum(st.settimane for st in storici.values())
+            tasso = sum(st.richieste[cat] for st in storici.values()) / settimane_tot if settimane_tot else 0.0
+            for p in idonei:
+                st = storici[p.id]
+                fissati = sum(1 for a in self.fissi_settimana if a.persona_id == p.id and a.postazione == cat)
+                # come per i weekend: costo marginale di (debito + c)^2, più una penalità per il secondo turno
+                debito = st.richieste[cat] + fissati - tasso * st.settimane
+                costo = round(P_RICHIESTE * n * (2 * debito + 1))
+                for v in vars_di[p.id]:
+                    self.obiettivo.append((costo, v))
+                extra = self.model.NewIntVar(0, len(vars_di[p.id]) + fissati, "")
+                self.model.Add(sum(vars_di[p.id]) + fissati - 1 <= extra)
+                self.obiettivo.append((P_DOPPIA_RICHIESTA * n, extra))
 
     def _weekend(self):
         n = self.scala

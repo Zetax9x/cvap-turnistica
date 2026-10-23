@@ -17,6 +17,8 @@ const COLONNE = [
   { campo: "dom_giorno", titolo: "Dom G", valore: (r) => wk(r, "dom_giorno") },
   { campo: "dom_notte", titolo: "Dom N", valore: (r) => wk(r, "dom_notte") },
   { campo: "weekend_tot", titolo: "Tot. weekend", valore: (r) => totWeekend(r) },
+  { campo: "standby", titolo: "Standby", valore: (r) => r.standby || 0 },
+  { campo: "programmati", titolo: "Programmati", valore: (r) => r.programmati || 0 },
 ];
 
 function tot(r) { return (r.ore_giorno || 0) + (r.ore_notte || 0); }
@@ -107,11 +109,14 @@ function render() {
         }, el("span", { class: "rapporto-giorno", style: `width:${pctG}%` })) : null),
       ["sab_giorno", "sab_notte", "dom_giorno", "dom_notte"].map((k) => el("td", { class: "num" }, String(wk(r, k)))),
       el("td", { class: "num" }, String(totWeekend(r))),
+      el("td", { class: "num" }, String(r.standby || 0)),
+      el("td", { class: "num" }, String(r.programmati || 0)),
     );
   }));
 
   root.append(el("div", { class: "table-scroll" }, el("table", { class: "tabella tabella-stat" },
     el("caption", { class: "sr-only" }, "Statistiche per persona. Fare clic sulle intestazioni per ordinare."),
     thead, tbody)));
-  root.append(el("p", { class: "hint" }, "Weekend: numero di turni svolti il sabato e la domenica, di giorno (G) e di notte (N)."));
+  root.append(el("p", { class: "hint" }, "Weekend: numero di turni svolti il sabato e la domenica, di giorno (G) e di notte (N). " +
+    "Standby e Programmati: turni svolti in quelle postazioni; il generatore li distribuisce in modo equo come i weekend."));
 }

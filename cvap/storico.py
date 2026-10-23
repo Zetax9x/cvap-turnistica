@@ -1,9 +1,10 @@
 """Statistiche cumulative dei turni passati, usate dal generatore per l'equità nel tempo."""
 from dataclasses import dataclass, field
 
-from .modello import Assegnazione
+from .modello import POSTAZIONI_A_RICHIESTA, Assegnazione
 
 CATEGORIE_WEEKEND = ("sab_giorno", "sab_notte", "dom_giorno", "dom_notte")
+CATEGORIE_RICHIESTA = POSTAZIONI_A_RICHIESTA  # Standby e Programmati, distribuiti come i weekend
 
 
 def categoria_weekend(a: Assegnazione) -> str | None:
@@ -18,9 +19,11 @@ class StoricoPersona:
     weekend: dict[str, int] = field(default_factory=dict)
     ore_giorno: int = 0
     ore_notte: int = 0
+    richieste: dict[str, int] = field(default_factory=dict)  # turni Standby e Programmati
 
     def __post_init__(self):
         self.weekend = {k: self.weekend.get(k, 0) for k in CATEGORIE_WEEKEND}
+        self.richieste = {k: self.richieste.get(k, 0) for k in CATEGORIE_RICHIESTA}
 
 
 @dataclass
@@ -51,6 +54,8 @@ def calcola_storico(settimane: list[SettimanaPassata]) -> dict[int, StoricoPerso
             cat = categoria_weekend(a)
             if cat:
                 st.weekend[cat] += 1
+            if a.postazione in st.richieste:
+                st.richieste[a.postazione] += 1
         for pid, h in ore.items():
             # con ferie nella settimana le ore mancanti non si recuperano dopo
             if not s.giorni_ferie.get(pid):

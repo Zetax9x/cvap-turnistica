@@ -238,12 +238,13 @@ def _sezione(es: Esito) -> str:
                      + [r.get("ore_totali", 0), f"{r.get('saldo_ore', 0):+.1f}",
                         f"{r.get('ore_giorno', 0)} / {r.get('ore_notte', 0)}",
                         sum((r.get("weekend") or {}).values()),
+                        r.get("standby", 0), r.get("programmati", 0),
                         " ".join(str(s.ascoli.get(nome, 0)) for s in es.settimane),
                         " ".join("—" if v is None else f"{v:+.0f}" for v in sc)])
         classi.append("male" if any(v is not None and abs(v) > es.scarto_max for v in sc) else "")
     parti.append("<h3>Dipendenti</h3>")
     parti.append(_tabella(["Dipendente"] + [f"Ore sett. {i + 1}" for i in range(len(es.settimane))]
-                          + ["Ore totali", "Saldo", "Ore giorno / notte", "Turni weekend",
+                          + ["Ore totali", "Saldo", "Ore giorno / notte", "Turni weekend", "Standby", "Programmati",
                              "Ascoli per settimana", "Scarto per settimana"], righe, classi))
 
     parti.append("<h3>Messaggi del generatore</h3><ul>")

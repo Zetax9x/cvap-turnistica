@@ -554,6 +554,7 @@ def create_app(db_path: str) -> FastAPI:
                 "settimane": st.settimane, "ore_totali": st.ore_giorno + st.ore_notte,
                 "saldo_ore": st.saldo_ore, "ore_giorno": st.ore_giorno, "ore_notte": st.ore_notte,
                 "weekend": dict(st.weekend),
+                "standby": st.richieste[STANDBY], "programmati": st.richieste[PROGRAMMATI],
             })
 
         volontari: dict[int, dict] = {}
@@ -566,7 +567,7 @@ def create_app(db_path: str) -> FastAPI:
                 v = volontari.setdefault(a.persona_id, {
                     "persona_id": p["id"], "nome": p["nome"], "tipo": p["tipo"], "qualifica": p["qualifica"],
                     "settimane": 0, "ore_totali": 0, "saldo_ore": 0, "ore_giorno": 0, "ore_notte": 0,
-                    "weekend": {k: 0 for k in CATEGORIE_WEEKEND},
+                    "weekend": {k: 0 for k in CATEGORIE_WEEKEND}, "standby": 0, "programmati": 0,
                 })
                 if a.persona_id not in visti:
                     visti.add(a.persona_id)
@@ -576,6 +577,8 @@ def create_app(db_path: str) -> FastAPI:
                 cat = categoria_weekend(a)
                 if cat:
                     v["weekend"][cat] += 1
+                if a.postazione in (STANDBY, PROGRAMMATI):
+                    v[a.postazione.lower()] += 1
         out += volontari.values()
         out.sort(key=lambda r: (r["tipo"] != "dipendente", r["nome"].lower(), r["persona_id"]))
         return out
