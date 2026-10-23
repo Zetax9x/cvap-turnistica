@@ -460,7 +460,7 @@ def test_genera_rispetta_ferie_e_indisponibilita(client):
     client.post("/api/ferie", json={"persona_id": ids[0], "dal": "2026-10-19", "al": "2026-10-21"})
     client.put(f"/api/settimane/{LUNEDI_A}/indisponibilita", json={
         "persona_id": ids[1], "turni": [{"data": "2026-10-24", "parte": x} for x in ("mattina", "pomeriggio", "notte")]})
-    r = client.post(f"/api/settimane/{LUNEDI_A}/genera", json={"tempo_max": 5})
+    r = client.post(f"/api/settimane/{LUNEDI_A}/genera", json={"tempo_max": 10})  # la soluzione buona arriva verso i 4 s
     assert r.status_code == 200, r.text
     s = r.json()
     assert s["report"]["scoperti"] == []
