@@ -521,11 +521,15 @@ function renderRiepilogo(s) {
   const diff = s.differenza_ore || null;
   const limite = diff ? diff.limite : (s.scarto_ore_max ?? SCARTO_PREDEFINITO);
   const oltre = !!diff && diff.differenza > limite;
-  // chi è il massimo o il minimo conta solo quando la differenza supera il limite
+  // chi è il massimo o il minimo conta solo quando la differenza supera il limite (anche a pari merito)
+  const confrontabile = (r) => r.tipo === "dipendente" && r.giorni_ferie < 7 && !r.max_ore_settimana;
+  const contateDi = (r) => r.ore + (r.ore_ferie || 0);
   const estremi = new Map();
-  if (oltre) {
-    estremi.set(diff.massimo.persona_id, "ha più ore");
-    estremi.set(diff.minimo.persona_id, "ha meno ore");
+  if (oltre && diff.massimo && diff.minimo) {
+    for (const r of (s.riepilogo || []).filter(confrontabile)) {
+      if (contateDi(r) === diff.massimo.ore) estremi.set(r.persona_id, "ha più ore");
+      else if (contateDi(r) === diff.minimo.ore) estremi.set(r.persona_id, "ha meno ore");
+    }
   }
   const righe = (s.riepilogo || []).slice().sort((a, b) =>
     (a.tipo === b.tipo ? 0 : a.tipo === "dipendente" ? -1 : 1) || b.ore - a.ore || a.nome.localeCompare(b.nome, "it"));
@@ -543,7 +547,7 @@ function renderRiepilogo(s) {
   const tbody = el("tbody", {}, righe.map((r) => {
     const dip = r.tipo === "dipendente";
     // ore contate = ore lavorate + ferie (6 h al giorno): sono quelle confrontate tra i dipendenti
-    const contate = dip && r.giorni_ferie < 7 ? r.ore + (r.ore_ferie || 0) : null;
+    const contate = dip && r.giorni_ferie < 7 ? contateDi(r) : null;
     const estremo = dip ? estremi.get(r.persona_id) : null;
     const assenze = [r.giorni_ferie ? `ferie ${r.giorni_ferie}g = ${formatOre(r.ore_ferie || 0)}h` : null,
       r.giorni_indisponibili ? `indisp. ${r.giorni_indisponibili}g` : null].filter(Boolean).join(", ");
@@ -556,9 +560,10 @@ function renderRiepilogo(s) {
       el("td", { class: "num" }, formatOre(r.ore_giorno)),
       el("td", { class: "num" }, formatOre(r.ore_notte)),
       el("td", { class: "num" }, formatOre(r.turni_weekend)),
-      el("td", { class: `num${estremo ? " scarto-alto" : ""}`,
-        title: r.max_ore_settimana ? "Ha un massimo di ore: non entra nel confronto" : null },
+      el("td", { class: `num${estremo ? " scarto-alto" : ""}` },
       contate === null ? "—" : formatOre(contate),
+      dip && r.max_ore_settimana && contate !== null
+        ? el("span", { class: "muted" }, ` (max ${formatOre(r.max_ore_settimana)} h, fuori confronto)`) : null,
       estremo ? el("span", { class: "sr-only" }, ` (${estremo}: differenza oltre ${formatOre(limite)} ore)`) : null),
     );
   }));

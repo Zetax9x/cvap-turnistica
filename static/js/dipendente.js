@@ -150,8 +150,9 @@ function renderTotali(s, persona) {
       giorniFerie < 7 && s.media_ore ? `${formatOre(Math.round(s.media_ore * 10) / 10)} h` : "—"],
   ];
   const d = s.differenza_ore;
-  if (d && (d.massimo.persona_id === persona.id || d.minimo.persona_id === persona.id)) {
-    const massimo = d.massimo.persona_id === persona.id;
+  // solo quando la differenza supera il limite: sotto, essere il massimo o il minimo non dice nulla
+  if (d && d.differenza > d.limite && (d.massimo?.persona_id === persona.id || d.minimo?.persona_id === persona.id)) {
+    const massimo = d.massimo?.persona_id === persona.id;
     voci.push(["Nel confronto tra dipendenti",
       `${massimo ? "Ha più ore" : "Ha meno ore"} della settimana (differenza max−min ${formatOre(d.differenza)} h, limite ${formatOre(d.limite)} h)`]);
   }
