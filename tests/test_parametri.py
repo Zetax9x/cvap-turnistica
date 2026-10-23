@@ -122,6 +122,13 @@ def test_le_ore_di_ferie_non_contano_nel_massimo():
     assert "ore_max" not in codici(v)
 
 
+def test_chi_e_in_ferie_tutta_la_settimana_non_e_controllato_sul_massimo():
+    # come nel generatore, che lo esclude: i turni in ferie li segnala già la regola delle ferie
+    persone = tre_dipendenti(max_mario=12)
+    v = valida(persone, turni_ore(1, "Acquasanta", 2), ferie={1: set(GIORNI)})
+    assert "ore_max" not in codici(v)
+
+
 def test_chi_ha_il_massimo_non_entra_nel_confronto_delle_ore():
     a = turni_ore(1, "Acquasanta", 1) + turni_ore(2, "Venarotta", 3) + turni_ore(3, "Acquasanta", 2)
     # Mario 12h, Luca 36h, Sara 24h: con tutti la differenza e' 24h, un errore

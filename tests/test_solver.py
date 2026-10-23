@@ -115,13 +115,14 @@ def test_ore_in_piu_della_settimana_prima_vengono_recuperate(dipendenti_14):
     storico = {p.id: StoricoPersona(settimane=1) for p in dipendenti_14}
     storico[1] = StoricoPersona(settimane=1, saldo_ore=12)   # ha lavorato 12h piu della media
     storico[2] = StoricoPersona(settimane=1, saldo_ore=-12)  # ha lavorato 12h meno della media
-    r = genera(GIORNI, STAZIONI_A, dipendenti_14, storico=storico, tempo_max=10)
+    r = genera(GIORNI, STAZIONI_A, dipendenti_14, storico=storico, tempo_max=10,
+               scarto_ore_max=24)  # turni da 12h: con limite 12 tutti a 48h, il recupero non ha margine
     assert r.ore[1] < r.media_ore < r.ore[2]
 
 
 def test_settimana_b_con_tre_postazioni(dipendenti_14):
     persone = staff(12, 8)
-    r = genera(GIORNI, STAZIONI_B, persone, tempo_max=15)
+    r = genera(GIORNI, STAZIONI_B, persone, tempo_max=30)
     assert r.scoperti == []
     assert errori(GIORNI, STAZIONI_B, r.assegnazioni, persone) == []
     # 28 posti ad Ascoli e 20 dipendenti: nessuno ne fa più di 2
@@ -212,7 +213,7 @@ def test_ferie_parziali_niente_turni_e_6_ore_per_giorno(dipendenti_14):
 def test_dipendente_con_massimo_24h_resta_fuori_dalla_differenza(dipendenti_14):
     persone = list(dipendenti_14)
     persone[0] = Persona(1, "Autista 1", "dipendente", "autista", max_ore_settimana=24)
-    r = genera(GIORNI, STAZIONI_A, persone, tempo_max=10)
+    r = genera(GIORNI, STAZIONI_A, persone, tempo_max=30)
     assert r.scoperti == []
     assert r.ore[1] <= 24
     assert _differenza(r, persone) <= 12
@@ -236,6 +237,31 @@ def test_ferie_tutta_la_settimana_esclude_il_dipendente(dipendenti_14):
     assert r.scoperti == []
     assert not [a for a in r.assegnazioni if a.persona_id == 1]
     assert r.media_ore == pytest.approx(672 / 13)
+
+
+def test_ferie_tutta_la_settimana_fuori_dalla_differenza(dipendenti_14):
+    ferie = {1: set(GIORNI)}
+    r = genera(GIORNI, STAZIONI_A, dipendenti_14, ferie=ferie, tempo_max=10)
+    presenti = [p for p in dipendenti_14 if p.id != 1]
+    assert _differenza(r, presenti) <= 12
+    assert "Differenza di ore" not in r.messaggio
+    mappa = {p.id: p for p in dipendenti_14}
+    v = valida_settimana(GIORNI, STAZIONI_A, r.assegnazioni, mappa, ferie=ferie)
+    assert not [x for x in v if x.codice == "ore"]
+
+
+def test_messaggio_del_generatore_e_validatore_concordano_sulla_differenza():
+    # stesso scenario del messaggio oltre il limite: anche il validatore deve dare l'errore "ore"
+    persone = staff(1, 1)
+    fissi = [ass(GIORNI[0], "Acquasanta", "giorno", "autista", 1, origine="manuale"),
+             ass(GIORNI[1], "Acquasanta", "giorno", "autista", 1, origine="manuale")]
+    tutto = {(d, parte) for d in GIORNI for parte in PARTI_TURNO}
+    r = genera(GIORNI, ["Acquasanta"], persone, fissi=fissi, indisponibili={2: tutto}, tempo_max=5,
+               scarto_ore_max=6)
+    v = valida_settimana(GIORNI, ["Acquasanta"], fissi + r.assegnazioni, {p.id: p for p in persone},
+                         indisponibili={2: tutto}, scarto_ore_max=6)
+    assert "Differenza di ore oltre il limite" in r.messaggio
+    assert any(x.codice == "ore" and x.livello == "errore" for x in v)
 
 
 # --- Ascoli: massimo 2 turni per dipendente, 3 solo in extremis, mai di più ------------

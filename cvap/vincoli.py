@@ -60,9 +60,10 @@ def valida_settimana(
     `indisponibili`: coppie (giorno, parte) per id persona; un turno è vietato se una delle sue parti
     (`parti_turno`) è indisponibile nel giorno in cui inizia.
 
-    Ogni giorno di ferie conta ORE_FERIE_GIORNO ore nel confronto con la media.
+    Ogni giorno di ferie conta ORE_FERIE_GIORNO ore nel confronto delle ore.
     `fabbisogno`: posti richiesti nelle postazioni a richiesta (Standby, Programmati).
-    `scarto_ore_max`: ore di scarto ammesse dalla media (riferimento: min(media, massimo ore della persona)).
+    `scarto_ore_max`: differenza massima ammessa tra chi fa più ore e chi ne fa meno (ferie comprese),
+    tra i dipendenti senza massimo ore.
     """
     ferie, indisponibili = ferie or {}, indisponibili or {}
     violazioni: list[Violazione] = []
@@ -296,34 +297,46 @@ def _ascoli(assegnazioni, persone):
     return out
 
 
-def _ore(giorni, assegnazioni, persone, ferie, scarto_ore_max=SCARTO_ORE_MAX):
-    # chi è in ferie tutta la settimana non conta; per gli altri ogni giorno di ferie vale ORE_FERIE_GIORNO
-    dipendenti = [p for p in persone.values()
-                  if p.dipendente and giorni_disponibili(giorni, ferie.get(p.id, set()))]
-    if not dipendenti:
-        return []
-    crediti = {p.id: ore_ferie(giorni, ferie.get(p.id, set())) for p in dipendenti}
-    ore = {p.id: 0 for p in dipendenti}
+def differenza_ore(giorni, assegnazioni, persone, ferie) -> dict | None:
+    """Differenza tra chi fa più ore e chi ne fa meno, sulle ore contate (lavorate + ferie).
+
+    Partecipano i dipendenti presenti (non in ferie tutta la settimana) senza massimo ore.
+    Con meno di 2 partecipanti restituisce None."""
+    ore = {p.id: ore_ferie(giorni, ferie.get(p.id, set())) for p in persone.values()
+           if p.dipendente and p.max_ore_settimana is None
+           and giorni_disponibili(giorni, ferie.get(p.id, set()))}
     for a in assegnazioni:
         if a.persona_id in ore:
             ore[a.persona_id] += a.ore
-    media = media_ore(ore, crediti)
+    if len(ore) < 2:
+        return None
+    # a pari ore sceglie l'id più basso, per un risultato stabile
+    pid_max = min(ore, key=lambda pid: (-ore[pid], pid))
+    pid_min = min(ore, key=lambda pid: (ore[pid], pid))
+
+    def voce(pid):
+        return {"persona_id": pid, "nome": persone[pid].nome, "ore": ore[pid]}
+
+    return {"differenza": ore[pid_max] - ore[pid_min], "massimo": voce(pid_max), "minimo": voce(pid_min)}
+
+
+def _ore(giorni, assegnazioni, persone, ferie, scarto_ore_max=SCARTO_ORE_MAX):
+    lavorate = Counter()
+    for a in assegnazioni:
+        lavorate[a.persona_id] += a.ore
     out = []
-    for p in dipendenti:
+    for p in persone.values():
         tetto = p.max_ore_settimana
-        if tetto is not None and ore[p.id] > tetto:  # le ore di ferie non contano nel tetto
+        if not (p.dipendente and giorni_disponibili(giorni, ferie.get(p.id, set()))):
+            continue  # come nel generatore: chi è in ferie tutta la settimana non conta
+        if tetto is not None and lavorate[p.id] > tetto:  # le ferie non contano nel tetto
             out.append(Violazione("errore", "ore_max",
-                                  f"{p.nome}: {ore[p.id]}h, oltre il massimo di {tetto}h a settimana", p.id))
-        riferimento = media if tetto is None else min(media, tetto)
-        scarto = ore[p.id] + crediti[p.id] - riferimento
-        if abs(scarto) > scarto_ore_max:
-            extra = f" + {crediti[p.id]}h ferie" if crediti[p.id] else ""
-            dove = "dalla media" if riferimento == media else "dal massimo"
-            out.append(Violazione("errore", "ore",
-                                  f"{p.nome}: {ore[p.id]}h{extra}, scarto {scarto:+.1f}h {dove} ({riferimento:.1f}h)",
-                                  p.id))
+                                  f"{p.nome}: {lavorate[p.id]}h, oltre il massimo di {tetto}h a settimana", p.id))
+    d = differenza_ore(giorni, assegnazioni, persone, ferie)
+    if d and d["differenza"] > scarto_ore_max:
+        alto, basso = d["massimo"], d["minimo"]
+        out.append(Violazione("errore", "ore",
+                              f"Differenza di {d['differenza']}h tra {alto['nome']} ({alto['ore']}h) e "
+                              f"{basso['nome']} ({basso['ore']}h): massimo {scarto_ore_max}h",
+                              alto["persona_id"]))
     return out
-
-
-def differenza_ore(giorni, assegnazioni, persone, ferie):  # segnaposto per la fase RED
-    return None

@@ -16,12 +16,12 @@ Vincoli rigidi "con evidenza": se impossibili il modello resta risolvibile ma pa
 e il risultato li segnala:
   - copertura di tutti i posti, con priorità: postazioni normali, poi Standby, poi Programmati
     (se manca personale restano scoperti prima i Programmati)
-  - ore di ogni dipendente entro ±`scarto_ore_max` (12 di default) dalla media della settimana, o dal
-    suo massimo ore se più basso della media; ogni giorno di ferie conta 6 ore
+  - differenza tra chi fa più ore e chi ne fa meno al massimo `scarto_ore_max` (12 di default), tra i
+    dipendenti senza massimo ore; ogni giorno di ferie conta 6 ore
 Obiettivi (minimizzati insieme, in ordine di peso):
-  - il 3° turno ad Ascoli solo in extremis (pesa come 10 ore fuori banda, meno di un posto scoperto)
+  - il 3° turno ad Ascoli solo in extremis (pesa come 10 ore oltre il limite, meno di un posto scoperto)
   - evitare 3 giorni/notti di fila
-  - ore vicine alla media, recuperando il saldo delle settimane precedenti
+  - ore vicine alla media (o al massimo ore, se più basso), recuperando il saldo delle settimane precedenti
   - equilibrio giorni/notti, nella settimana e nello storico
   - sabati e domeniche distribuiti in modo equo rispetto allo storico
   - turni Standby e Programmati distribuiti allo stesso modo, tra chi li può fare
@@ -40,7 +40,7 @@ from .modello import (PROGRAMMATI, STANDBY, Assegnazione, Fabbisogno, Persona, U
 from .slot import unita_da_coprire
 from .storico import CATEGORIE_RICHIESTA, CATEGORIE_WEEKEND, StoricoPersona, categoria_weekend
 from .vincoli import (ASCOLI, MAX_CONSECUTIVI, MAX_TURNI_ASCOLI, MAX_TURNI_ASCOLI_EXTREMIS, SCARTO_ORE_MAX,
-                      giorni_disponibili, media_ore, ore_ferie, valida_settimana)
+                      differenza_ore, giorni_disponibili, media_ore, ore_ferie, valida_settimana)
 
 __all__ = ["Risultato", "StoricoPersona", "genera"]
 
@@ -92,7 +92,8 @@ def genera(
     settimana viene escluso. `indisponibili` sono le coppie (giorno, parte), per id: non può iniziare
     un turno che copre una di quelle parti. `media_ore` è la media dei dipendenti, ferie comprese.
     `fabbisogno`: posti richiesti nelle postazioni a richiesta (Standby, Programmati).
-    `scarto_ore_max`: ore di scarto ammesse dalla media (riferimento: min(media, massimo ore della persona)).
+    `scarto_ore_max`: differenza massima ammessa tra chi fa più ore e chi ne fa meno (ferie comprese),
+    tra i dipendenti senza massimo ore.
     """
     avvio = time.monotonic()
     storico = storico or {}
@@ -147,14 +148,16 @@ def genera(
     for a in assegnazioni:
         ore[a.persona_id] += a.ore
     media = media_ore(ore, crediti)
-    fuori_banda = [p.nome for p in dipendenti
-                   if abs(ore[p.id] + crediti[p.id] - _riferimento(p, media)) > scarto_ore_max]
+    # stesso calcolo del validatore, così messaggio ed errori non possono divergere
+    d = differenza_ore(giorni, fissi + assegnazioni, {p.id: p for p in dipendenti}, ferie)
 
     note = list(problemi_fissi)
     if scoperti:
         note.append(f"{len(scoperti)} posti non coperti: servono altri dipendenti o volontari.")
-    if fuori_banda:
-        note.append(f"Ore fuori dal limite di ±{scarto_ore_max}h dalla media: " + ", ".join(fuori_banda) + ".")
+    if d and d["differenza"] > scarto_ore_max:
+        alto, basso = d["massimo"], d["minimo"]
+        note.append(f"Differenza di ore oltre il limite di {scarto_ore_max}h: "
+                    f"{alto['nome']} {alto['ore']}h, {basso['nome']} {basso['ore']}h.")
     nomi = {p.id: p.nome for p in dipendenti}
     in_extremis = [nomi[pid] for pid, n in Counter(a.persona_id for a in fissi + assegnazioni
                                                    if a.postazione == ASCOLI and a.persona_id in nomi).items()
@@ -187,11 +190,6 @@ def _problemi_turni_fissi(giorni, postazioni, fissi, contesto, dipendenti, ferie
                                                          ferie=ferie, indisponibili=indisponibili,
                                                          scarto_ore_max=scarto_ore_max)
             if v.livello == "errore" and v.codice in regole]
-
-
-def _riferimento(p: Persona, media: float) -> float:
-    """Ore a cui si confronta il dipendente: la media, o il suo massimo ore se più basso."""
-    return media if p.max_ore_settimana is None else min(media, p.max_ore_settimana)
 
 
 def _priorita(u: Unita) -> int:
@@ -416,6 +414,7 @@ class _Modello:
         self.model.Add(totale == sum(self.ore.values()) + crediti)
         banda = self.scarto_ore_max
         limite = 2 * (24 * 7 + max(self.crediti.values())) * n + 4 * max(banda, 24) * n  # supera ogni |scarto| possibile
+        self._differenza(banda)
         massimo = self.model.NewIntVar(0, limite, "scarto_max")
         # i saldi si centrano sui dipendenti attuali: chi è entrato o uscito non sposta tutti dalla media
         saldi = {p.id: self.storico.get(p.id, StoricoPersona()).saldo_ore for p in self.dipendenti}
@@ -435,21 +434,31 @@ class _Modello:
                 riferimento = self.model.NewIntVar(0, 24 * 7 * m + crediti + n * tetto, "")
                 self.model.AddMinEquality(riferimento, [totale, n * tetto])
             scarto = n * (self.ore[p.id] + self.crediti[p.id]) - riferimento
-            sopra = self.model.NewIntVar(0, limite, "")
-            sotto = self.model.NewIntVar(0, limite, "")
-            self.model.Add(scarto <= banda * n + sopra)
-            self.model.Add(-scarto <= banda * n + sotto)
-            self.obiettivo.append((P_FUORI_BANDA, sopra))
-            self.obiettivo.append((P_FUORI_BANDA, sotto))
 
             # obiettivo: media - saldo delle settimane precedenti
             saldo = saldi[p.id] - saldo_medio
-            saldo = max(-2 * banda, min(2 * banda, saldo))  # oltre non serve: la banda è rigida
+            saldo = max(-2 * banda, min(2 * banda, saldo))  # un saldo enorme non deve schiacciare gli altri obiettivi
             dev = self.model.NewIntVar(0, limite, "")
             self.model.AddAbsEquality(dev, scarto + round(n * saldo))
             self.model.Add(dev <= massimo)
             self.obiettivo.append((P_ORE, dev))
         self.obiettivo.append((P_ORE_MAX, massimo))
+
+    def _differenza(self, banda):
+        """Massimo - minimo delle ore contate (lavorate + ferie) di chi non ha un massimo ore: al più
+        `banda`, o paga P_FUORI_BANDA per ogni ora oltre (prima si contavano 1/n di ora con lo stesso peso)."""
+        contate = [self.ore[p.id] + self.crediti[p.id] for p in self.dipendenti if p.max_ore_settimana is None]
+        if len(contate) < 2:
+            return
+        tetto = 24 * 7 + max(self.crediti.values())
+        massime = self.model.NewIntVar(0, tetto, "ore_massime")
+        minime = self.model.NewIntVar(0, tetto, "ore_minime")
+        oltre = self.model.NewIntVar(0, tetto, "ore_oltre")
+        for c in contate:
+            self.model.Add(massime >= c)
+            self.model.Add(minime <= c)
+        self.model.Add(massime - minime <= banda + oltre)
+        self.obiettivo.append((P_FUORI_BANDA * self.scala, oltre))
 
     def _giorni_notti(self):
         n = self.scala
