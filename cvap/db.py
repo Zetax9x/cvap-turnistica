@@ -76,6 +76,8 @@ CREATE TABLE IF NOT EXISTS divieti (  -- turni che un dipendente non può fare (
     postazione TEXT,
     turno TEXT  -- mattina | pomeriggio | giorno | notte
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_divieti_unici  -- NULL = qualsiasi: COALESCE perché NULL non è mai uguale
+    ON divieti(persona_id, COALESCE(postazione, ''), COALESCE(turno, ''));
 CREATE TABLE IF NOT EXISTS fabbisogno (  -- posti richiesti nelle postazioni a richiesta (Standby, Programmati)
     data TEXT NOT NULL,
     postazione TEXT NOT NULL,
@@ -208,7 +210,9 @@ def _migra(conn) -> None:
         conn.execute("INSERT OR IGNORE INTO indisponibilita_turni(persona_id, data, parte) "
                      "SELECT i.persona_id, i.data, parte FROM indisponibilita i, "
                      "(SELECT 'mattina' AS parte UNION ALL SELECT 'pomeriggio' UNION ALL SELECT 'notte')")
-        conn.execute("DELETE FROM indisponibilita")
+        # solo le righe già copiate: una scritta nel frattempo da un'istanza vecchia resta per il prossimo avvio
+        conn.execute("DELETE FROM indisponibilita WHERE EXISTS (SELECT 1 FROM indisponibilita_turni t "
+                     "WHERE t.persona_id = indisponibilita.persona_id AND t.data = indisponibilita.data)")
     except Exception:
         if conn.execute("SELECT 1 FROM indisponibilita LIMIT 1").fetchone():
             raise
@@ -323,15 +327,14 @@ def divieti_per_persona(conn: sqlite3.Connection) -> dict[int, tuple[Divieto, ..
     return {pid: tuple(v) for pid, v in out.items()}
 
 
-def divieto_esiste(conn: sqlite3.Connection, persona_id: int, postazione: str | None, turno: str | None) -> bool:
-    return conn.execute("SELECT 1 FROM divieti WHERE persona_id = ? AND postazione IS ? AND turno IS ? LIMIT 1",
-                        (persona_id, postazione, turno)).fetchone() is not None
-
-
-def crea_divieto(conn: sqlite3.Connection, persona_id: int, postazione: str | None, turno: str | None) -> dict:
+def crea_divieto(conn: sqlite3.Connection, persona_id: int, postazione: str | None,
+                 turno: str | None) -> dict | None:
+    """None se lo stesso divieto esiste già (lo garantisce l'indice univoco, anche con richieste concorrenti)."""
     with conn:
-        cur = conn.execute("INSERT INTO divieti(persona_id, postazione, turno) VALUES (?, ?, ?)",
+        cur = conn.execute("INSERT OR IGNORE INTO divieti(persona_id, postazione, turno) VALUES (?, ?, ?)",
                            (persona_id, postazione, turno))
+    if not cur.rowcount:
+        return None
     return _divieto_dict(conn.execute("SELECT * FROM divieti WHERE id = ?", (cur.lastrowid,)).fetchone())
 
 

@@ -165,7 +165,8 @@ function renderMassimiOre() {
       for (const p of dip) {
         const campo = campi.get(p.id);
         const testo = campo.value.trim();
-        const n = testo === "" ? null : Number(testo);
+        // un campo number con testo non valido ha value "": non va scambiato per "nessun limite"
+        const n = testo === "" && !campo.validity.badInput ? null : Number(testo || NaN);
         if (n !== null && (!Number.isInteger(n) || n < 1 || n > ORE_SETTIMANA_MAX)) {
           campo.focus();
           toast(`${p.nome}: indica un numero intero di ore da 1 a ${ORE_SETTIMANA_MAX}, oppure lascia vuoto.`, "avviso");
@@ -182,6 +183,8 @@ function renderMassimiOre() {
       } catch (err) {
         toastErrore(err);
         invia.disabled = false;
+        // alcuni salvataggi possono essere già andati a buon fine: si mostra lo stato reale
+        await carica().catch(() => {});
       }
     },
   },

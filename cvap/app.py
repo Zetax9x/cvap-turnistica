@@ -272,7 +272,9 @@ def _settimana_passata(conn, riga: dict) -> SettimanaPassata:
     crediti = {pid: ore_ferie(giorni, ferie.get(pid, set())) for pid in ore}
     return SettimanaPassata(media_ore=media_ore(ore, crediti), dipendenti=dipendenti,
                             assegnazioni=assegnazioni,
-                            giorni_ferie={pid: 7 - g for pid, g in disponibili.items() if g < 7})
+                            giorni_ferie={pid: 7 - g for pid, g in disponibili.items() if g < 7},
+                            max_ore={p["id"]: p["max_ore_settimana"] for p in db.lista_persone(conn)
+                                     if p["id"] in ore and p["max_ore_settimana"]})
 
 
 def _volontario_per_nome(conn, nome: str, ruolo: str) -> int:
@@ -415,9 +417,10 @@ def create_app(db_path: str) -> FastAPI:
         if body.postazione is not None and body.postazione not in (
                 [x["nome"] for x in db.lista_postazioni(conn)] + list(POSTAZIONI_A_RICHIESTA)):
             raise _errore(f"Postazione sconosciuta: {body.postazione}")
-        if db.divieto_esiste(conn, body.persona_id, body.postazione, body.turno):
+        divieto = db.crea_divieto(conn, body.persona_id, body.postazione, body.turno)
+        if divieto is None:
             raise _errore("Questo divieto esiste già")
-        return db.crea_divieto(conn, body.persona_id, body.postazione, body.turno)
+        return divieto
 
     @app.delete("/api/divieti/{divieto_id}", status_code=204)
     def elimina_divieto(divieto_id: IdPath, conn: Conn):

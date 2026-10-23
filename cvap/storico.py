@@ -32,6 +32,7 @@ class SettimanaPassata:
     dipendenti: list[int]
     assegnazioni: list[Assegnazione]
     giorni_ferie: dict[int, int] = field(default_factory=dict)  # id -> giorni di ferie nella settimana
+    max_ore: dict[int, int] = field(default_factory=dict)  # id -> massimo ore a settimana
 
 
 def calcola_storico(settimane: list[SettimanaPassata]) -> dict[int, StoricoPersona]:
@@ -59,5 +60,7 @@ def calcola_storico(settimane: list[SettimanaPassata]) -> dict[int, StoricoPerso
         for pid, h in ore.items():
             # con ferie nella settimana le ore mancanti non si recuperano dopo
             if not s.giorni_ferie.get(pid):
-                storico[pid].saldo_ore += h - s.media_ore
+                # chi ha un massimo sotto la media si misura dal massimo: non va "recuperato"
+                rif = min(s.media_ore, s.max_ore[pid]) if pid in s.max_ore else s.media_ore
+                storico[pid].saldo_ore += h - rif
     return storico

@@ -52,7 +52,7 @@ export async function mostra(root, parametro) {
     renderCaricamento();
   }
   try {
-    const [settimana, persone, divieti] = await Promise.all([api.settimana(stato.data), api.persone(), api.divieti()]);
+    const [settimana, persone, divieti] = await Promise.all([api.settimana(stato.data), api.persone(), api.divieti().catch(() => [])]);  // i divieti servono solo per l'etichetta "NON PUÒ"
     // ignora risposte arrivate dopo un cambio di settimana
     if (mondayOf(settimana.inizio) !== stato.data) return;
     stato.settimana = settimana;
@@ -630,6 +630,7 @@ function renderDisponibilita(s) {
       }
       const menu = menuIndisponibilita(indisp.get(`${p.id}|${g}`) || new Set());
       return el("td", { class: classe }, el("select", {
+        id: `disp-${p.id}-${g}`,  // per ridare il focus dopo il salvataggio (il pannello si ricostruisce)
         disabled: confermata || stato.occupato,
         "aria-label": `${p.nome} indisponibile ${GIORNI_BREVI[i]} ${ddmm(g)}`,
         "data-precedente": menu.valore,

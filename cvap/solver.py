@@ -87,8 +87,8 @@ def genera(
 ) -> Risultato:
     """Genera i turni dei dipendenti.
 
-    `persone` deve contenere i dipendenti attivi (il chiamante esclude i non attivi). `ferie` e
-    `ferie` sono i giorni, per id, in cui non possono iniziare turni; chi è in ferie tutta la
+    `persone` deve contenere i dipendenti attivi (il chiamante esclude i non attivi). `ferie` sono
+    i giorni, per id, in cui non possono iniziare turni; chi è in ferie tutta la
     settimana viene escluso. `indisponibili` sono le coppie (giorno, parte), per id: non può iniziare
     un turno che copre una di quelle parti. `media_ore` è la media dei dipendenti, ferie comprese.
     `fabbisogno`: posti richiesti nelle postazioni a richiesta (Standby, Programmati).
