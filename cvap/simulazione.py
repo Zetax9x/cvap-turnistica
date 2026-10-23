@@ -30,8 +30,10 @@ DIPENDENTI = (
 VOLONTARI = [("Vol. Anna", "soccorritore"), ("Vol. Bruno", "autista"), ("Vol. Carla", "soccorritore")]
 # (nome, primo giorno, ultimo giorno): offset in giorni da PRIMO_LUNEDI
 FERIE = [("Autista 3", 9, 11), ("Soccorritore 2", 14, 20)]
-# (nome, offset del giorno): giorni interi di indisponibilità
-INDISPONIBILI = [("Autista 5", 2), ("Autista 5", 3), ("Soccorritore 4", 12), ("Autista 8", 26)]
+# (nome, offset del giorno, parti del turno indisponibili)
+TUTTO = ("mattina", "pomeriggio", "notte")
+INDISPONIBILI = [("Autista 5", 2, TUTTO), ("Autista 5", 3, ("notte",)), ("Soccorritore 4", 12, ("mattina",)),
+                 ("Autista 8", 26, ("mattina", "pomeriggio")), ("Soccorritore 6", 15, ("notte",))]
 
 
 @dataclass
@@ -89,12 +91,12 @@ def _prepara(client: TestClient, scarto: int) -> dict[str, int]:
 
 def _indisponibilita(client, ids, inizio: date):
     per_persona = defaultdict(list)
-    for nome, off in INDISPONIBILI:
+    for nome, off, parti in INDISPONIBILI:
         d = PRIMO_LUNEDI + timedelta(days=off)
         if inizio <= d < inizio + timedelta(days=7):
-            per_persona[nome].append(d.isoformat())
-    for nome, giorni in per_persona.items():
-        _ok(client.put(f"/api/settimane/{inizio}/indisponibilita", json={"persona_id": ids[nome], "date": giorni}))
+            per_persona[nome] += [{"data": d.isoformat(), "parte": parte} for parte in parti]
+    for nome, turni in per_persona.items():
+        _ok(client.put(f"/api/settimane/{inizio}/indisponibilita", json={"persona_id": ids[nome], "turni": turni}))
 
 
 def _volontari(client, ids, inizio: date):
@@ -256,7 +258,7 @@ def _sezione(es: Esito) -> str:
 def report_html(esiti: list[Esito]) -> str:
     scenario = (f"{len(DIPENDENTI)} dipendenti ({sum(1 for _, q in DIPENDENTI if q == 'autista')} autisti), "
                 f"{len(VOLONTARI)} volontari con 3 turni a settimana nel weekend, ferie di 3 e 7 giorni, "
-                "qualche giorno di indisponibilità, Standby e Programmati nelle settimane A.")
+                "indisponibilità di un giorno intero o di una parte (mattina, notte), Standby e Programmati nelle settimane A.")
     return f"""<!doctype html>
 <html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Simulazione turni</title>
