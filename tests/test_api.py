@@ -468,6 +468,25 @@ def test_ferie_non_fanno_recuperare_ore_la_settimana_dopo(client):
     assert stats[ids[0]]["saldo_ore"] == 0
 
 
+def test_statistiche_partono_dalla_prima_settimana_generata(client):
+    # avvio del sistema: la domenica della settimana prima è inserita a mano, solo come contesto
+    ids = staff_14(client)
+    vol = crea(client, "Volontario", "volontario", "soccorritore")
+    prima = "2026-10-12"
+    assert prenota(client, prima, ids[0], data="2026-10-18", ruolo="autista").status_code == 201
+    assert prenota(client, prima, ids[8], data="2026-10-18", fascia="notte").status_code == 201
+    assert prenota(client, prima, vol["id"], data="2026-10-18", postazione="Venarotta").status_code == 201
+    assert client.post(f"/api/settimane/{prima}/conferma").status_code == 200
+    stats = client.get("/api/statistiche").json()
+    assert stats == []
+    assert client.post(f"/api/settimane/{LUNEDI_A}/genera", json={"tempo_max": 5}).status_code == 200
+    stats = {x["persona_id"]: x for x in client.get("/api/statistiche").json()}
+    assert all(x["settimane"] == 1 for x in stats.values())
+    assert sum(x["ore_totali"] for x in stats.values()) == 672
+    assert vol["id"] not in stats
+    assert stats[ids[0]]["weekend"]["dom_giorno"] + stats[ids[8]]["weekend"]["dom_notte"] <= 2
+
+
 # --- volontari scritti per nome ------------------------------------------------------
 
 def prenota_nome(client, nome, data=LUNEDI_A, postazione="Acquasanta", fascia="giorno",
