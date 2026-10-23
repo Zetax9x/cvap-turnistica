@@ -4,6 +4,7 @@ import { api } from "./api.js";
 import {
   el, clear, toast, toastErrore, chiediConferma, addDays, mondayOf, todayISO, ddmm, dataLunga,
   dataEstesa, indiceGiorno, GIORNI_BREVI, etichetta, formatOre, formatSaldo, orarioTurno,
+  PARTI_TURNO, SCELTE_INDISPONIBILITA, partiTurno, valoreParti, etichettaParti,
 } from "./util.js";
 
 const FASCE = ["giorno", "notte"];
@@ -545,9 +546,29 @@ function renderRiepilogo(s) {
 
 // ---------------------------------------------------------------- disponibilità
 
-/** Id delle persone che hanno `data` nella lista [{persona_id, data}]. */
-function giorniPersona(lista, data) {
-  return new Set((lista || []).filter((x) => x.data === data).map((x) => x.persona_id));
+/** Id delle persone che hanno `data` nella lista [{persona_id, data}], e (se `parti`) una di quelle parti. */
+function giorniPersona(lista, data, parti = null) {
+  return new Set((lista || []).filter((x) => x.data === data && (!parti || parti.includes(x.parte)))
+    .map((x) => x.persona_id));
+}
+
+/** Parti indisponibili per persona e data: Map "persona|data" -> Set di parti. */
+function partiIndisponibili(lista) {
+  const out = new Map();
+  for (const x of lista || []) {
+    const chiave = `${x.persona_id}|${x.data}`;
+    if (!out.has(chiave)) out.set(chiave, new Set());
+    out.get(chiave).add(x.parte);
+  }
+  return out;
+}
+
+/** Il menu di un giorno: le scelte standard, più la combinazione salvata se non è tra queste. */
+function menuIndisponibilita(parti) {
+  const valore = valoreParti(parti);
+  const scelte = SCELTE_INDISPONIBILITA.some(([v]) => v === valore)
+    ? SCELTE_INDISPONIBILITA : [...SCELTE_INDISPONIBILITA, [valore, etichettaParti(parti)]];
+  return { valore, opzioni: scelte.map(([v, testo]) => el("option", { value: v, selected: v === valore }, testo)) };
 }
 
 function renderDisponibilita(s) {
@@ -556,8 +577,8 @@ function renderDisponibilita(s) {
     .filter((p) => p.tipo === "dipendente" && p.attivo)
     .sort((a, b) => a.nome.localeCompare(b.nome, "it"));
   const ferie = new Set((s.ferie || []).map((x) => `${x.persona_id}|${x.data}`));
-  const indisp = new Set((s.indisponibilita || []).map((x) => `${x.persona_id}|${x.data}`));
-  const n = (s.indisponibilita || []).length;
+  const indisp = partiIndisponibili(s.indisponibilita);
+  const n = indisp.size;  // giorni con almeno una parte indisponibile
   const nFerie = new Set((s.ferie || []).map((x) => x.persona_id)).size;
 
   const riepilogo = [n ? `${n} giorni indisponibili` : "nessuna indisponibilità",
@@ -570,7 +591,8 @@ function renderDisponibilita(s) {
     el("summary", {}, el("h2", { class: "disponibilita-titolo" }, "Disponibilità dipendenti"),
       el("span", { class: "muted" }, ` ${riepilogo}`)),
     el("p", { class: "muted" },
-      "Spunta i giorni in cui un dipendente non può lavorare: non riceverà turni che iniziano quel giorno. ",
+      "Per ogni giorno scegli quando un dipendente non può lavorare (mattina, pomeriggio, notte): non riceverà ",
+      "turni che coprono quella parte. La notte è quella che inizia la sera del giorno scelto. ",
       "Le ferie si inseriscono in Personale: ogni giorno conta 6 ore."));
   if (!dipendenti.length) {
     blocco.append(el("p", { class: "muted" }, "Nessun dipendente attivo."));
@@ -585,11 +607,13 @@ function renderDisponibilita(s) {
       if (ferie.has(`${p.id}|${g}`)) {
         return el("td", { class: classe }, el("span", { class: "badge badge-ferie", title: "In ferie" }, "Ferie"));
       }
-      return el("td", { class: classe }, el("input", {
-        type: "checkbox", checked: indisp.has(`${p.id}|${g}`), disabled: confermata || stato.occupato,
+      const menu = menuIndisponibilita(indisp.get(`${p.id}|${g}`) || new Set());
+      return el("td", { class: classe }, el("select", {
+        disabled: confermata || stato.occupato,
         "aria-label": `${p.nome} indisponibile ${GIORNI_BREVI[i]} ${ddmm(g)}`,
+        "data-precedente": menu.valore,
         onchange: (e) => onCambiaIndisponibilita(p, g, e.target),
-      }));
+      }, menu.opzioni));
     }))));
 
   blocco.append(el("div", { class: "table-scroll" }, el("table", { class: "tabella tabella-disponibilita" },
@@ -613,22 +637,25 @@ function inCoda(fn) {
   return risultato;
 }
 
-async function onCambiaIndisponibilita(p, data, checkbox) {
-  const idFocus = checkbox.id;
-  checkbox.disabled = true;
+async function onCambiaIndisponibilita(p, data, menu) {
+  const idFocus = menu.id;
+  const precedente = menu.dataset.precedente;
+  const scelte = menu.value ? menu.value.split("+") : [];
+  menu.disabled = true;
   try {
-    // le date si leggono al momento dell'invio, dopo i salvataggi precedenti in coda
+    // le altre indisponibilità si leggono al momento dell'invio, dopo i salvataggi precedenti in coda
     await inCoda(async () => {
-      const giorni = new Set((stato.settimana.indisponibilita || [])
-        .filter((x) => x.persona_id === p.id).map((x) => x.data));
-      if (checkbox.checked) giorni.add(data); else giorni.delete(data);
-      aggiorna(await api.impostaIndisponibilita(stato.data, p.id, [...giorni].sort()));
+      const turni = (stato.settimana.indisponibilita || [])
+        .filter((x) => x.persona_id === p.id && x.data !== data)
+        .map((x) => ({ data: x.data, parte: x.parte }));
+      for (const parte of PARTI_TURNO.filter((x) => scelte.includes(x))) turni.push({ data, parte });
+      aggiorna(await api.impostaIndisponibilita(stato.data, p.id, turni));
     });
     rifocalizza(idFocus);
   } catch (err) {
     toastErrore(err);
-    checkbox.checked = !checkbox.checked;
-    checkbox.disabled = false;
+    menu.value = precedente;
+    menu.disabled = false;
   }
 }
 
@@ -856,7 +883,8 @@ function renderFormAggiunta(c, mancanti) {
   const oreSettimana = new Map((s.riepilogo || []).map((r) => [r.persona_id, r.ore]));
   const giaInCella = new Set(assegnazioniCella(s, c).map((a) => a.persona_id));
   const inFerie = giorniPersona(s.ferie, c.data);
-  const indisponibili = giorniPersona(s.indisponibilita, c.data);
+  // indisponibile solo se la sua indisponibilità tocca le ore di questo turno
+  const indisponibili = giorniPersona(s.indisponibilita, c.data, partiTurno(c.fascia, segmentoCella(c)));
   const prog = c.postazione === PROGRAMMATI;
   // l'autista può fare anche il soccorritore; nei Programmati guida anche chi ha "autista programmati"
   const puoRicoprire = (p) => c.ruolo === "soccorritore" || p.qualifica === "autista"

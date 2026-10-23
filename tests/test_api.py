@@ -374,27 +374,81 @@ def test_settimana_mostra_ferie_e_quota(client):
 def test_indisponibilita_settimanale(client):
     p = crea(client, "Mario")
     url = f"/api/settimane/{LUNEDI_A}/indisponibilita"
-    r = client.put(url, json={"persona_id": p["id"], "date": ["2026-10-20", "2026-10-24"]})
+    r = client.put(url, json={"persona_id": p["id"], "turni": [
+        {"data": "2026-10-20", "parte": "mattina"}, {"data": "2026-10-20", "parte": "notte"},
+        {"data": "2026-10-24", "parte": "pomeriggio"}]})
     assert r.status_code == 200, r.text
-    assert sorted(x["data"] for x in r.json()["indisponibilita"]) == ["2026-10-20", "2026-10-24"]
+    s = r.json()
+    assert sorted((x["data"], x["parte"]) for x in s["indisponibilita"]) == [
+        ("2026-10-20", "mattina"), ("2026-10-20", "notte"), ("2026-10-24", "pomeriggio")]
+    assert all(x["persona_id"] == p["id"] for x in s["indisponibilita"])
+    # il riepilogo conta i giorni con almeno una parte indisponibile
+    assert [x["giorni_indisponibili"] for x in s["riepilogo"] if x["persona_id"] == p["id"]] == [2]
     # sostituisce quelle della persona in quella settimana
-    r = client.put(url, json={"persona_id": p["id"], "date": ["2026-10-21"]})
-    assert [x["data"] for x in r.json()["indisponibilita"]] == ["2026-10-21"]
-    assert client.put(url, json={"persona_id": p["id"], "date": ["2026-10-27"]}).status_code == 400
-    assert client.put(url, json={"persona_id": 9999, "date": []}).status_code == 404
+    r = client.put(url, json={"persona_id": p["id"], "turni": [{"data": "2026-10-21", "parte": "notte"}]})
+    assert [(x["data"], x["parte"]) for x in r.json()["indisponibilita"]] == [("2026-10-21", "notte")]
+    assert client.put(url, json={"persona_id": p["id"], "turni": []}).json()["indisponibilita"] == []
+    assert client.put(url, json={"persona_id": 9999, "turni": []}).status_code == 404
+
+
+def test_indisponibilita_validazione(client):
+    p = crea(client, "Mario")
+    v = crea(client, "Anna", "volontario", "soccorritore")
+    url = f"/api/settimane/{LUNEDI_A}/indisponibilita"
+    voce = {"data": "2026-10-20", "parte": "mattina"}
+    assert client.put(url, json={"persona_id": p["id"], "turni": [{"data": "2026-10-27", "parte": "notte"}]}
+                      ).status_code == 400  # fuori settimana
+    assert client.put(url, json={"persona_id": p["id"], "turni": [{"data": "2026-10-20", "parte": "sera"}]}
+                      ).status_code == 422
+    assert client.put(url, json={"persona_id": p["id"], "date": ["2026-10-20"]}).status_code == 422
+    assert client.put(url, json={"persona_id": p["id"], "turni": [voce] * 22}).status_code == 422
+    assert client.put(url, json={"persona_id": v["id"], "turni": [voce]}).status_code == 400  # volontario
+
+
+def test_indisponibilita_di_una_parte_non_blocca_le_altre(client):
+    p = crea(client, "Mario")
+    assert prenota(client, LUNEDI_A, p["id"], data="2026-10-20", segmento="mattina").status_code in (200, 201)
+    url = f"/api/settimane/{LUNEDI_A}/indisponibilita"
+
+    def errori():
+        s = client.get(f"/api/settimane/{LUNEDI_A}").json()
+        return [v for v in s["violazioni"] if v["codice"] == "indisponibile"]
+
+    client.put(url, json={"persona_id": p["id"], "turni": [{"data": "2026-10-20", "parte": "pomeriggio"}]})
+    assert not errori()
+    client.put(url, json={"persona_id": p["id"], "turni": [{"data": "2026-10-20", "parte": "mattina"}]})
+    assert errori()
+
+
+def test_migrazione_della_vecchia_indisponibilita_a_giorno_intero(tmp_path):
+    from datetime import date
+
+    percorso = str(tmp_path / "vecchio.db")
+    conn = db.connetti(percorso)
+    pid = db.crea_persona(conn, "Mario", "dipendente", "autista")["id"]
+    with conn:  # db "vecchio": una riga nella tabella a giorno intero
+        conn.execute("INSERT INTO indisponibilita(persona_id, data) VALUES (?, ?)", (pid, "2026-10-21"))
+    conn.close()
+    for _ in range(2):  # la seconda apertura (o un avvio concorrente) non duplica né fallisce
+        conn = db.connetti(percorso)
+        assert db.indisponibili_periodo(conn, date(2026, 10, 19), date(2026, 10, 25)) == {
+            pid: {(date(2026, 10, 21), parte) for parte in ("mattina", "pomeriggio", "notte")}}
+        assert conn.execute("SELECT COUNT(*) FROM indisponibilita").fetchone()[0] == 0
+        conn.close()
 
 
 def test_indisponibilita_bloccata_se_settimana_confermata(client):
     p = crea(client, "Mario")
     client.post(f"/api/settimane/{LUNEDI_A}/conferma")
-    r = client.put(f"/api/settimane/{LUNEDI_A}/indisponibilita", json={"persona_id": p["id"], "date": []})
+    r = client.put(f"/api/settimane/{LUNEDI_A}/indisponibilita", json={"persona_id": p["id"], "turni": []})
     assert r.status_code == 400
 
 
 def test_genera_rispetta_ferie_e_indisponibilita(client):
     ids = staff_14(client)
     client.post("/api/ferie", json={"persona_id": ids[0], "dal": "2026-10-19", "al": "2026-10-21"})
-    client.put(f"/api/settimane/{LUNEDI_A}/indisponibilita", json={"persona_id": ids[1], "date": ["2026-10-24"]})
+    client.put(f"/api/settimane/{LUNEDI_A}/indisponibilita", json={
+        "persona_id": ids[1], "turni": [{"data": "2026-10-24", "parte": x} for x in ("mattina", "pomeriggio", "notte")]})
     r = client.post(f"/api/settimane/{LUNEDI_A}/genera", json={"tempo_max": 5})
     assert r.status_code == 200, r.text
     s = r.json()

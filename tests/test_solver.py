@@ -3,6 +3,7 @@ from datetime import timedelta
 import pytest
 
 from cvap.calendario import giorni_settimana
+from cvap.modello import PARTI_TURNO, parti_turno
 from cvap.solver import StoricoPersona, genera
 from cvap.vincoli import valida_settimana
 
@@ -155,14 +156,41 @@ def test_weekend_fissati_a_mano_contano_per_l_equita(dipendenti_14):
 
 # --- ferie e indisponibilità ------------------------------------------------------
 
+def _bloccato(a, indisponibili):
+    return bool(parti_turno(a.fascia, a.segmento) & {p for d, p in indisponibili.get(a.persona_id, set())
+                                                    if d == a.data})
+
+
+def _tutto_il_giorno(d):
+    return {(d, parte) for parte in PARTI_TURNO}
+
+
 def test_indisponibile_non_riceve_turni_in_quel_giorno(dipendenti_14):
-    indisponibili = {1: {GIORNI[2]}, 2: {GIORNI[5], GIORNI[6]}}
+    indisponibili = {1: _tutto_il_giorno(GIORNI[2]), 2: _tutto_il_giorno(GIORNI[5]) | _tutto_il_giorno(GIORNI[6])}
     r = genera(GIORNI, STAZIONI_A, dipendenti_14, indisponibili=indisponibili, tempo_max=10)
     assert r.scoperti == []
-    assert not [a for a in r.assegnazioni if a.data in indisponibili.get(a.persona_id, set())]
+    assert not [a for a in r.assegnazioni if a.data in {d for d, _ in indisponibili.get(a.persona_id, set())}]
     # non sono ferie: la quota di ore resta piena
     for pid in (1, 2):
         assert abs(r.ore[pid] - r.media_ore) <= 12
+
+
+def test_indisponibilita_per_parte_blocca_solo_i_turni_che_la_toccano(dipendenti_14):
+    indisponibili = {1: {(GIORNI[1], "mattina"), (GIORNI[2], "notte")},
+                     2: {(GIORNI[3], "pomeriggio"), (GIORNI[4], "notte")}}
+    r = genera(GIORNI, STAZIONI_A, dipendenti_14, indisponibili=indisponibili, tempo_max=10)
+    assert r.scoperti == []
+    assert not [a for a in r.assegnazioni if _bloccato(a, indisponibili)]
+
+
+def test_turno_fissato_in_parte_indisponibile_e_segnalato(dipendenti_14):
+    fissi = [ass(GIORNI[1], "Acquasanta", "giorno", "autista", 1, origine="manuale")]
+    r = genera(GIORNI, STAZIONI_A, dipendenti_14, fissi=fissi, tempo_max=5,
+               indisponibili={1: {(GIORNI[1], "pomeriggio")}})
+    assert "indisponibile" in r.messaggio
+    r = genera(GIORNI, STAZIONI_A, dipendenti_14, fissi=fissi, tempo_max=5,
+               indisponibili={1: {(GIORNI[1], "notte")}})
+    assert "indisponibile" not in r.messaggio
 
 
 def test_ferie_parziali_niente_turni_e_6_ore_per_giorno(dipendenti_14):

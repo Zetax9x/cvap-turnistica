@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from itertools import combinations
 
-from .modello import (ORE_RIPOSO_MIN, Assegnazione, Fabbisogno, Persona, orario, si_sovrappongono,
-                      turni_ammessi)
+from .modello import (ORE_RIPOSO_MIN, PARTI_TURNO, Assegnazione, Fabbisogno, Persona, orario, parti_turno,
+                      si_sovrappongono, turni_ammessi)
 from .slot import unita_da_coprire
 
 MAX_CONSECUTIVI = 3       # oltre è vietato
@@ -52,10 +52,12 @@ def valida_settimana(
     persone: dict[int, Persona],
     contesto: list[Assegnazione] = (),
     ferie: dict[int, set[date]] | None = None,
-    indisponibili: dict[int, set[date]] | None = None,
+    indisponibili: dict[int, set[tuple[date, str]]] | None = None,
     fabbisogno: Sequence[Fabbisogno] = (),
 ) -> list[Violazione]:
-    """`ferie` e `indisponibili`: giorni (per id persona) in cui non può iniziare alcun turno.
+    """`ferie`: giorni (per id persona) in cui non può iniziare alcun turno.
+    `indisponibili`: coppie (giorno, parte) per id persona; un turno è vietato se una delle sue parti
+    (`parti_turno`) è indisponibile nel giorno in cui inizia.
 
     Ogni giorno di ferie conta ORE_FERIE_GIORNO ore nel confronto con la media.
     `fabbisogno`: posti richiesti nelle postazioni a richiesta (Standby, Programmati).
@@ -67,7 +69,7 @@ def valida_settimana(
     violazioni += _eccessi(giorni, assegnazioni, postazioni, fabbisogno)
     violazioni += _qualifiche(assegnazioni, persone)
     violazioni += _assenze(assegnazioni, persone, ferie, "ferie", "è in ferie")
-    violazioni += _assenze(assegnazioni, persone, indisponibili, "indisponibile", "è indisponibile")
+    violazioni += _indisponibilita(assegnazioni, persone, indisponibili)
 
     settimana = set(giorni)
     per_persona: dict[int, list[Assegnazione]] = defaultdict(list)
@@ -168,6 +170,22 @@ def _assenze(assegnazioni, persone, giorni_assenza, codice, testo):
             p = persone.get(a.persona_id)
             nome = p.nome if p else f"#{a.persona_id}"
             out.append(Violazione("errore", codice, f"{nome} {testo} il {_fmt(a.data)} ({_descrivi(a)})",
+                                  a.persona_id, a.data))
+    return out
+
+
+def _indisponibilita(assegnazioni, persone, indisponibili):
+    out = []
+    for a in assegnazioni:
+        indisp = indisponibili.get(a.persona_id, ())
+        bloccate = [parte for parte in PARTI_TURNO
+                    if parte in parti_turno(a.fascia, a.segmento) and (a.data, parte) in indisp]
+        if bloccate:
+            p = persone.get(a.persona_id)
+            nome = p.nome if p else f"#{a.persona_id}"
+            quando = " e ".join(f"di {parte}" if parte == "notte" else f"la {parte}" for parte in bloccate)
+            out.append(Violazione("errore", "indisponibile",
+                                  f"{nome} è indisponibile {quando} il {_fmt(a.data)} ({_descrivi(a)})",
                                   a.persona_id, a.data))
     return out
 

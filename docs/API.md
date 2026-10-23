@@ -30,13 +30,16 @@ settimane(inizio TEXT PK, stato TEXT ('bozza'|'confermata'), dipendenti TEXT /*J
 assegnazioni(id INTEGER PK, data TEXT, postazione TEXT, fascia TEXT, segmento TEXT, ruolo TEXT,
              persona_id INTEGER REFERENCES persone(id), origine TEXT)
 ferie(id INTEGER PK, persona_id INTEGER REFERENCES persone(id), dal TEXT, al TEXT)   -- estremi inclusi
-indisponibilita(persona_id INTEGER REFERENCES persone(id), data TEXT, PK(persona_id, data))
+indisponibilita_turni(persona_id INTEGER REFERENCES persone(id), data TEXT, parte TEXT, PK(persona_id, data, parte))
+                                                        -- parte: mattina | pomeriggio | notte
 ```
 
 Con `TURSO_DATABASE_URL` (+ `TURSO_AUTH_TOKEN`) l'app usa Turso tramite `libsql` invece del file SQLite.
 
-**Ferie e indisponibilità** (solo dipendenti): in quei giorni non può iniziare nessun turno (vincolo rigido del
-generatore, `errore` nel validatore con codice `ferie` / `indisponibile`). Le indisponibilità non cambiano le ore;
+**Ferie e indisponibilità** (solo dipendenti): nei giorni di ferie non può iniziare nessun turno; l'indisponibilità è
+per parte del giorno (mattina, pomeriggio, notte): un turno è vietato se una delle sue parti è indisponibile nel giorno
+in cui inizia (turno intero = mattina + pomeriggio; la notte inizia la sera del giorno indicato).
+Vincolo rigido del generatore e `errore` nel validatore (codice `ferie` / `indisponibile`). Le indisponibilità non cambiano le ore;
 le ferie sì: la quota di ore della settimana è `media * giorni_disponibili / 7`, dove `media` è la media di un
 dipendente a tempo pieno (ore totali / (somma dei giorni disponibili / 7)); la banda ±12h vale sulla quota. Chi è in
 ferie tutta la settimana non entra nella media. Nello storico una settimana con ferie non modifica il saldo ore
@@ -59,9 +62,9 @@ non di ferie (calcolata dalle assegnazioni reali, così le modifiche manuali con
     giorni: [iso x7], postazioni: [nomi attive],
     assegnazioni: [{id, data, postazione, fascia, segmento, ruolo, persona_id, persona_nome, origine, ore}],
     violazioni: [{livello, codice, messaggio, persona_id, data}],
-    ferie: [{persona_id, data}], indisponibilita: [{persona_id, data}],   // giorni di questa settimana
+    ferie: [{persona_id, data}], indisponibilita: [{persona_id, data, parte}],   // giorni di questa settimana
     riepilogo: [{persona_id, nome, tipo, qualifica, ore, ore_giorno, ore_notte, turni_weekend,
-                 giorni_ferie, giorni_indisponibili}],
+                 giorni_ferie, giorni_indisponibili /* con almeno una parte */}],
     media_ore,            // media a tempo pieno dei dipendenti attivi nella settimana
     report                // ultimo report di generazione o null
   }
@@ -80,7 +83,7 @@ non di ferie (calcolata dalle assegnazioni reali, così le modifiche manuali con
   Salva le nuove assegnazioni, `stato='bozza'`, `dipendenti` = id dei dipendenti attivi. 400 se confermata.
 - `POST /settimane/{data}/conferma` · `POST /settimane/{data}/riapri` → settimana aggiornata
 - `DELETE /settimane/{data}/generati` → settimana aggiornata (rimuove solo le `generato`)
-- `PUT /settimane/{data}/indisponibilita` `{persona_id, date: [iso, max 7]}` → settimana aggiornata. Sostituisce le
+- `PUT /settimane/{data}/indisponibilita` `{persona_id, turni: [{data: iso, parte}], max 21}` → settimana aggiornata. Sostituisce le
   indisponibilità della persona in quella settimana. 400 se confermata, date fuori settimana o persona non dipendente · 404
 - `GET /ferie` → `[{id, persona_id, dal, al}]` · `POST /ferie` `{persona_id, dal, al}` → 201
   (400 se dal > al, periodo > 366 giorni, sovrapposto ad altre ferie della persona o persona non dipendente · 404) ·

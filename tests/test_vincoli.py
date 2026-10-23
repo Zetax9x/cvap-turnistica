@@ -125,10 +125,40 @@ def test_turno_in_un_giorno_di_ferie_e_un_errore():
 
 def test_turno_in_un_giorno_indisponibile_e_un_errore():
     a = [ass(GIORNI[3], "Acquasanta", "giorno", "autista", 1)]
-    v = valida_settimana(GIORNI, STAZIONI, a, PERSONE, indisponibili={1: {GIORNI[3]}})
+    v = valida_settimana(GIORNI, STAZIONI, a, PERSONE, indisponibili={1: {(GIORNI[3], "mattina")}})
     assert "indisponibile" in codici(v)
     assert "indisponibile" not in codici(valida_settimana(GIORNI, STAZIONI, a, PERSONE,
-                                                          indisponibili={1: {GIORNI[4]}}))
+                                                          indisponibili={1: {(GIORNI[4], "mattina")}}))
+
+
+def test_indisponibilita_di_una_parte_blocca_solo_i_turni_che_la_toccano():
+    def blocca(parte, fascia, segmento):
+        a = [ass(GIORNI[3], "Acquasanta", fascia, "autista", 1, segmento=segmento)]
+        v = valida_settimana(GIORNI, STAZIONI, a, PERSONE, indisponibili={1: {(GIORNI[3], parte)}})
+        return [x for x in v if x.codice == "indisponibile"]
+
+    assert blocca("mattina", "giorno", "intero")
+    assert blocca("mattina", "giorno", "mattina")
+    assert not blocca("mattina", "giorno", "pomeriggio")
+    assert not blocca("mattina", "notte", "intero")
+    assert blocca("pomeriggio", "giorno", "intero")
+    assert not blocca("pomeriggio", "giorno", "mattina")
+    assert blocca("notte", "notte", "intero")
+    assert not blocca("notte", "giorno", "intero")
+
+
+def test_messaggio_di_indisponibilita_dice_la_parte():
+    a = [ass(GIORNI[3], "Acquasanta", "notte", "autista", 1)]
+    v = valida_settimana(GIORNI, STAZIONI, a, PERSONE, indisponibili={1: {(GIORNI[3], "notte")}})
+    msg = [x.messaggio for x in v if x.codice == "indisponibile"]
+    assert len(msg) == 1 and "indisponibile di notte" in msg[0]
+
+
+def test_la_notte_indisponibile_vale_nel_giorno_di_inizio_del_turno():
+    # la notte di lunedì inizia lunedì sera: non è bloccata dalla notte di martedì
+    a = [ass(GIORNI[0], "Acquasanta", "notte", "autista", 1)]
+    assert "indisponibile" not in codici(valida_settimana(GIORNI, STAZIONI, a, PERSONE,
+                                                          indisponibili={1: {(GIORNI[1], "notte")}}))
 
 
 def test_ogni_giorno_di_ferie_vale_6_ore():

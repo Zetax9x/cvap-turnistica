@@ -13,6 +13,7 @@ SEGMENTI = ("intero", "mattina", "pomeriggio", "standby", "standby_mattina", "st
             "prog_mattina", "prog_pomeriggio")
 RUOLI = ("autista", "soccorritore")
 ORIGINI = ("volontario", "generato", "manuale")
+PARTI_TURNO = ("mattina", "pomeriggio", "notte")  # le parti della giornata in cui un dipendente può essere indisponibile
 
 ORE_RIPOSO_MIN = 11
 
@@ -47,6 +48,17 @@ _TURNI_AMMESSI = {
     PROGRAMMATI: {("giorno", "prog_mattina"), ("giorno", "prog_pomeriggio")},
 }
 _TURNI_NORMALI = {("giorno", "intero"), ("giorno", "mattina"), ("giorno", "pomeriggio"), ("notte", "intero")}
+
+
+def parti_turno(fascia: str, segmento: str) -> frozenset[str]:
+    """Parti della giornata (PARTI_TURNO) coperte da un turno."""
+    if fascia == "notte":
+        return frozenset({"notte"})
+    if segmento in ("mattina", "standby_mattina", "prog_mattina"):
+        return frozenset({"mattina"})
+    if segmento in ("pomeriggio", "standby_pomeriggio", "prog_pomeriggio"):
+        return frozenset({"pomeriggio"})
+    return frozenset({"mattina", "pomeriggio"})
 
 
 def turni_ammessi(postazione: str) -> set[tuple[str, str]]:
