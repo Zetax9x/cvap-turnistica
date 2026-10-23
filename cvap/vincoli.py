@@ -16,6 +16,7 @@ MAX_CONSECUTIVI = 3       # oltre è vietato
 SOGLIA_CONSECUTIVI = 3    # da qui in su si segnala come eccezione
 SCARTO_ORE_MAX = 12
 ORE_FERIE_GIORNO = 6      # ore che conta ogni giorno di ferie nel confronto con la media
+ORE_MIN_SETTIMANA = 0     # segnaposto per la fase RED
 ASCOLI = "Ascoli"
 MAX_TURNI_ASCOLI = 2      # turni a settimana per dipendente ad Ascoli
 MAX_TURNI_ASCOLI_EXTREMIS = 3  # solo se non c'è altra soluzione (avviso); oltre è vietato
