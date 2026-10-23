@@ -34,6 +34,9 @@ FERIE = [("Autista 3", 9, 11), ("Soccorritore 2", 14, 20)]
 TUTTO = ("mattina", "pomeriggio", "notte")
 INDISPONIBILI = [("Autista 5", 2, TUTTO), ("Autista 5", 3, ("notte",)), ("Soccorritore 4", 12, ("mattina",)),
                  ("Autista 8", 26, ("mattina", "pomeriggio")), ("Soccorritore 6", 15, ("notte",))]
+# parametri per dipendente (Impostazioni): massimo ore a settimana e turni vietati
+MAX_ORE = {"Soccorritore 8": 24}
+DIVIETI = [("Autista 2", None, "notte"), ("Soccorritore 3", "Ascoli", None), ("Autista 10", "Standby", "giorno")]
 
 
 @dataclass
@@ -82,6 +85,10 @@ def _prepara(client: TestClient, scarto: int) -> dict[str, int]:
     for nome, qualifica in VOLONTARI:
         ids[nome] = _ok(client.post("/api/persone", json={"nome": nome, "tipo": "volontario",
                                                           "qualifica": qualifica}))["id"]
+    for nome, ore in MAX_ORE.items():
+        _ok(client.put(f"/api/persone/{ids[nome]}/parametri", json={"max_ore_settimana": ore}))
+    for nome, postazione, turno in DIVIETI:
+        _ok(client.post("/api/divieti", json={"persona_id": ids[nome], "postazione": postazione, "turno": turno}))
     for nome, dal, al in FERIE:
         _ok(client.post("/api/ferie", json={"persona_id": ids[nome],
                                             "dal": (PRIMO_LUNEDI + timedelta(days=dal)).isoformat(),
@@ -136,7 +143,9 @@ def _riassumi(s: dict) -> Settimana:
             continue
         ore[r["nome"]] = r["ore"]
         if r.get("giorni_ferie", 0) < 7:
-            scarti[r["nome"]] = r["ore"] + r.get("ore_ferie", 0) - media
+            # con un massimo di ore il riferimento è il minore tra media e massimo
+            rif = min(media, r["max_ore_settimana"]) if r.get("max_ore_settimana") else media
+            scarti[r["nome"]] = r["ore"] + r.get("ore_ferie", 0) - rif
     ascoli, notti = Counter(), Counter()
     dipendenti = {r["persona_id"] for r in s["riepilogo"] if r["tipo"] == "dipendente"}
     volontari = 0
@@ -258,7 +267,9 @@ def _sezione(es: Esito) -> str:
 def report_html(esiti: list[Esito]) -> str:
     scenario = (f"{len(DIPENDENTI)} dipendenti ({sum(1 for _, q in DIPENDENTI if q == 'autista')} autisti), "
                 f"{len(VOLONTARI)} volontari con 3 turni a settimana nel weekend, ferie di 3 e 7 giorni, "
-                "indisponibilità di un giorno intero o di una parte (mattina, notte), Standby e Programmati nelle settimane A.")
+                "indisponibilità di un giorno intero o di una parte (mattina, notte), Standby e Programmati nelle settimane A. "
+                + "Parametri: " + ", ".join(f"{n} max {h}h" for n, h in MAX_ORE.items()) + "; divieti: "
+                + ", ".join(f"{n} niente {' '.join(x for x in (t, p) if x)}" for n, p, t in DIVIETI) + ".")
     return f"""<!doctype html>
 <html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Simulazione turni</title>
