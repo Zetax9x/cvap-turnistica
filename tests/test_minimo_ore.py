@@ -106,3 +106,9 @@ def test_il_generatore_conta_le_ferie_nel_minimo():
     r = genera(GIORNI, ["Acquasanta"], persone, ferie=ferie, tempo_max=10)
     assert r.ore[1] + 18 >= 36
     assert "minimo" not in r.messaggio
+
+
+def test_segnala_il_minimo_anche_se_tutto_e_gia_coperto_a_mano():
+    r = genera(GIORNI, [], [MARIO], fissi=turni(1, 2), tempo_max=5)
+    assert "Tutti i posti sono già coperti." in r.messaggio
+    assert "Sotto il minimo di 36h: Mario 24h." in r.messaggio

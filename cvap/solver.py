@@ -18,6 +18,7 @@ e il risultato li segnala:
     (se manca personale restano scoperti prima i Programmati)
   - differenza tra chi fa più ore e chi ne fa meno al massimo `scarto_ore_max` (12 di default), tra i
     dipendenti senza massimo ore; ogni giorno di ferie conta 6 ore
+  - almeno `ORE_MIN_SETTIMANA` (36) ore per dipendente, ferie comprese
 Obiettivi (minimizzati insieme, in ordine di peso):
   - il 3° turno ad Ascoli solo in extremis (pesa come 10 ore oltre il limite, meno di un posto scoperto)
   - evitare 3 giorni/notti di fila
@@ -40,13 +41,15 @@ from .modello import (PROGRAMMATI, STANDBY, Assegnazione, Fabbisogno, Persona, U
 from .slot import unita_da_coprire
 from .storico import CATEGORIE_RICHIESTA, CATEGORIE_WEEKEND, StoricoPersona, categoria_weekend
 from .vincoli import (ASCOLI, MAX_CONSECUTIVI, MAX_TURNI_ASCOLI, MAX_TURNI_ASCOLI_EXTREMIS, SCARTO_ORE_MAX,
-                      differenza_ore, giorni_disponibili, media_ore, ore_ferie, valida_settimana)
+                      ORE_MIN_SETTIMANA, differenza_ore, giorni_disponibili, media_ore, minimo_ore, ore_ferie,
+                      sotto_minimo, valida_settimana)
 
 __all__ = ["Risultato", "StoricoPersona", "genera"]
 
 # Pesi dell'obiettivo (per ora di scarto, per turno, ecc.)
 P_SCOPERTO = 10_000_000
 P_FUORI_BANDA = 100_000
+P_SOTTO_MINIMO = P_FUORI_BANDA  # per ogni ora sotto ORE_MIN_SETTIMANA
 P_TERZO_ASCOLI = 1_000_000
 P_TRE_DI_FILA = 5_000
 P_DOPPIO_WEEKEND = 300
@@ -108,7 +111,8 @@ def genera(
         ore = _ore_fisse(dipendenti, fissi)
         media = media_ore(ore, crediti)
         return Risultato("ottimo", media_ore=media, ore=ore,
-                         messaggio=" ".join(["Tutti i posti sono già coperti."] + problemi_fissi))
+                         messaggio=" ".join(["Tutti i posti sono già coperti."] + problemi_fissi
+                                            + _nota_minimo(giorni, fissi, dipendenti, ferie)))
     if not dipendenti:
         return Risultato("impossibile", scoperti=unita, messaggio="Nessun dipendente attivo disponibile.")
 
@@ -158,6 +162,7 @@ def genera(
         alto, basso = d["massimo"], d["minimo"]
         note.append(f"Differenza di ore oltre il limite di {scarto_ore_max}h: "
                     f"{alto['nome']} {alto['ore']}h, {basso['nome']} {basso['ore']}h.")
+    note += _nota_minimo(giorni, fissi + assegnazioni, dipendenti, ferie)
     nomi = {p.id: p.nome for p in dipendenti}
     in_extremis = [nomi[pid] for pid, n in Counter(a.persona_id for a in fissi + assegnazioni
                                                    if a.postazione == ASCOLI and a.persona_id in nomi).items()
@@ -190,6 +195,15 @@ def _problemi_turni_fissi(giorni, postazioni, fissi, contesto, dipendenti, ferie
                                                          ferie=ferie, indisponibili=indisponibili,
                                                          scarto_ore_max=scarto_ore_max)
             if v.livello == "errore" and v.codice in regole]
+
+
+def _nota_minimo(giorni, assegnazioni, dipendenti, ferie) -> list[str]:
+    """La nota su chi resta sotto il minimo di ore (ferie comprese), con lo stesso calcolo del validatore."""
+    sotto = sotto_minimo(giorni, assegnazioni, {p.id: p for p in dipendenti}, ferie)
+    if not sotto:
+        return []
+    return [f"Sotto il minimo di {ORE_MIN_SETTIMANA}h: "
+            + ", ".join(f"{x['nome']} {x['ore'] + x['ferie']}h" for x in sotto) + "."]
 
 
 def _priorita(u: Unita) -> int:
@@ -425,6 +439,11 @@ class _Modello:
                 # tetto rigido sulle ore lavorate (le ferie non contano); i turni fissati a mano oltre
                 # il tetto restano (li segnala il validatore)
                 self.model.Add(self.ore[p.id] <= max(tetto, fisse[p.id]))
+            # minimo con evidenza: se non si raggiunge, paga ogni ora mancante
+            minimo = minimo_ore(p)
+            sotto = self.model.NewIntVar(0, minimo, "")
+            self.model.Add(self.ore[p.id] + self.crediti[p.id] + sotto >= minimo)
+            self.obiettivo.append((P_SOTTO_MINIMO * n, sotto))
             # media = totale / n (ferie comprese), quindi
             # n * (ore + ferie - media) = n * (ore + ferie) - totale  (tutto intero);
             # con un tetto il riferimento è min(media, tetto): n * riferimento = min(totale, n * tetto)

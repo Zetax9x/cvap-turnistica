@@ -16,7 +16,7 @@ MAX_CONSECUTIVI = 3       # oltre è vietato
 SOGLIA_CONSECUTIVI = 3    # da qui in su si segnala come eccezione
 SCARTO_ORE_MAX = 12
 ORE_FERIE_GIORNO = 6      # ore che conta ogni giorno di ferie nel confronto con la media
-ORE_MIN_SETTIMANA = 0     # segnaposto per la fase RED
+ORE_MIN_SETTIMANA = 36    # ore minime di ogni dipendente, ferie comprese
 ASCOLI = "Ascoli"
 MAX_TURNI_ASCOLI = 2      # turni a settimana per dipendente ad Ascoli
 MAX_TURNI_ASCOLI_EXTREMIS = 3  # solo se non c'è altra soluzione (avviso); oltre è vietato
@@ -321,6 +321,28 @@ def differenza_ore(giorni, assegnazioni, persone, ferie) -> dict | None:
     return {"differenza": ore[pid_max] - ore[pid_min], "massimo": voce(pid_max), "minimo": voce(pid_min)}
 
 
+def minimo_ore(p: Persona) -> int:
+    """Ore minime della settimana: ORE_MIN_SETTIMANA, o il massimo ore della persona se più basso."""
+    return ORE_MIN_SETTIMANA if p.max_ore_settimana is None else min(ORE_MIN_SETTIMANA, p.max_ore_settimana)
+
+
+def sotto_minimo(giorni, assegnazioni, persone, ferie) -> list[dict]:
+    """Dipendenti presenti (non in ferie tutta la settimana) con ore lavorate + ferie sotto il minimo."""
+    lavorate = Counter()
+    for a in assegnazioni:
+        lavorate[a.persona_id] += a.ore
+    out = []
+    for p in persone.values():
+        giorni_ferie = ferie.get(p.id, set())
+        if not (p.dipendente and giorni_disponibili(giorni, giorni_ferie)):
+            continue
+        h_ferie = ore_ferie(giorni, giorni_ferie)
+        if lavorate[p.id] + h_ferie < minimo_ore(p):
+            out.append({"persona_id": p.id, "nome": p.nome, "ore": lavorate[p.id], "ferie": h_ferie,
+                        "minimo": minimo_ore(p)})
+    return out
+
+
 def _ore(giorni, assegnazioni, persone, ferie, scarto_ore_max=SCARTO_ORE_MAX):
     lavorate = Counter()
     for a in assegnazioni:
@@ -333,6 +355,11 @@ def _ore(giorni, assegnazioni, persone, ferie, scarto_ore_max=SCARTO_ORE_MAX):
         if tetto is not None and lavorate[p.id] > tetto:  # le ferie non contano nel tetto
             out.append(Violazione("errore", "ore_max",
                                   f"{p.nome}: {lavorate[p.id]}h, oltre il massimo di {tetto}h a settimana", p.id))
+    for x in sotto_minimo(giorni, assegnazioni, persone, ferie):
+        extra = f" + {x['ferie']}h ferie" if x["ferie"] else ""
+        out.append(Violazione("errore", "ore_min",
+                              f"{x['nome']}: {x['ore']}h{extra}, meno del minimo di {x['minimo']}h a settimana",
+                              x["persona_id"]))
     d = differenza_ore(giorni, assegnazioni, persone, ferie)
     if d and d["differenza"] > scarto_ore_max:
         alto, basso = d["massimo"], d["minimo"]
