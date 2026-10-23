@@ -35,9 +35,19 @@ class SettimanaPassata:
     max_ore: dict[int, int] = field(default_factory=dict)  # id -> massimo ore a settimana
 
 
+def dalla_prima_generata(settimane: list[SettimanaPassata]) -> list[SettimanaPassata]:
+    """Le settimane dalla prima con turni generati in poi (in ordine di data).
+
+    Quelle prima, inserite solo a mano per avviare il sistema, fanno da contesto ma non entrano nei conteggi."""
+    for i, s in enumerate(settimane):
+        if any(a.origine == "generato" for a in s.assegnazioni):
+            return settimane[i:]
+    return []
+
+
 def calcola_storico(settimane: list[SettimanaPassata]) -> dict[int, StoricoPersona]:
     storico: dict[int, StoricoPersona] = {}
-    for s in settimane:
+    for s in dalla_prima_generata(settimane):
         # in ferie tutta la settimana: la settimana non conta per lui
         presenti = {pid for pid in s.dipendenti if s.giorni_ferie.get(pid, 0) < 7}
         ore = {pid: 0 for pid in presenti}

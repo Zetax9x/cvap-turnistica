@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 from cvap.calendario import giorni_settimana
-from cvap.storico import SettimanaPassata, calcola_storico
+from cvap.storico import SettimanaPassata, calcola_storico, dalla_prima_generata
 
 from .conftest import LUNEDI_A, ass
 
@@ -81,3 +81,48 @@ def test_con_un_massimo_di_ore_il_saldo_si_misura_dal_massimo():
     s = calcola_storico([SettimanaPassata(media_ore=48, dipendenti=[1, 2], assegnazioni=a, max_ore={1: 24})])
     assert s[1].saldo_ore == 0
     assert s[2].saldo_ore == 24
+
+
+# --- avvio: si conta dalla prima settimana con turni generati ---------------------
+
+def _manuale(giorni, i, fascia, pid):
+    return ass(giorni[i], "Acquasanta", fascia, "autista", pid, origine="manuale")
+
+
+def test_settimane_solo_manuali_prima_della_prima_generata_non_contano():
+    # la domenica della settimana prima è inserita a mano solo come contesto per partire
+    prima = [g - timedelta(weeks=1) for g in GIORNI]
+    w0 = SettimanaPassata(24, [1, 2], [_manuale(prima, 6, "giorno", 1), _manuale(prima, 6, "notte", 2)])
+    w1 = SettimanaPassata(12, [1, 2], [ass(GIORNI[0], "Acquasanta", "giorno", "autista", 1),
+                                       ass(GIORNI[1], "Acquasanta", "giorno", "autista", 2)])
+    s = calcola_storico([w0, w1])
+    assert s[1].settimane == 1 and s[2].settimane == 1
+    assert s[1].weekend["dom_giorno"] == 0 and s[2].weekend["dom_notte"] == 0
+    assert s[1].ore_giorno == 12 and s[2].ore_notte == 0
+    assert s[1].saldo_ore == 0 and s[2].saldo_ore == 0
+
+
+def test_senza_settimane_generate_lo_storico_e_vuoto():
+    w0 = SettimanaPassata(12, [1], [_manuale(GIORNI, 6, "giorno", 1)])
+    assert calcola_storico([w0]) == {}
+
+
+def test_dopo_la_prima_generata_contano_anche_le_settimane_manuali():
+    w1 = SettimanaPassata(12, [1], [ass(GIORNI[0], "Acquasanta", "giorno", "autista", 1)])
+    dopo = [g + timedelta(weeks=1) for g in GIORNI]
+    w2 = SettimanaPassata(12, [1], [_manuale(dopo, 5, "giorno", 1)])
+    s = calcola_storico([w1, w2])
+    assert s[1].settimane == 2
+    assert s[1].weekend["sab_giorno"] == 1
+
+
+def test_settimana_con_turni_misti_conta_come_generata():
+    w = SettimanaPassata(12, [1, 2], [_manuale(GIORNI, 6, "giorno", 1),
+                                      ass(GIORNI[0], "Acquasanta", "giorno", "autista", 2)])
+    assert dalla_prima_generata([w]) == [w]
+    assert calcola_storico([w])[1].weekend["dom_giorno"] == 1
+
+
+def test_nessuna_settimana_nessuno_storico():
+    assert dalla_prima_generata([]) == []
+    assert calcola_storico([]) == {}
