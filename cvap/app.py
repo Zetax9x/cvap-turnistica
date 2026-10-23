@@ -501,6 +501,8 @@ def create_app(db_path: str) -> FastAPI:
             giorni, tipo, attive = _info_settimana(conn, inizio)
             fabbisogno = _fabbisogno_attivo(conn, giorni, tipo)
             dipendenti = db.dipendenti_attivi(conn)
+            precedente = db.get_settimana(conn, giorni[0])  # prima di sovrascrivere il report
+            qualita_precedente = ((precedente or {}).get("report") or {}).get("qualita")
             fissi = [a for _, a in db.assegnazioni_periodo(conn, giorni[0], giorni[-1]) if a.origine != "generato"]
             storico = calcola_storico([_settimana_passata(conn, r) for r in db.lista_settimane(conn, prima_di=inizio)])
             kwargs = {"tempo_max": body.tempo_max} if body and body.tempo_max else {}
@@ -521,6 +523,8 @@ def create_app(db_path: str) -> FastAPI:
                 "scoperti": [_unita_json(u) for u in ris.scoperti],
                 "media_ore": ris.media_ore,
                 "durata_s": durata,
+                "qualita": ris.qualita,
+                "qualita_precedente": qualita_precedente,
             }
             nuove = [Assegnazione(a.data, a.postazione, a.fascia, a.segmento, a.ruolo, a.persona_id, "generato")
                      for a in ris.assegnazioni]

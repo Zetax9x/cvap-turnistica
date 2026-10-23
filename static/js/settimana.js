@@ -205,7 +205,38 @@ function renderReport(r) {
         `${dataEstesa(u.data)} · ${u.postazione} · ${orarioTurno(u.fascia, u.segmento)} · ${etichetta("ruolo", u.ruolo)}`))),
     );
   }
+  if (r.qualita) dettagli.append(renderQualita(r.qualita, r.qualita_precedente));
   return dettagli;
+}
+
+const numIt = (n) => Number(n).toLocaleString("it-IT");
+
+/** Tabella degli indicatori di qualità, con il confronto con la generazione precedente se c'è. */
+function renderQualita(q, prec) {
+  const righe = [
+    ["Punteggio (più basso è meglio)", (x) => numIt(x.punteggio)],
+    ["Distanza dall'ottimo", (x) => `${numIt(x.gap_pct)}%${x.gap_pct === 0 ? " (ottimo dimostrato)" : ""}`],
+    ["Soluzioni trovate", (x) => numIt(x.soluzioni)],
+    ["Soluzione migliore trovata a", (x) => `${numIt(x.tempo_migliore_s)} s su ${numIt(x.tempo_max)} s`],
+    ["Worker", (x) => numIt(x.workers)],
+  ];
+  const tabella = el("table", { class: "tabella tabella-qualita" },
+    el("caption", {}, "Qualità della generazione"),
+    el("thead", {}, el("tr", {},
+      el("th", { scope: "col" }, "Indicatore"),
+      el("th", { scope: "col" }, "Questa"),
+      prec ? el("th", { scope: "col" }, "Precedente") : null)),
+    el("tbody", {}, righe.map(([nome, fmt]) => el("tr", {},
+      el("th", { scope: "row" }, nome),
+      el("td", {}, fmt(q)),
+      prec ? el("td", {}, fmt(prec)) : null))),
+  );
+  const rapporto = q.tempo_max ? q.tempo_migliore_s / q.tempo_max : null;
+  const consiglio = rapporto === null ? null
+    : rapporto < 0.5 ? "Più tempo probabilmente non serve."
+    : rapporto > 0.9 ? "Più tempo potrebbe migliorare il risultato." : null;
+  return el("div", { class: "report-qualita" }, el("div", { class: "table-scroll" }, tabella),
+    consiglio ? el("p", { class: "muted" }, consiglio) : null);
 }
 
 // ---------------------------------------------------------------- griglia

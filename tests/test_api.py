@@ -213,6 +213,16 @@ def test_genera_copre_tutto(generata):
     assert len(s["riepilogo"]) == 15
 
 
+def test_report_include_qualita_e_precedente(generata):
+    client, s, _ = generata
+    q = s["report"]["qualita"]
+    assert q["soluzioni"] >= 1 and q["gap_pct"] >= 0 and q["tempo_max"] == 5
+    assert s["report"].get("qualita_precedente") is None
+    r = client.post(f"/api/settimane/{LUNEDI_A}/genera", json={"tempo_max": 5})
+    assert r.status_code == 200, r.text
+    assert r.json()["report"]["qualita_precedente"] == q
+
+
 def test_rigenera_mantiene_fissi_e_sostituisce_generati(generata):
     client, s, vol = generata
     generati = [a for a in s["assegnazioni"] if a["origine"] == "generato"]
