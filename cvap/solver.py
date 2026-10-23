@@ -68,6 +68,7 @@ class Risultato:
     ore: dict[int, int] = field(default_factory=dict)
     messaggio: str = ""
     durata_s: float = 0.0
+    qualita: dict | None = None  # indicatori della ricerca; solo se esiste una soluzione
 
 
 def genera(
@@ -119,7 +120,8 @@ def genera(
     solver.parameters.max_time_in_seconds = tempo_max
     solver.parameters.num_search_workers = workers
     solver.parameters.random_seed = seed
-    status = solver.Solve(m.model)
+    conteggio = _ContaSoluzioni()
+    status = solver.Solve(m.model, conteggio)
     durata = time.monotonic() - avvio
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
@@ -177,7 +179,40 @@ def genera(
         ore=ore,
         messaggio=" ".join(note),
         durata_s=durata,
+        qualita=_qualita(solver, conteggio, durata, tempo_max, workers, status),
     )
+
+
+class _ContaSoluzioni(cp_model.CpSolverSolutionCallback):
+    """Conta i miglioramenti trovati e ricorda quando è stato trovato l'ultimo (il migliore)."""
+
+    def __init__(self):
+        super().__init__()
+        self.soluzioni = 0
+        self.tempo_migliore_s = 0.0
+
+    def on_solution_callback(self):
+        self.soluzioni += 1
+        self.tempo_migliore_s = self.WallTime()
+
+
+def _qualita(solver, conteggio, durata, tempo_max, workers, status) -> dict:
+    punteggio = round(solver.ObjectiveValue())
+    limite = min(round(solver.BestObjectiveBound()), punteggio)
+    if status == cp_model.OPTIMAL or punteggio == limite:
+        gap = 0.0
+    else:
+        gap = round((punteggio - limite) / max(1, abs(punteggio)) * 100, 1)
+    return {
+        "punteggio": punteggio,
+        "limite_inferiore": limite,
+        "gap_pct": gap,
+        "soluzioni": conteggio.soluzioni,
+        "tempo_migliore_s": round(min(conteggio.tempo_migliore_s, durata), 2),
+        "durata_s": round(durata, 2),
+        "tempo_max": tempo_max,
+        "workers": workers,
+    }
 
 
 def _problemi_turni_fissi(giorni, postazioni, fissi, contesto, dipendenti, ferie, indisponibili,

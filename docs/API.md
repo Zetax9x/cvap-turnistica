@@ -12,7 +12,7 @@ Frontend: HTML + JS vanilla (ES modules) in `static/`, servito da FastAPI. UI in
 | `slot.py` | `unita_da_coprire(giorni, postazioni, occupate) -> list[Unita]` |
 | `vincoli.py` | `Violazione(livello: "errore"\|"avviso", codice, messaggio, persona_id=None, data=None)`, `valida_settimana(giorni, postazioni, assegnazioni, persone: dict[int, Persona], contesto=()) -> list[Violazione]` |
 | `storico.py` | `StoricoPersona(settimane, saldo_ore, weekend: dict, ore_giorno, ore_notte)`, `SettimanaPassata(media_ore, dipendenti: list[int], assegnazioni)`, `calcola_storico(list[SettimanaPassata]) -> dict[int, StoricoPersona]` |
-| `solver.py` | `genera(giorni, postazioni, persone: list[Persona], fissi=(), contesto=(), storico=None, tempo_max=20.0) -> Risultato` con `Risultato(stato, assegnazioni: list[Assegnazione]` (solo nuove, origine `generato`)`, scoperti: list[Unita], media_ore: float, ore: dict[int,int], messaggio: str)`; `stato` ∈ `ottimo \| ammissibile \| impossibile \| nessuna_soluzione` |
+| `solver.py` | `genera(giorni, postazioni, persone: list[Persona], fissi=(), contesto=(), storico=None, tempo_max=20.0) -> Risultato` con `Risultato(stato, assegnazioni: list[Assegnazione]` (solo nuove, origine `generato`)`, scoperti: list[Unita], media_ore: float, ore: dict[int,int], messaggio: str, durata_s: float, qualita: dict \| None)`; `stato` ∈ `ottimo \| ammissibile \| impossibile \| nessuna_soluzione` |
 
 Valori: `tipo` ∈ dipendente|volontario; `qualifica` ∈ autista|soccorritore; `fascia` ∈ giorno|notte;
 `segmento` ∈ intero|mattina|pomeriggio (mattina/pomeriggio solo con fascia giorno: 8-14 / 14-20);
@@ -87,7 +87,7 @@ non di ferie (calcolata dalle assegnazioni reali, così le modifiche manuali con
   400 se: settimana confermata, data fuori settimana, postazione non attiva quella settimana, fascia/segmento non validi,
   persona non abilitata al ruolo, posto già occupato (segmento sovrapposto). Le altre regole (riposo, ore…) appaiono come `violazioni`.
 - `DELETE /assegnazioni/{id}` → 204 · 400 se settimana confermata
-- `POST /settimane/{data}/genera` `{tempo_max?: number}` → settimana aggiornata con `report = {stato, messaggio, scoperti: [{data, postazione, fascia, segmento, ruolo}], media_ore, durata_s}`.
+- `POST /settimane/{data}/genera` `{tempo_max?: number}` → settimana aggiornata con `report = {stato, messaggio, scoperti: [{data, postazione, fascia, segmento, ruolo}], media_ore, durata_s, qualita, qualita_precedente}`. `qualita = {punteggio, limite_inferiore, gap_pct, soluzioni, tempo_migliore_s, durata_s, tempo_max, workers}` (punteggio = somma delle penalità, più basso è meglio; `gap_pct` = distanza dall'ottimo, 0 = ottimo dimostrato); `qualita_precedente` è la `qualita` della generazione precedente della stessa settimana (`null` se assente).
   Cancella le assegnazioni `generato` della settimana, poi chiama `solver.genera` con: dipendenti attivi, `fissi` = volontario+manuale,
   `contesto` = assegnazioni dei 3 giorni prima e dopo la settimana, `storico` = `calcola_storico` su tutte le settimane precedenti presenti in `settimane`.
   Salva le nuove assegnazioni, `stato='bozza'`, `dipendenti` = id dei dipendenti attivi. 400 se confermata.

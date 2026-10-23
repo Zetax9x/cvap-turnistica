@@ -226,6 +226,10 @@ input[type="checkbox"] { min-height: 0; width: 1.05rem; height: 1.05rem; accent-
 .report-errore { border-left-color: var(--err); background: var(--err-bg); }
 .report-head { display: flex; flex-wrap: wrap; gap: .4rem 1.25rem; align-items: baseline; }
 .report-msg { margin: .35rem 0 0; }
+.report-qualita { margin-top: .6rem; font-size: .9rem; }
+.report-qualita p { margin: .3rem 0 0; }
+.tabella-qualita caption { text-align: left; font-weight: 600; padding-bottom: .2rem; }
+.tabella-qualita th[scope="row"] { font-weight: normal; text-align: left; }
 .report-scoperti-titolo { margin: .5rem 0 .2rem; font-weight: 600; color: var(--err); }
 .report-scoperti { margin: 0; padding-left: 1.2rem; columns: 2 18rem; font-size: .9rem; }
 
