@@ -120,6 +120,7 @@ def test_settimana_b_con_tre_postazioni(dipendenti_14):
     assert errori(GIORNI, STAZIONI_B, r.assegnazioni, persone) == []
     # 28 posti ad Ascoli e 20 dipendenti: nessuno ne fa più di 2
     assert max(turni_ascoli(r).values()) <= 2
+    assert ascoli_di_fila(r) == []
 
 
 def test_tutto_gia_coperto_riporta_comunque_la_media_ore():
@@ -217,3 +218,23 @@ def test_ascoli_mai_piu_di_tre_turni_anche_se_resta_scoperto():
     r = genera(GIORNI, ["Ascoli"], staff(4, 6), tempo_max=10)
     assert r.scoperti
     assert max(turni_ascoli(r).values()) <= 3
+
+
+def ascoli_di_fila(r):
+    giorni = {(a.persona_id, a.fascia, a.data) for a in r.assegnazioni if a.postazione == "Ascoli"}
+    return sorted((pid, fascia, d) for pid, fascia, d in giorni if (pid, fascia, d + timedelta(days=1)) in giorni)
+
+
+def test_ascoli_mai_due_giorni_o_due_notti_di_fila():
+    # solo Ascoli, 14 dipendenti: 2 turni a testa, mai consecutivi nella stessa fascia
+    r = genera(GIORNI, ["Ascoli"], staff(7, 7), tempo_max=10)
+    assert r.scoperti == []
+    assert ascoli_di_fila(r) == []
+
+
+def test_ascoli_di_fila_rispetta_la_settimana_precedente():
+    persone = staff(7, 7)
+    contesto = [ass(GIORNI[0] - timedelta(days=1), "Ascoli", "notte", "autista", 1)]
+    r = genera(GIORNI, ["Ascoli"], persone, contesto=contesto, tempo_max=10)
+    assert not [a for a in r.assegnazioni
+                if a.persona_id == 1 and a.data == GIORNI[0] and a.postazione == "Ascoli" and a.fascia == "notte"]

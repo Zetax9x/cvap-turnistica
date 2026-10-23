@@ -183,3 +183,43 @@ def test_il_limite_di_ascoli_non_vale_per_i_volontari():
     a = [ass(GIORNI[i], "Ascoli", "giorno", "soccorritore", 3, origine="volontario") for i in (0, 2, 4, 6)]
     v = valida_settimana(GIORNI, ASCOLI, a, PERSONE)
     assert "ascoli" not in codici(v) | codici(v, "avviso")
+
+
+# --- Ascoli: mai due giorni o due notti di fila allo stesso dipendente -------------------
+
+def test_due_giorni_di_fila_ad_ascoli_sono_un_errore():
+    a = [ass(GIORNI[i], "Ascoli", "giorno", "autista", 1) for i in (0, 1)]
+    assert "ascoli_di_fila" in codici(valida_settimana(GIORNI, ASCOLI, a, PERSONE))
+
+
+def test_due_notti_di_fila_ad_ascoli_sono_un_errore():
+    a = [ass(GIORNI[i], "Ascoli", "notte", "autista", 1) for i in (3, 4)]
+    assert "ascoli_di_fila" in codici(valida_settimana(GIORNI, ASCOLI, a, PERSONE))
+
+
+def test_ascoli_di_fila_conta_anche_mezzo_turno():
+    a = [ass(GIORNI[0], "Ascoli", "giorno", "autista", 1, segmento="pomeriggio"),
+         ass(GIORNI[1], "Ascoli", "giorno", "autista", 1, segmento="mattina")]
+    assert "ascoli_di_fila" in codici(valida_settimana(GIORNI, ASCOLI, a, PERSONE))
+
+
+def test_ascoli_giorno_poi_notte_o_altra_postazione_va_bene():
+    a = [ass(GIORNI[0], "Ascoli", "giorno", "autista", 1),
+         ass(GIORNI[1], "Ascoli", "notte", "autista", 1),        # fascia diversa
+         ass(GIORNI[3], "Ascoli", "giorno", "soccorritore", 2),
+         ass(GIORNI[4], "Acquasanta", "giorno", "soccorritore", 2),  # postazione diversa
+         ass(GIORNI[5], "Ascoli", "notte", "autista", 1)]            # notte non consecutiva
+    v = valida_settimana(GIORNI, ASCOLI, a, PERSONE)
+    assert "ascoli_di_fila" not in codici(v) | codici(v, "avviso")
+
+
+def test_ascoli_di_fila_a_cavallo_della_settimana_precedente():
+    contesto = [ass(GIORNI[0] - timedelta(days=1), "Ascoli", "notte", "autista", 1)]
+    a = [ass(GIORNI[0], "Ascoli", "notte", "autista", 1)]
+    assert "ascoli_di_fila" in codici(valida_settimana(GIORNI, ASCOLI, a, PERSONE, contesto=contesto))
+
+
+def test_ascoli_di_fila_non_vale_per_i_volontari():
+    a = [ass(GIORNI[i], "Ascoli", "giorno", "soccorritore", 3, origine="volontario") for i in (0, 1)]
+    v = valida_settimana(GIORNI, ASCOLI, a, PERSONE)
+    assert "ascoli_di_fila" not in codici(v) | codici(v, "avviso")
