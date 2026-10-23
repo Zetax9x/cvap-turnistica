@@ -785,9 +785,46 @@ def test_scarto_ore_max_usato_dal_validatore(client):
     def codici():
         return {v["codice"] for v in client.get(f"/api/settimane/{LUNEDI_A}").json()["violazioni"]}
 
-    assert "ore" not in codici()  # 24h e 12h: scarto 6 su banda 12
+    assert "ore" not in codici()  # 24h e 12h: differenza 12 su limite 12
     client.put("/api/impostazioni", json={"scarto_ore_max": 5})
     assert "ore" in codici()
+
+
+def test_differenza_ore_nel_payload(client):
+    a, b = crea(client, "Anna"), crea(client, "Bea")
+    for giorno in ("2026-10-19", "2026-10-21"):
+        assert prenota(client, LUNEDI_A, a["id"], data=giorno, ruolo="autista").status_code == 201
+    assert prenota(client, LUNEDI_A, b["id"], data="2026-10-20", postazione="Venarotta",
+                   ruolo="autista").status_code == 201
+    s = client.get(f"/api/settimane/{LUNEDI_A}").json()
+    assert s["scarto_ore_max"] == 12
+    assert s["differenza_ore"] == {
+        "differenza": 12, "limite": 12,
+        "massimo": {"persona_id": a["id"], "nome": "Anna", "ore": 24},
+        "minimo": {"persona_id": b["id"], "nome": "Bea", "ore": 12}}
+    client.put("/api/impostazioni", json={"scarto_ore_max": 5})
+    assert client.get(f"/api/settimane/{LUNEDI_A}").json()["differenza_ore"]["limite"] == 5
+
+
+def test_differenza_ore_conta_le_ferie(client):
+    a, b = crea(client, "Anna"), crea(client, "Bea")
+    assert prenota(client, LUNEDI_A, a["id"], data="2026-10-19", ruolo="autista").status_code == 201
+    assert client.post("/api/ferie", json={"persona_id": b["id"], "dal": "2026-10-20",
+                                           "al": "2026-10-21"}).status_code == 201
+    d = client.get(f"/api/settimane/{LUNEDI_A}").json()["differenza_ore"]
+    assert d["massimo"]["ore"] == 12 and d["minimo"]["ore"] == 12 and d["differenza"] == 0
+
+
+def test_differenza_ore_null_con_un_solo_dipendente(client):
+    crea(client, "Anna")
+    assert client.get(f"/api/settimane/{LUNEDI_A}").json()["differenza_ore"] is None
+
+
+def test_differenza_ore_null_se_l_altro_ha_un_massimo(client):
+    crea(client, "Anna")
+    b = crea(client, "Bea")
+    client.put(f"/api/persone/{b['id']}/parametri", json={"max_ore_settimana": 24})
+    assert client.get(f"/api/settimane/{LUNEDI_A}").json()["differenza_ore"] is None
 
 
 def test_massimo_ore_della_persona(client):

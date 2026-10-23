@@ -3,7 +3,7 @@ from datetime import timedelta
 import pytest
 
 from cvap.calendario import giorni_settimana
-from cvap.modello import PARTI_TURNO, parti_turno
+from cvap.modello import PARTI_TURNO, Persona, parti_turno
 from cvap.solver import StoricoPersona, genera
 from cvap.vincoli import valida_settimana
 
@@ -36,11 +36,16 @@ def test_settimana_a_tutta_coperta_senza_violazioni(risultato_base, dipendenti_1
     assert errori(GIORNI, STAZIONI_A, risultato_base.assegnazioni, dipendenti_14) == []
 
 
-def test_ore_dipendenti_entro_12_dalla_media(risultato_base, dipendenti_14):
-    media = risultato_base.media_ore
-    assert media == pytest.approx(672 / 14)
-    for p in dipendenti_14:
-        assert abs(risultato_base.ore[p.id] - media) <= 12
+def _differenza(r, persone, crediti=None):
+    """Massimo meno minimo delle ore contate (lavorate + ferie) di chi non ha un massimo ore."""
+    crediti = crediti or {}
+    contate = [r.ore[p.id] + crediti.get(p.id, 0) for p in persone if p.max_ore_settimana is None]
+    return max(contate) - min(contate)
+
+
+def test_differenza_ore_tra_massimo_e_minimo_al_massimo_12(risultato_base, dipendenti_14):
+    assert risultato_base.media_ore == pytest.approx(672 / 14)
+    assert _differenza(risultato_base, dipendenti_14) <= 12
 
 
 def test_equilibrio_giorni_notti_nella_settimana(risultato_base, dipendenti_14):
@@ -170,9 +175,8 @@ def test_indisponibile_non_riceve_turni_in_quel_giorno(dipendenti_14):
     r = genera(GIORNI, STAZIONI_A, dipendenti_14, indisponibili=indisponibili, tempo_max=10)
     assert r.scoperti == []
     assert not [a for a in r.assegnazioni if a.data in {d for d, _ in indisponibili.get(a.persona_id, set())}]
-    # non sono ferie: la quota di ore resta piena
-    for pid in (1, 2):
-        assert abs(r.ore[pid] - r.media_ore) <= 12
+    # non sono ferie: le ore contate sono quelle lavorate
+    assert _differenza(r, dipendenti_14) <= 12
 
 
 def test_indisponibilita_per_parte_blocca_solo_i_turni_che_la_toccano(dipendenti_14):
@@ -199,12 +203,32 @@ def test_ferie_parziali_niente_turni_e_6_ore_per_giorno(dipendenti_14):
     assert r.scoperti == []
     assert not [a for a in r.assegnazioni if a.persona_id == 1 and a.data in ferie[1]]
     assert r.media_ore == pytest.approx((672 + 18) / 14)
-    assert abs(r.ore[1] + 18 - r.media_ore) <= 12
-    for p in dipendenti_14[1:]:
-        assert abs(r.ore[p.id] - r.media_ore) <= 12
+    assert _differenza(r, dipendenti_14, crediti={1: 18}) <= 12
     mappa = {p.id: p for p in dipendenti_14}
     v = valida_settimana(GIORNI, STAZIONI_A, r.assegnazioni, mappa, ferie=ferie)
     assert not [x for x in v if x.livello == "errore"]
+
+
+def test_dipendente_con_massimo_24h_resta_fuori_dalla_differenza(dipendenti_14):
+    persone = list(dipendenti_14)
+    persone[0] = Persona(1, "Autista 1", "dipendente", "autista", max_ore_settimana=24)
+    r = genera(GIORNI, STAZIONI_A, persone, tempo_max=10)
+    assert r.scoperti == []
+    assert r.ore[1] <= 24
+    assert _differenza(r, persone) <= 12
+    assert "Differenza di ore" not in r.messaggio
+
+
+def test_messaggio_se_la_differenza_supera_il_limite():
+    # Luca indisponibile tutta la settimana e Mario con 24h fissate: differenza oltre il limite di 6h
+    persone = staff(1, 1)
+    fissi = [ass(GIORNI[0], "Acquasanta", "giorno", "autista", 1, origine="manuale"),
+             ass(GIORNI[1], "Acquasanta", "giorno", "autista", 1, origine="manuale")]
+    tutto = {(d, parte) for d in GIORNI for parte in PARTI_TURNO}
+    r = genera(GIORNI, ["Acquasanta"], persone, fissi=fissi, indisponibili={2: tutto}, tempo_max=5,
+               scarto_ore_max=6)
+    assert "Differenza di ore oltre il limite di 6h: " in r.messaggio
+    assert "Autista 1 " in r.messaggio and "Soccorritore 2 " in r.messaggio
 
 
 def test_ferie_tutta_la_settimana_esclude_il_dipendente(dipendenti_14):

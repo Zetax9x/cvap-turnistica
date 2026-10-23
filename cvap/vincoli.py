@@ -323,3 +323,7 @@ def _ore(giorni, assegnazioni, persone, ferie, scarto_ore_max=SCARTO_ORE_MAX):
                                   f"{p.nome}: {ore[p.id]}h{extra}, scarto {scarto:+.1f}h {dove} ({riferimento:.1f}h)",
                                   p.id))
     return out
+
+
+def differenza_ore(giorni, assegnazioni, persone, ferie):  # segnaposto per la fase RED
+    return None
