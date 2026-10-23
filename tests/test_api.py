@@ -53,7 +53,8 @@ def test_crud_persone(client):
         "nome": "Mario", "tipo": "volontario", "qualifica": "soccorritore", "attivo": False})
     assert r.status_code == 200
     assert r.json() == {"id": p["id"], "nome": "Mario", "tipo": "volontario",
-                        "qualifica": "soccorritore", "autista_programmati": False, "attivo": False}
+                        "qualifica": "soccorritore", "autista_programmati": False, "attivo": False,
+                        "max_ore_settimana": None}
     assert len(client.get("/api/persone").json()) == 1
     assert client.delete(f"/api/persone/{p['id']}").status_code == 204
     assert client.get("/api/persone").json() == []
@@ -94,11 +95,11 @@ def test_postazioni_seed(client):
 
 
 def test_impostazioni_normalizzate_al_lunedi(client):
-    assert client.get("/api/impostazioni").json() == {"data_riferimento_a": LUNEDI_A}
+    assert client.get("/api/impostazioni").json() == {"data_riferimento_a": LUNEDI_A, "scarto_ore_max": 12}
     r = client.put("/api/impostazioni", json={"data_riferimento_a": "2026-10-29"})  # giovedì
     assert r.status_code == 200
-    assert r.json() == {"data_riferimento_a": LUNEDI_B}
-    assert client.get("/api/impostazioni").json() == {"data_riferimento_a": LUNEDI_B}
+    assert r.json() == {"data_riferimento_a": LUNEDI_B, "scarto_ore_max": 12}
+    assert client.get("/api/impostazioni").json() == {"data_riferimento_a": LUNEDI_B, "scarto_ore_max": 12}
     assert client.put("/api/impostazioni", json={"data_riferimento_a": "boh"}).status_code == 422
 
 
@@ -697,3 +698,149 @@ def test_stessa_persona_due_volte_nello_stesso_turno_programmati(client):
 def test_nome_con_caratteri_di_controllo_rifiutato(client):
     r = client.post("/api/persone", json={"nome": "a\u0000b", "tipo": "volontario", "qualifica": "autista"})
     assert r.status_code == 422
+
+
+# --- parametri dei dipendenti ------------------------------------------------------------
+
+def test_scarto_ore_max_impostabile_e_nel_payload_della_settimana(client):
+    assert client.get(f"/api/settimane/{LUNEDI_A}").json()["scarto_ore_max"] == 12
+    r = client.put("/api/impostazioni", json={"scarto_ore_max": 6})
+    assert r.status_code == 200
+    assert r.json() == {"data_riferimento_a": LUNEDI_A, "scarto_ore_max": 6}  # la data resta com'è
+    assert client.get("/api/impostazioni").json()["scarto_ore_max"] == 6
+    assert client.get(f"/api/settimane/{LUNEDI_A}").json()["scarto_ore_max"] == 6
+
+
+@pytest.mark.parametrize("valore", [0, -1, 25, 6.5, "dodici", None])
+def test_scarto_ore_max_fuori_intervallo_422(client, valore):
+    assert client.put("/api/impostazioni", json={"scarto_ore_max": valore}).status_code == 422
+
+
+def test_impostazioni_vuote_422(client):
+    assert client.put("/api/impostazioni", json={}).status_code == 422
+
+
+def test_scarto_ore_max_usato_dal_validatore(client):
+    a, b = crea(client, "Anna"), crea(client, "Bea")
+    for giorno in ("2026-10-19", "2026-10-21"):
+        assert prenota(client, LUNEDI_A, a["id"], data=giorno, ruolo="autista").status_code == 201
+    assert prenota(client, LUNEDI_A, b["id"], data="2026-10-20", postazione="Venarotta",
+                   ruolo="autista").status_code == 201
+
+    def codici():
+        return {v["codice"] for v in client.get(f"/api/settimane/{LUNEDI_A}").json()["violazioni"]}
+
+    assert "ore" not in codici()  # 24h e 12h: scarto 6 su banda 12
+    client.put("/api/impostazioni", json={"scarto_ore_max": 5})
+    assert "ore" in codici()
+
+
+def test_massimo_ore_della_persona(client):
+    p = crea(client, "Mario")
+    assert client.get("/api/persone").json()[0]["max_ore_settimana"] is None
+    r = client.put(f"/api/persone/{p['id']}/parametri", json={"max_ore_settimana": 24})
+    assert r.status_code == 200 and r.json()["max_ore_settimana"] == 24 and r.json()["nome"] == "Mario"
+    assert client.get("/api/persone").json()[0]["max_ore_settimana"] == 24
+    r = client.put(f"/api/persone/{p['id']}/parametri", json={"max_ore_settimana": None})
+    assert r.status_code == 200 and r.json()["max_ore_settimana"] is None
+    assert client.get("/api/persone").json()[0]["max_ore_settimana"] is None
+
+
+def test_modifica_persona_non_cancella_il_massimo_ore(client):
+    p = crea(client, "Mario")
+    client.put(f"/api/persone/{p['id']}/parametri", json={"max_ore_settimana": 30})
+    r = client.put(f"/api/persone/{p['id']}", json={"nome": "Mario R", "tipo": "dipendente",
+                                                    "qualifica": "autista", "attivo": True})
+    assert r.json()["max_ore_settimana"] == 30
+
+
+@pytest.mark.parametrize("corpo", [{"max_ore_settimana": 0}, {"max_ore_settimana": -5},
+                                   {"max_ore_settimana": 169}, {"max_ore_settimana": 2.5},
+                                   {"max_ore_settimana": "tanto"}, {}])
+def test_massimo_ore_non_valido_422(client, corpo):
+    p = crea(client, "Mario")
+    assert client.put(f"/api/persone/{p['id']}/parametri", json=corpo).status_code == 422
+
+
+def test_massimo_ore_persona_inesistente_404(client):
+    assert client.put("/api/persone/999/parametri", json={"max_ore_settimana": 10}).status_code == 404
+
+
+def test_massimo_ore_segnalato_dal_validatore_e_nel_riepilogo(client):
+    a, b = crea(client, "Anna"), crea(client, "Bea")
+    client.put(f"/api/persone/{a['id']}/parametri", json={"max_ore_settimana": 12})
+    for giorno in ("2026-10-19", "2026-10-21"):
+        assert prenota(client, LUNEDI_A, a["id"], data=giorno, ruolo="autista").status_code == 201
+    s = client.get(f"/api/settimane/{LUNEDI_A}").json()
+    assert any(v["codice"] == "ore_max" and v["persona_id"] == a["id"] for v in s["violazioni"])
+    riga = next(r for r in s["riepilogo"] if r["persona_id"] == a["id"])
+    assert riga["max_ore_settimana"] == 12
+    assert next(r for r in s["riepilogo"] if r["persona_id"] == b["id"])["max_ore_settimana"] is None
+
+
+def test_crud_divieti(client):
+    p = crea(client, "Mario")
+    assert client.get("/api/divieti").json() == []
+    r = client.post("/api/divieti", json={"persona_id": p["id"], "postazione": "Venarotta", "turno": "notte"})
+    assert r.status_code == 201
+    d = r.json()
+    assert d["persona_id"] == p["id"] and d["postazione"] == "Venarotta" and d["turno"] == "notte"
+    solo_turno = client.post("/api/divieti", json={"persona_id": p["id"], "turno": "mattina"}).json()
+    assert solo_turno["postazione"] is None and solo_turno["turno"] == "mattina"
+    solo_postazione = client.post("/api/divieti", json={"persona_id": p["id"], "postazione": "Ascoli"}).json()
+    assert solo_postazione["turno"] is None
+    assert [x["id"] for x in client.get("/api/divieti").json()] == [d["id"], solo_turno["id"], solo_postazione["id"]]
+    assert client.delete(f"/api/divieti/{d['id']}").status_code == 204
+    assert [x["id"] for x in client.get("/api/divieti").json()] == [solo_turno["id"], solo_postazione["id"]]
+    assert client.delete(f"/api/divieti/{d['id']}").status_code == 404
+
+
+def test_divieti_validazione(client):
+    p = crea(client, "Mario")
+    v = crea(client, "Anna", "volontario", "soccorritore")
+    ok = {"persona_id": p["id"], "postazione": "Venarotta", "turno": "notte"}
+    assert client.post("/api/divieti", json={"persona_id": p["id"]}).status_code == 400  # né postazione né turno
+    assert client.post("/api/divieti", json={"persona_id": p["id"], "postazione": None,
+                                             "turno": None}).status_code == 400
+    assert client.post("/api/divieti", json={**ok, "persona_id": 999}).status_code == 404
+    assert client.post("/api/divieti", json={**ok, "persona_id": v["id"]}).status_code == 400  # volontario
+    assert client.post("/api/divieti", json={**ok, "postazione": "Atlantide"}).status_code == 400
+    assert client.post("/api/divieti", json={**ok, "turno": "sera"}).status_code == 422
+    assert client.post("/api/divieti", json={**ok, "postazione": ""}).status_code == 422
+    assert client.post("/api/divieti", json=ok).status_code == 201
+    assert client.post("/api/divieti", json=ok).status_code == 400  # duplicato
+    assert client.post("/api/divieti", json={"persona_id": p["id"], "turno": "notte"}).status_code == 201
+    assert client.post("/api/divieti", json={"persona_id": p["id"], "turno": "notte"}).status_code == 400
+    assert client.post("/api/divieti", json={**ok, "postazione": "Standby"}).status_code == 201  # a richiesta
+    assert client.delete("/api/divieti/999").status_code == 404
+
+
+def test_eliminando_la_persona_si_eliminano_i_divieti(client):
+    p = crea(client, "Mario")
+    altro = crea(client, "Luca")
+    client.post("/api/divieti", json={"persona_id": p["id"], "turno": "notte"})
+    client.post("/api/divieti", json={"persona_id": altro["id"], "turno": "notte"})
+    assert client.delete(f"/api/persone/{p['id']}").status_code == 204
+    assert [d["persona_id"] for d in client.get("/api/divieti").json()] == [altro["id"]]
+
+
+def test_turno_manuale_vietato_segnalato(client):
+    p = crea(client, "Mario")
+    client.post("/api/divieti", json={"persona_id": p["id"], "postazione": "Venarotta", "turno": "notte"})
+    r = prenota(client, LUNEDI_A, p["id"], postazione="Venarotta", fascia="notte", ruolo="autista")
+    assert r.status_code == 201  # il turno manuale si può fare: è il validatore a segnalarlo
+    assert any(v["codice"] == "divieto" and v["persona_id"] == p["id"] for v in r.json()["violazioni"])
+
+
+def test_la_generazione_rispetta_massimo_ore_divieti_e_banda(client):
+    ids = staff_14(client)
+    client.put("/api/impostazioni", json={"scarto_ore_max": 8})
+    client.put(f"/api/persone/{ids[0]}/parametri", json={"max_ore_settimana": 24})
+    client.post("/api/divieti", json={"persona_id": ids[1], "turno": "notte"})
+    r = client.post(f"/api/settimane/{LUNEDI_A}/genera", json={"tempo_max": 10})
+    assert r.status_code == 200, r.text
+    s = r.json()
+    righe = {x["persona_id"]: x for x in s["riepilogo"]}
+    assert righe[ids[0]]["ore"] <= 24
+    assert not [a for a in s["assegnazioni"] if a["persona_id"] == ids[1] and a["fascia"] == "notte"]
+    assert not [v for v in s["violazioni"] if v["livello"] == "errore"]
