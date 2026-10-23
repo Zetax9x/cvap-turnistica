@@ -16,6 +16,7 @@ ORIGINI = ("volontario", "generato", "manuale")
 PARTI_TURNO = ("mattina", "pomeriggio", "notte")  # le parti della giornata in cui un dipendente può essere indisponibile
 
 ORE_RIPOSO_MIN = 11
+TURNI_VIETABILI = ("mattina", "pomeriggio", "giorno", "notte")  # tipi di turno per i divieti
 
 # Postazioni "a richiesta": i posti esistono solo dove l'utente indica il fabbisogno (solo settimane A).
 STANDBY = "Standby"
@@ -85,6 +86,19 @@ def orario(d: date, fascia: str, segmento: str) -> tuple[int, int]:
     return base + inizio, base + fine
 
 
+def tipi_turno(fascia: str, segmento: str) -> frozenset[str]:
+    """Tipi di turno (TURNI_VIETABILI) toccati da un turno: le sue parti, più "giorno" se è di giorno."""
+    parti = parti_turno(fascia, segmento)
+    return parti | {"giorno"} if fascia == "giorno" else parti
+
+
+@dataclass(frozen=True)
+class Divieto:
+    """Turni che un dipendente non può fare: in una postazione e/o di un tipo (None = qualsiasi)."""
+    postazione: str | None = None
+    turno: str | None = None
+
+
 @dataclass(frozen=True)
 class Persona:
     id: int
@@ -92,6 +106,14 @@ class Persona:
     tipo: str
     qualifica: str
     autista_programmati: bool = False  # può guidare nei Programmati anche se soccorritore
+    max_ore_settimana: int | None = None  # tetto alle ore lavorate (le ferie non contano); None = nessuno
+    divieti: tuple[Divieto, ...] = ()
+
+    def vieta(self, postazione: str, fascia: str, segmento: str) -> bool:
+        """True se un divieto della persona copre quel turno."""
+        tipi = tipi_turno(fascia, segmento)
+        return any((d.postazione is None or d.postazione == postazione) and (d.turno is None or d.turno in tipi)
+                   for d in self.divieti)
 
     @property
     def dipendente(self) -> bool:

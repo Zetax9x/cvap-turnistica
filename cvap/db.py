@@ -9,9 +9,11 @@ import sqlite3
 from datetime import date, timedelta
 
 from .calendario import lunedi
-from .modello import Assegnazione, Fabbisogno, Persona, Postazione
+from .modello import Assegnazione, Divieto, Fabbisogno, Persona, Postazione
 
 RIFERIMENTO_A_DEFAULT = "2026-10-19"
+SCARTO_ORE_MAX_DEFAULT = 12
+SCARTO_ORE_MAX_RANGE = (1, 24)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS persone (
@@ -20,7 +22,8 @@ CREATE TABLE IF NOT EXISTS persone (
     tipo TEXT NOT NULL,
     qualifica TEXT NOT NULL,
     attivo INTEGER NOT NULL DEFAULT 1,
-    autista_programmati INTEGER NOT NULL DEFAULT 0  -- soccorritore che può guidare nei Programmati
+    autista_programmati INTEGER NOT NULL DEFAULT 0,  -- soccorritore che può guidare nei Programmati
+    max_ore_settimana INTEGER  -- tetto alle ore lavorate a settimana (NULL = nessun limite)
 );
 CREATE TABLE IF NOT EXISTS postazioni (
     id INTEGER PRIMARY KEY,
@@ -66,6 +69,12 @@ CREATE TABLE IF NOT EXISTS indisponibilita_turni (  -- parti della giornata (mat
     data TEXT NOT NULL,
     parte TEXT NOT NULL,
     PRIMARY KEY (persona_id, data, parte)
+);
+CREATE TABLE IF NOT EXISTS divieti (  -- turni che un dipendente non può fare (NULL = qualsiasi)
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    persona_id INTEGER NOT NULL REFERENCES persone(id),
+    postazione TEXT,
+    turno TEXT  -- mattina | pomeriggio | giorno | notte
 );
 CREATE TABLE IF NOT EXISTS fabbisogno (  -- posti richiesti nelle postazioni a richiesta (Standby, Programmati)
     data TEXT NOT NULL,
@@ -203,17 +212,25 @@ def _migra(conn) -> None:
     except Exception:
         if conn.execute("SELECT 1 FROM indisponibilita LIMIT 1").fetchone():
             raise
+    if "max_ore_settimana" not in _colonne(conn, "persone"):
+        try:
+            conn.execute("ALTER TABLE persone ADD COLUMN max_ore_settimana INTEGER")
+        except Exception:
+            if "max_ore_settimana" not in _colonne(conn, "persone"):
+                raise
 
 
 # --- persone ---------------------------------------------------------------
 
 def _persona_dict(r: sqlite3.Row) -> dict:
     return {"id": r["id"], "nome": r["nome"], "tipo": r["tipo"], "qualifica": r["qualifica"],
-            "autista_programmati": bool(r["autista_programmati"]), "attivo": bool(r["attivo"])}
+            "autista_programmati": bool(r["autista_programmati"]), "attivo": bool(r["attivo"]),
+            "max_ore_settimana": r["max_ore_settimana"]}
 
 
-def a_persona(r: dict | sqlite3.Row) -> Persona:
-    return Persona(r["id"], r["nome"], r["tipo"], r["qualifica"], bool(r["autista_programmati"]))
+def a_persona(r: dict | sqlite3.Row, divieti: tuple[Divieto, ...] = ()) -> Persona:
+    return Persona(r["id"], r["nome"], r["tipo"], r["qualifica"], bool(r["autista_programmati"]),
+                   r["max_ore_settimana"], tuple(divieti))
 
 
 def lista_persone(conn: sqlite3.Connection) -> list[dict]:
@@ -248,6 +265,13 @@ def aggiorna_persona(conn: sqlite3.Connection, persona_id: int, nome: str, tipo:
     return get_persona(conn, persona_id) if cur.rowcount else None
 
 
+def imposta_max_ore(conn: sqlite3.Connection, persona_id: int, max_ore: int | None) -> dict | None:
+    """Imposta (o toglie, con None) il massimo di ore settimanali; None se la persona non esiste."""
+    with conn:
+        cur = conn.execute("UPDATE persone SET max_ore_settimana = ? WHERE id = ?", (max_ore, persona_id))
+    return get_persona(conn, persona_id) if cur.rowcount else None
+
+
 def elimina_persona(conn: sqlite3.Connection, persona_id: int) -> bool:
     """Elimina la persona; se ha assegnazioni la disattiva soltanto. False se non esiste."""
     if get_persona(conn, persona_id) is None:
@@ -260,6 +284,7 @@ def elimina_persona(conn: sqlite3.Connection, persona_id: int) -> bool:
         else:
             conn.execute("DELETE FROM ferie WHERE persona_id = ?", (persona_id,))
             conn.execute("DELETE FROM indisponibilita_turni WHERE persona_id = ?", (persona_id,))
+            conn.execute("DELETE FROM divieti WHERE persona_id = ?", (persona_id,))
             conn.execute("DELETE FROM persone WHERE id = ?", (persona_id,))
     return True
 
@@ -276,7 +301,43 @@ def persone_per_nome(conn: sqlite3.Connection, nome: str) -> list[dict]:
 
 def dipendenti_attivi(conn: sqlite3.Connection) -> list[Persona]:
     rows = conn.execute("SELECT * FROM persone WHERE tipo = 'dipendente' AND attivo = 1 ORDER BY id").fetchall()
-    return [a_persona(r) for r in rows]
+    divieti = divieti_per_persona(conn)
+    return [a_persona(r, divieti.get(r["id"], ())) for r in rows]
+
+
+# --- divieti ------------------------------------------------------------------
+
+def _divieto_dict(r) -> dict:
+    return {"id": r["id"], "persona_id": r["persona_id"], "postazione": r["postazione"], "turno": r["turno"]}
+
+
+def lista_divieti(conn: sqlite3.Connection) -> list[dict]:
+    rows = conn.execute("SELECT * FROM divieti ORDER BY id").fetchall()
+    return [_divieto_dict(r) for r in rows]
+
+
+def divieti_per_persona(conn: sqlite3.Connection) -> dict[int, tuple[Divieto, ...]]:
+    out: dict[int, list[Divieto]] = {}
+    for d in lista_divieti(conn):
+        out.setdefault(d["persona_id"], []).append(Divieto(d["postazione"], d["turno"]))
+    return {pid: tuple(v) for pid, v in out.items()}
+
+
+def divieto_esiste(conn: sqlite3.Connection, persona_id: int, postazione: str | None, turno: str | None) -> bool:
+    return conn.execute("SELECT 1 FROM divieti WHERE persona_id = ? AND postazione IS ? AND turno IS ? LIMIT 1",
+                        (persona_id, postazione, turno)).fetchone() is not None
+
+
+def crea_divieto(conn: sqlite3.Connection, persona_id: int, postazione: str | None, turno: str | None) -> dict:
+    with conn:
+        cur = conn.execute("INSERT INTO divieti(persona_id, postazione, turno) VALUES (?, ?, ?)",
+                           (persona_id, postazione, turno))
+    return _divieto_dict(conn.execute("SELECT * FROM divieti WHERE id = ?", (cur.lastrowid,)).fetchone())
+
+
+def elimina_divieto(conn: sqlite3.Connection, divieto_id: int) -> bool:
+    with conn:
+        return conn.execute("DELETE FROM divieti WHERE id = ?", (divieto_id,)).rowcount > 0
 
 
 # --- postazioni / impostazioni -------------------------------------------------
@@ -301,6 +362,18 @@ def set_riferimento_a(conn: sqlite3.Connection, d: date) -> date:
         conn.execute("INSERT INTO impostazioni(chiave, valore) VALUES ('data_riferimento_a', ?) "
                      "ON CONFLICT(chiave) DO UPDATE SET valore = excluded.valore", (valore.isoformat(),))
     return valore
+
+
+def get_scarto_ore_max(conn: sqlite3.Connection) -> int:
+    r = conn.execute("SELECT valore FROM impostazioni WHERE chiave = 'scarto_ore_max'").fetchone()
+    return int(r["valore"]) if r and r["valore"] else SCARTO_ORE_MAX_DEFAULT
+
+
+def set_scarto_ore_max(conn: sqlite3.Connection, ore: int) -> int:
+    with conn:
+        conn.execute("INSERT INTO impostazioni(chiave, valore) VALUES ('scarto_ore_max', ?) "
+                     "ON CONFLICT(chiave) DO UPDATE SET valore = excluded.valore", (str(ore),))
+    return ore
 
 
 # --- assegnazioni ---------------------------------------------------------------

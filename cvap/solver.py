@@ -10,12 +10,14 @@ Vincoli rigidi (mai violati):
   - al massimo 3 giorni (o 3 notti) di fila
   - al massimo 3 turni ad Ascoli a settimana per dipendente
   - ad Ascoli mai due giorni (o due notti) di fila allo stesso dipendente
+  - ore lavorate entro il massimo settimanale del dipendente, se ne ha uno (le ferie non contano)
+  - nessun turno vietato al dipendente (postazione e/o tipo di turno)
 Vincoli rigidi "con evidenza": se impossibili il modello resta risolvibile ma paga una penalità enorme
 e il risultato li segnala:
   - copertura di tutti i posti, con priorità: postazioni normali, poi Standby, poi Programmati
     (se manca personale restano scoperti prima i Programmati)
-  - ore di ogni dipendente entro ±12 dalla media della settimana; ogni giorno di ferie
-    conta 6 ore
+  - ore di ogni dipendente entro ±`scarto_ore_max` (12 di default) dalla media della settimana, o dal
+    suo massimo ore se più basso della media; ogni giorno di ferie conta 6 ore
 Obiettivi (minimizzati insieme, in ordine di peso):
   - il 3° turno ad Ascoli solo in extremis (pesa come 10 ore fuori banda, meno di un posto scoperto)
   - evitare 3 giorni/notti di fila
@@ -81,6 +83,7 @@ def genera(
     ferie: dict[int, set[date]] | None = None,
     indisponibili: dict[int, set[tuple[date, str]]] | None = None,
     fabbisogno: Sequence[Fabbisogno] = (),
+    scarto_ore_max: int = SCARTO_ORE_MAX,
 ) -> Risultato:
     """Genera i turni dei dipendenti.
 
@@ -89,6 +92,7 @@ def genera(
     settimana viene escluso. `indisponibili` sono le coppie (giorno, parte), per id: non può iniziare
     un turno che copre una di quelle parti. `media_ore` è la media dei dipendenti, ferie comprese.
     `fabbisogno`: posti richiesti nelle postazioni a richiesta (Standby, Programmati).
+    `scarto_ore_max`: ore di scarto ammesse dalla media (riferimento: min(media, massimo ore della persona)).
     """
     avvio = time.monotonic()
     storico = storico or {}
@@ -97,7 +101,8 @@ def genera(
     dipendenti = [p for p in persone if p.dipendente and giorni_disponibili(giorni, ferie.get(p.id, set()))]
     crediti = {p.id: ore_ferie(giorni, ferie.get(p.id, set())) for p in dipendenti}
     unita = unita_da_coprire(giorni, postazioni, fissi, fabbisogno)
-    problemi_fissi = _problemi_turni_fissi(giorni, postazioni, fissi, contesto, dipendenti, ferie, indisponibili)
+    problemi_fissi = _problemi_turni_fissi(giorni, postazioni, fissi, contesto, dipendenti, ferie, indisponibili,
+                                           scarto_ore_max)
     if not unita:
         ore = _ore_fisse(dipendenti, fissi)
         media = media_ore(ore, crediti)
@@ -107,7 +112,8 @@ def genera(
         return Risultato("impossibile", scoperti=unita, messaggio="Nessun dipendente attivo disponibile.")
 
     ferie_di = {p.id: set(ferie.get(p.id, ())) for p in dipendenti}
-    m = _Modello(giorni, unita, dipendenti, fissi, contesto, storico, crediti, ferie_di, indisponibili)
+    m = _Modello(giorni, unita, dipendenti, fissi, contesto, storico, crediti, ferie_di, indisponibili,
+                 scarto_ore_max)
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = tempo_max
     solver.parameters.num_search_workers = workers
@@ -141,13 +147,14 @@ def genera(
     for a in assegnazioni:
         ore[a.persona_id] += a.ore
     media = media_ore(ore, crediti)
-    fuori_banda = [p.nome for p in dipendenti if abs(ore[p.id] + crediti[p.id] - media) > SCARTO_ORE_MAX]
+    fuori_banda = [p.nome for p in dipendenti
+                   if abs(ore[p.id] + crediti[p.id] - _riferimento(p, media)) > scarto_ore_max]
 
     note = list(problemi_fissi)
     if scoperti:
         note.append(f"{len(scoperti)} posti non coperti: servono altri dipendenti o volontari.")
     if fuori_banda:
-        note.append("Ore fuori dal limite di ±12h dalla media: " + ", ".join(fuori_banda) + ".")
+        note.append(f"Ore fuori dal limite di ±{scarto_ore_max}h dalla media: " + ", ".join(fuori_banda) + ".")
     nomi = {p.id: p.nome for p in dipendenti}
     in_extremis = [nomi[pid] for pid, n in Counter(a.persona_id for a in fissi + assegnazioni
                                                    if a.postazione == ASCOLI and a.persona_id in nomi).items()
@@ -170,13 +177,21 @@ def genera(
     )
 
 
-def _problemi_turni_fissi(giorni, postazioni, fissi, contesto, dipendenti, ferie, indisponibili) -> list[str]:
+def _problemi_turni_fissi(giorni, postazioni, fissi, contesto, dipendenti, ferie, indisponibili,
+                          scarto_ore_max) -> list[str]:
     """Violazioni già presenti nei turni che il generatore non può cambiare (fissati e settimane vicine)."""
     persone = {p.id: p for p in dipendenti}
-    regole = {"riposo", "sovrapposizione", "consecutivi", "ferie", "indisponibile", "ascoli", "ascoli_di_fila"}
+    regole = {"riposo", "sovrapposizione", "consecutivi", "ferie", "indisponibile", "ascoli", "ascoli_di_fila",
+              "ore_max", "divieto"}
     return [v.messaggio + "." for v in valida_settimana(giorni, postazioni, fissi, persone, contesto=contesto,
-                                                         ferie=ferie, indisponibili=indisponibili)
+                                                         ferie=ferie, indisponibili=indisponibili,
+                                                         scarto_ore_max=scarto_ore_max)
             if v.livello == "errore" and v.codice in regole]
+
+
+def _riferimento(p: Persona, media: float) -> float:
+    """Ore a cui si confronta il dipendente: la media, o il suo massimo ore se più basso."""
+    return media if p.max_ore_settimana is None else min(media, p.max_ore_settimana)
 
 
 def _priorita(u: Unita) -> int:
@@ -197,12 +212,14 @@ class _Modello:
     def _indisponibile(indisp, u: Unita) -> bool:
         return any((u.data, parte) in indisp for parte in parti_turno(u.fascia, u.segmento))
 
-    def __init__(self, giorni, unita, dipendenti, fissi, contesto, storico, crediti, ferie, indisponibili):
+    def __init__(self, giorni, unita, dipendenti, fissi, contesto, storico, crediti, ferie, indisponibili,
+                 scarto_ore_max=SCARTO_ORE_MAX):
         self.model = cp_model.CpModel()
         self.giorni = giorni
         self.unita = unita
         self.dipendenti = dipendenti
         self.storico = storico
+        self.scarto_ore_max = scarto_ore_max
         self.crediti = crediti  # ore di ferie di ogni dipendente, contate come lavorate
         # scala intera dei termini dell'obiettivo: le ore si misurano in unità di 1/scala
         # (= numero di dipendenti)
@@ -220,6 +237,7 @@ class _Modello:
             for p in dipendenti:
                 if (p.puo_ricoprire(u.ruolo, u.postazione) and u.data not in ferie[p.id]
                         and not self._indisponibile(indisponibili.get(p.id, ()), u)
+                        and not p.vieta(u.postazione, u.fascia, u.segmento)
                         and not any(in_conflitto(u, f) for f in self.fissi_di[p.id])):
                     self.x[p.id, ui] = self.model.NewBoolVar(f"x_{p.id}_{ui}")
         self.per_persona: dict[int, list[tuple[Unita, cp_model.IntVar]]] = defaultdict(list)
@@ -276,7 +294,9 @@ class _Modello:
             validi = [pid for pid in candidati[ui]
                       if not any(in_conflitto(u, t) for t in presi[pid]) and di_fila(pid, u) <= 2
                       and (u.postazione != ASCOLI or (ascoli(pid) < MAX_TURNI_ASCOLI_EXTREMIS
-                                                      and not ascoli_vicino(pid, u)))]
+                                                      and not ascoli_vicino(pid, u)))
+                      and (per_id[pid].max_ore_settimana is None
+                           or ore[pid] + u.ore <= per_id[pid].max_ore_settimana)]
             if not validi:
                 continue
             altra = "notte" if u.fascia == "giorno" else "giorno"
@@ -394,25 +414,37 @@ class _Modello:
         crediti = sum(self.crediti.values())
         totale = self.model.NewIntVar(crediti, 24 * 7 * m + crediti, "ore_totali")
         self.model.Add(totale == sum(self.ore.values()) + crediti)
-        limite = 2 * (24 * 7 + max(self.crediti.values())) * n + 4 * SCARTO_ORE_MAX * n  # supera ogni |scarto| possibile
+        banda = self.scarto_ore_max
+        limite = 2 * (24 * 7 + max(self.crediti.values())) * n + 4 * max(banda, 24) * n  # supera ogni |scarto| possibile
         massimo = self.model.NewIntVar(0, limite, "scarto_max")
         # i saldi si centrano sui dipendenti attuali: chi è entrato o uscito non sposta tutti dalla media
         saldi = {p.id: self.storico.get(p.id, StoricoPersona()).saldo_ore for p in self.dipendenti}
         saldo_medio = sum(saldi.values()) / m
         for p in self.dipendenti:
+            tetto = p.max_ore_settimana
+            if tetto is not None:
+                # tetto rigido sulle ore lavorate (le ferie non contano); i turni fissati a mano oltre
+                # il tetto restano (li segnala il validatore)
+                self.model.Add(self.ore[p.id] <= max(tetto, fisse[p.id]))
             # media = totale / n (ferie comprese), quindi
-            # n * (ore + ferie - media) = n * (ore + ferie) - totale  (tutto intero)
-            scarto = n * (self.ore[p.id] + self.crediti[p.id]) - totale
+            # n * (ore + ferie - media) = n * (ore + ferie) - totale  (tutto intero);
+            # con un tetto il riferimento è min(media, tetto): n * riferimento = min(totale, n * tetto)
+            if tetto is None:
+                riferimento = totale
+            else:
+                riferimento = self.model.NewIntVar(0, 24 * 7 * m + crediti + n * tetto, "")
+                self.model.AddMinEquality(riferimento, [totale, n * tetto])
+            scarto = n * (self.ore[p.id] + self.crediti[p.id]) - riferimento
             sopra = self.model.NewIntVar(0, limite, "")
             sotto = self.model.NewIntVar(0, limite, "")
-            self.model.Add(scarto <= SCARTO_ORE_MAX * n + sopra)
-            self.model.Add(-scarto <= SCARTO_ORE_MAX * n + sotto)
+            self.model.Add(scarto <= banda * n + sopra)
+            self.model.Add(-scarto <= banda * n + sotto)
             self.obiettivo.append((P_FUORI_BANDA, sopra))
             self.obiettivo.append((P_FUORI_BANDA, sotto))
 
             # obiettivo: media - saldo delle settimane precedenti
             saldo = saldi[p.id] - saldo_medio
-            saldo = max(-2 * SCARTO_ORE_MAX, min(2 * SCARTO_ORE_MAX, saldo))  # oltre non serve: la banda è rigida
+            saldo = max(-2 * banda, min(2 * banda, saldo))  # oltre non serve: la banda è rigida
             dev = self.model.NewIntVar(0, limite, "")
             self.model.AddAbsEquality(dev, scarto + round(n * saldo))
             self.model.Add(dev <= massimo)

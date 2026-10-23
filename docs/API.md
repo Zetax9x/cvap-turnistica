@@ -22,10 +22,12 @@ Orari: giorno 8-20, notte 20-8 (giorno dopo). Le settimane iniziano di lunedì; 
 ## Database (`cvap/db.py`)
 
 ```
-persone(id INTEGER PK, nome TEXT NOT NULL, tipo TEXT, qualifica TEXT, attivo INTEGER DEFAULT 1)
+persone(id INTEGER PK, nome TEXT NOT NULL, tipo TEXT, qualifica TEXT, attivo INTEGER DEFAULT 1,
+        autista_programmati INTEGER, max_ore_settimana INTEGER /*NULL = nessun limite*/)
 postazioni(id INTEGER PK, nome TEXT UNIQUE, solo_settimane_b INTEGER, ordine INTEGER)
    seed: Acquasanta(0,1), Venarotta(0,2), Ascoli(1,3)
-impostazioni(chiave TEXT PK, valore TEXT)        -- data_riferimento_a (default 2026-10-19)
+impostazioni(chiave TEXT PK, valore TEXT)        -- data_riferimento_a (default 2026-10-19), scarto_ore_max (default 12)
+divieti(id INTEGER PK, persona_id INTEGER REFERENCES persone(id), postazione TEXT NULL, turno TEXT NULL)
 settimane(inizio TEXT PK, stato TEXT ('bozza'|'confermata'), dipendenti TEXT /*JSON id*/, generata_il TEXT, report TEXT /*JSON*/)
 assegnazioni(id INTEGER PK, data TEXT, postazione TEXT, fascia TEXT, segmento TEXT, ruolo TEXT,
              persona_id INTEGER REFERENCES persone(id), origine TEXT)
@@ -55,7 +57,14 @@ non di ferie (calcolata dalle assegnazioni reali, così le modifiche manuali con
 - `PUT /persone/{id}` `{nome, tipo, qualifica, attivo}` → persona · 404
 - `DELETE /persone/{id}` → 204; se ha assegnazioni viene solo disattivata (`attivo=0`)
 - `GET /postazioni` → `[{id, nome, solo_settimane_b}]`
-- `GET /impostazioni` → `{data_riferimento_a}` · `PUT /impostazioni` `{data_riferimento_a}` (normalizzata al lunedì)
+- `PUT /persone/{id}/parametri` `{max_ore_settimana: int 1..168 | null}` → persona (con `max_ore_settimana`) · 404 · 422.
+  Il massimo conta le ore lavorate (non le ferie): oltre è `ore_max`; la banda ore si calcola da min(media, massimo).
+- `GET /divieti` → `[{id, persona_id, postazione|null, turno|null}]` · `POST /divieti` `{persona_id, postazione?, turno?}`
+  (turno: `mattina|pomeriggio|giorno|notte`; almeno uno tra postazione e turno; solo dipendenti; niente duplicati → 400;
+  persona inesistente → 404) → 201 · `DELETE /divieti/{id}` → 204 · 404.
+  Un turno assegnato che viola un divieto è un errore `divieto` nel validatore; il generatore non lo assegna.
+- `GET /impostazioni` → `{data_riferimento_a, scarto_ore_max}` · `PUT /impostazioni` `{data_riferimento_a?, scarto_ore_max?}`
+  (almeno uno; data normalizzata al lunedì; `scarto_ore_max` intero 1..24, default 12)
 - `GET /settimane/{data}` (qualsiasi data, normalizzata al lunedì) →
   ```
   { inizio, fine, tipo: "A"|"B", stato: "nuova"|"bozza"|"confermata",
@@ -66,6 +75,7 @@ non di ferie (calcolata dalle assegnazioni reali, così le modifiche manuali con
     riepilogo: [{persona_id, nome, tipo, qualifica, ore, ore_giorno, ore_notte, turni_weekend,
                  giorni_ferie, giorni_indisponibili /* con almeno una parte */}],
     media_ore,            // media a tempo pieno dei dipendenti attivi nella settimana
+    scarto_ore_max,       // banda ore ammessa dalla media (impostazione)
     report                // ultimo report di generazione o null
   }
   ```

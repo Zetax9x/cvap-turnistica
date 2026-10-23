@@ -15,7 +15,7 @@ const PROGRAMMATI = "Programmati";
 const POSTAZIONI_A_RICHIESTA = [STANDBY, PROGRAMMATI];
 const SEGMENTI_PROG = ["prog_mattina", "prog_pomeriggio"];
 const MAX_PROGRAMMATI = 20;
-const SOGLIA_SCARTO = 12;
+const SCARTO_PREDEFINITO = 12;  // se il server non indica `scarto_ore_max`
 const CHIAVE_SETTIMANA = "cvap.settimana";
 const CHIAVE_TEMPO = "cvap.tempoGenerazione";
 // Su Vercel la funzione si ferma a 300 s: si lascia margine per leggere e salvare i dati
@@ -28,6 +28,7 @@ const stato = {
   data: null,          // lunedì ISO della settimana visualizzata
   settimana: null,     // payload GET /settimane/{data}
   persone: [],
+  divieti: [],         // [{id, persona_id, postazione, turno}]
   occupato: false,
   cellaAperta: null,   // {data, postazione, fascia, ruolo, segmento?} (segmento solo per i Programmati)
   dispAperta: {},      // lunedì ISO -> pannello disponibilità aperto/chiuso dall'utente
@@ -51,11 +52,12 @@ export async function mostra(root, parametro) {
     renderCaricamento();
   }
   try {
-    const [settimana, persone] = await Promise.all([api.settimana(stato.data), api.persone()]);
+    const [settimana, persone, divieti] = await Promise.all([api.settimana(stato.data), api.persone(), api.divieti()]);
     // ignora risposte arrivate dopo un cambio di settimana
     if (mondayOf(settimana.inizio) !== stato.data) return;
     stato.settimana = settimana;
     stato.persone = persone;
+    stato.divieti = divieti;
     render();
   } catch (err) {
     renderErrore(err);
@@ -498,8 +500,25 @@ function renderViolazioni(s) {
   return sezione;
 }
 
+/** Tipi di turno toccati da un turno (come `tipi_turno` del server). */
+function tipiTurno(fascia, segmento) {
+  if (fascia === "notte") return ["notte"];
+  if (segmento === "intero" || segmento === "standby") return ["giorno", "mattina", "pomeriggio"];
+  if (segmento.endsWith("mattina")) return ["giorno", "mattina"];
+  if (segmento.endsWith("pomeriggio")) return ["giorno", "pomeriggio"];
+  return ["giorno"];
+}
+
+/** True se un divieto della persona copre il turno. */
+function vietato(personaId, postazione, fascia, segmento) {
+  const tipi = tipiTurno(fascia, segmento);
+  return stato.divieti.some((d) => d.persona_id === personaId
+    && (!d.postazione || d.postazione === postazione) && (!d.turno || tipi.includes(d.turno)));
+}
+
 function renderRiepilogo(s) {
   const media = s.media_ore;
+  const soglia = s.scarto_ore_max ?? SCARTO_PREDEFINITO;
   const righe = (s.riepilogo || []).slice().sort((a, b) =>
     (a.tipo === b.tipo ? 0 : a.tipo === "dipendente" ? -1 : 1) || b.ore - a.ore || a.nome.localeCompare(b.nome, "it"));
   const sezione = el("section", { class: "pannello", "aria-labelledby": "titolo-riepilogo" },
@@ -512,11 +531,13 @@ function renderRiepilogo(s) {
   const tbody = el("tbody", {}, righe.map((r) => {
     const dip = r.tipo === "dipendente";
     // ogni giorno di ferie conta come ore lavorate (ore_ferie) nel confronto con la media
+    // con un massimo ore il riferimento è il più basso tra media e massimo
+    const riferimento = r.max_ore_settimana ? Math.min(media, r.max_ore_settimana) : media;
     const scarto = dip && media !== null && media !== undefined && r.giorni_ferie < 7
-      ? r.ore + (r.ore_ferie || 0) - media : null;
+      ? r.ore + (r.ore_ferie || 0) - riferimento : null;
     const assenze = [r.giorni_ferie ? `ferie ${r.giorni_ferie}g = ${formatOre(r.ore_ferie || 0)}h` : null,
       r.giorni_indisponibili ? `indisp. ${r.giorni_indisponibili}g` : null].filter(Boolean).join(", ");
-    const fuori = scarto !== null && Math.abs(scarto) > SOGLIA_SCARTO;
+    const fuori = scarto !== null && Math.abs(scarto) > soglia;
     return el("tr", { class: fuori ? "fuori-media" : null },
       el("th", { scope: "row" },
         dip ? el("a", { href: `#dipendente/${r.persona_id}/${s.inizio}`, title: "Vedi solo i suoi turni" }, r.nome) : r.nome,
@@ -528,7 +549,7 @@ function renderRiepilogo(s) {
       el("td", { class: "num" }, formatOre(r.turni_weekend)),
       el("td", { class: `num${fuori ? " scarto-alto" : ""}` },
         scarto === null ? "—" : formatSaldo(Math.round(scarto * 10) / 10),
-        fuori ? el("span", { class: "sr-only" }, " (oltre 12 ore dalla media)") : null),
+        fuori ? el("span", { class: "sr-only" }, ` (oltre ${soglia} ore dalla media)`) : null),
     );
   }));
   sezione.append(el("div", { class: "table-scroll" }, el("table", { class: "tabella" },
@@ -911,6 +932,7 @@ function renderFormAggiunta(c, mancanti) {
     dipendenti.map((p) => {
       const ore = oreSettimana.get(p.id);
       const extra = [inFerie.has(p.id) ? "IN FERIE" : null, indisponibili.has(p.id) ? "INDISPONIBILE" : null,
+        vietato(p.id, c.postazione, c.fascia, segmentoCella(c)) ? "NON PUÒ" : null,
         p.qualifica === "autista" ? "autista" : (prog && p.autista_programmati ? "autista programmati" : null), ore ? `${formatOre(ore)} h` : null, giaInCella.has(p.id) ? "già qui" : null]
         .filter(Boolean).join(", ");
       return el("option", { value: String(p.id) }, extra ? `${p.nome} (${extra})` : p.nome);
