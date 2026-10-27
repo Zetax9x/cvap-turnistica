@@ -20,7 +20,7 @@ from .liberi import liberi_settimana
 from .modello import (INTERO_DI, PARTI_TURNO, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, SEGMENTI, STANDBY,
                       TURNI_VIETABILI, Assegnazione, Fabbisogno, Persona, si_sovrappongono, turni_ammessi)
 from .storico import (CATEGORIE_WEEKEND, SettimanaPassata, calcola_storico, categoria_weekend,
-                      solo_generate)
+                      indisponibilita_per_giorno, solo_generate)
 from .vincoli import ORE_MAX_SETTIMANA, differenza_ore, giorni_disponibili, media_ore, ore_ferie, valida_settimana
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
@@ -678,6 +678,20 @@ def create_app(db_path: str) -> FastAPI:
         out += volontari.values()
         out.sort(key=lambda r: (r["tipo"] != "dipendente", r["nome"].lower(), r["persona_id"]))
         return out
+
+    @app.get("/api/statistiche/indisponibilita")
+    def statistiche_indisponibilita(conn: Conn, dal: DataValida | None = None, al: DataValida | None = None):
+        dal, al = dal or DATA_MIN, al or DATA_MAX
+        if dal > al:
+            raise _errore("La data di inizio è dopo quella di fine")
+        richieste = db.indisponibili_periodo(conn, dal, al)
+        # dipendenti attivi, più i disattivati che nel periodo ne hanno chieste
+        dipendenti = [p for p in db.lista_persone(conn)
+                      if p["tipo"] == "dipendente" and (p["attivo"] or richieste.get(p["id"]))]
+        dipendenti.sort(key=lambda p: (p["nome"].lower(), p["id"]))
+        return [{"persona_id": p["id"], "nome": p["nome"], "attivo": p["attivo"],
+                 "totale": len({d for d, _ in richieste.get(p["id"], ())}),
+                 "giorni": indisponibilita_per_giorno(richieste.get(p["id"], set()))} for p in dipendenti]
 
     # --- statici ---
     app.mount("/static", StaticFiles(directory=STATIC_DIR, check_dir=False), name="static")

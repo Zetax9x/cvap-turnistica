@@ -1,7 +1,9 @@
 """Statistiche cumulative dei turni passati, usate dal generatore per l'equità nel tempo."""
 from dataclasses import dataclass, field
 
-from .modello import POSTAZIONI_A_RICHIESTA, Assegnazione
+from datetime import date
+
+from .modello import PARTI_TURNO, POSTAZIONI_A_RICHIESTA, Assegnazione
 
 CATEGORIE_WEEKEND = ("sab_giorno", "sab_notte", "dom_giorno", "dom_notte")
 CATEGORIE_RICHIESTA = POSTAZIONI_A_RICHIESTA  # Standby e Programmati, distribuiti come i weekend
@@ -43,6 +45,17 @@ def dalla_prima_generata(settimane: list[SettimanaPassata]) -> list[SettimanaPas
         if any(a.origine == "generato" for a in s.assegnazioni):
             return settimane[i:]
     return []
+
+
+def indisponibilita_per_giorno(richieste: set[tuple[date, str]]) -> list[dict]:
+    """Indisponibilità di un dipendente per giorno della settimana (0 = lunedì): `totale` = giorni con almeno
+    una parte indisponibile, poi quante volte ogni parte (mattina, pomeriggio, notte)."""
+    out = [{"totale": 0, **{parte: 0 for parte in PARTI_TURNO}} for _ in range(7)]
+    for d in {d for d, _ in richieste}:
+        out[d.weekday()]["totale"] += 1
+    for d, parte in richieste:
+        out[d.weekday()][parte] += 1
+    return out
 
 
 def solo_generate(settimane: list[SettimanaPassata]) -> list[SettimanaPassata]:

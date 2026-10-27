@@ -412,7 +412,7 @@ function renderGriglia(s, postazione) {
   const tbody = el("tbody");
   for (const riga of righeGriglia(postazione)) {
     const classeRiga = riga.segmento ? `riga-${riga.segmento}` : `riga-${riga.fascia}`;
-    const tr = el("tr", { class: `${classeRiga}${riga.inizio ? " inizio-fascia" : ""}` },
+    const tr = el("tr", { class: `${classeRiga} fascia-${riga.fascia}${riga.inizio ? " inizio-fascia" : ""}` },
       el("th", { scope: "row", class: "col-turno" },
         el("span", { class: "fascia-label" }, riga.etichettaTurno),
         el("span", { class: "ruolo-label" }, etichetta("ruolo", riga.ruolo))));
@@ -899,7 +899,7 @@ function liberiDel(s, data) {
 
 function badgeAvvisi(avvisi, formato) {
   return (avvisi || []).map((a) => el("span", {
-    class: "badge badge-avviso", title: AVVISI_LIBERI[a] ? AVVISI_LIBERI[a].lungo : a,
+    class: `badge badge-avviso avviso-${a}`, title: AVVISI_LIBERI[a] ? AVVISI_LIBERI[a].lungo : a,
   }, AVVISI_LIBERI[a] ? AVVISI_LIBERI[a][formato] : a));
 }
 
@@ -951,7 +951,7 @@ function renderDialogLiberi() {
 /** Riepilogo dei liberi di tutta la settimana: visibile solo nella stampa "Stampa liberi". */
 function renderStampaLiberi(s) {
   const giorni = s.giorni.map((g) => liberiDel(s, g));
-  const riga = (titolo, chiave) => el("tr", {},
+  const riga = (titolo, chiave) => el("tr", { class: `riga-${chiave}` },
     el("th", { scope: "row" }, titolo),
     giorni.map((g, i) => el("td", { class: i >= 5 ? "weekend" : null },
       g[chiave].length ? el("ul", { class: "lista-liberi" }, g[chiave].map((v) => voceLibero(v, "breve"))) : "—")));

@@ -116,7 +116,7 @@ function giorniPersona(s, persona) {
       .sort((a, b) => oraInizio(a.fascia, a.segmento) - oraInizio(b.fascia, b.segmento));
     const contenuto = () => {
       if (turni.length) {
-        return el("ul", { class: "turni-persona" }, turni.map((a) => el("li", {},
+        return el("ul", { class: "turni-persona" }, turni.map((a) => el("li", { class: `turno-${a.fascia}` },
           el("span", { class: `chip chip-${a.origine}` }, el("span", { class: "chip-nome" }, descriviTurno(a))))));
       }
       if (ferie.has(g)) return el("span", { class: "badge badge-ferie" }, "Ferie");

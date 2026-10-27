@@ -1,7 +1,8 @@
-// Vista "Statistiche": storico cumulato per persona, colonne ordinabili.
+// Vista "Statistiche": storico cumulato per persona, colonne ordinabili; scheda "Indisponibilità" a parte.
 
 import { api } from "./api.js";
 import { el, clear, etichetta, formatOre, formatSaldo } from "./util.js";
+import * as indisponibilita from "./statistiche-indisponibilita.js";
 
 const stato = { root: null, righe: [], ordine: { campo: "nome", dir: 1 }, filtroTipo: "tutti" };
 
@@ -25,14 +26,58 @@ function tot(r) { return (r.ore_giorno || 0) + (r.ore_notte || 0); }
 function wk(r, k) { return (r.weekend && r.weekend[k]) || 0; }
 function totWeekend(r) { return ["sab_giorno", "sab_notte", "dom_giorno", "dom_notte"].reduce((s, k) => s + wk(r, k), 0); }
 
-export async function mostra(root) {
+const SCHEDE = [["", "Turni"], ["indisponibilita", "Indisponibilità"]];
+
+/** Schede della vista: sono link, così il router a hash gestisce anche avanti/indietro. */
+export function renderSchede(attiva) {
+  return el("nav", { class: "schede", "aria-label": "Statistiche" }, SCHEDE.map(([chiave, titolo]) =>
+    el("a", {
+      class: "scheda", href: `#statistiche${chiave ? `/${chiave}` : ""}`,
+      "aria-current": chiave === attiva ? "page" : null,
+    }, titolo)));
+}
+
+export function bottoneStampa() {
+  return el("button", { type: "button", class: "btn btn-ghost", onclick: () => window.print() }, "Stampa");
+}
+
+// Le due schede disegnano nello stesso contenitore: ogni caricamento prende un numero e
+// una risposta arrivata dopo un caricamento più recente (altra scheda o altro periodo) si scarta.
+let ultimoCaricamento = 0;
+
+export function nuovoCaricamento() {
+  return ++ultimoCaricamento;
+}
+
+export function superato(numero) {
+  return numero !== ultimoCaricamento;
+}
+
+/** Dopo un cambio di scheda o di periodo il contenuto è ridisegnato: il focus va sul titolo. */
+export function focusTitolo(root) {
+  const h1 = root.querySelector("h1");
+  // solo se il focus è andato perso con il vecchio contenuto (non se il router l'ha messo su <main>)
+  if (h1 && (!document.activeElement || document.activeElement === document.body)) {
+    h1.setAttribute("tabindex", "-1");
+    h1.focus({ preventScroll: true });
+  }
+}
+
+// hash: #statistiche oppure #statistiche/indisponibilita
+export async function mostra(root, parametro) {
+  if (parametro === "indisponibilita") return indisponibilita.mostra(root);
   stato.root = root;
-  clear(root).append(el("p", { class: "muted loading" }, "Caricamento delle statistiche…"));
+  const numero = nuovoCaricamento();
+  clear(root).append(renderSchede(""), el("p", { class: "muted loading" }, "Caricamento delle statistiche…"));
   try {
-    stato.righe = await api.statistiche();
+    const righe = await api.statistiche();
+    if (superato(numero)) return;
+    stato.righe = righe;
     render();
+    focusTitolo(root);
   } catch (err) {
-    clear(root).append(el("div", { class: "banner banner-errore", role: "alert" },
+    if (superato(numero)) return;
+    clear(root).append(renderSchede(""), el("div", { class: "banner banner-errore", role: "alert" },
       el("strong", {}, "Impossibile caricare le statistiche. "), err.message));
   }
 }
@@ -55,8 +100,8 @@ function ordina(righe) {
 
 function render() {
   const root = clear(stato.root);
-  root.append(el("header", { class: "view-header" },
-    el("h1", {}, "Statistiche"),
+  root.append(renderSchede(""), el("header", { class: "view-header" },
+    el("div", { class: "view-header-riga" }, el("h1", {}, "Statistiche"), bottoneStampa()),
     el("p", { class: "muted" },
       "Dati cumulati sulle settimane con turni generati (le settimane compilate solo a mano non contano). Il saldo ore indica la differenza rispetto alla media dei dipendenti (per i volontari è sempre 0).")));
 

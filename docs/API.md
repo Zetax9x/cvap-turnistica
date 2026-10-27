@@ -109,6 +109,9 @@ non di ferie (calcolata dalle assegnazioni reali, così le modifiche manuali con
 - `GET /statistiche` → `[{persona_id, nome, tipo, qualifica, settimane, ore_totali, saldo_ore, ore_giorno, ore_notte, weekend: {sab_giorno, sab_notte, dom_giorno, dom_notte}}]`
   solo sulle settimane con turni generati (`storico.solo_generate`; volontari: solo totali, saldo 0).
   Il generatore invece usa come storico tutte le settimane dalla prima generata in poi.
+- `GET /statistiche/indisponibilita?dal&al` (date facoltative, estremi inclusi; `dal > al` → 400, data non valida → 422) →
+  `[{persona_id, nome, attivo, totale, giorni: [{totale, mattina, pomeriggio, notte} x7 (lunedì..domenica)]}]`:
+  dipendenti attivi più i disattivati con indisponibilità nel periodo, in ordine di nome; `totale` = giorni con almeno una parte.
 
 `GET /` → `static/index.html`; `/static/*` → file statici.
 App factory: `create_app(db_path: str) -> FastAPI` in `cvap/app.py`; `uvicorn cvap.app:app` usa `data/turni.db`.
