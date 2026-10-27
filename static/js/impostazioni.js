@@ -6,7 +6,7 @@ import { el, clear, toast, toastErrore, mondayOf, todayISO, dataLunga, parseISO 
 const SCARTO_PREDEFINITO = 12;
 const SCARTO_MIN = 1;
 const SCARTO_MAX = 24;
-const ORE_SETTIMANA_MAX = 168;
+const ORE_SETTIMANA_MAX = 72;  // come ORE_MAX_SETTIMANA nel server
 const TURNI_DIVIETO = [
   ["mattina", "Mattina (8–14)"],
   ["pomeriggio", "Pomeriggio (14–20)"],
@@ -154,7 +154,7 @@ function renderMassimiOre() {
   }
   const campi = new Map(dip.map((p) => [p.id, el("input", {
     type: "number", id: `max-ore-${p.id}`, name: "max_ore_settimana", inputmode: "numeric",
-    min: "1", max: String(ORE_SETTIMANA_MAX), step: "1", placeholder: "nessun limite",
+    min: "1", max: String(ORE_SETTIMANA_MAX), step: "1", placeholder: "72 (massimo)",
     value: p.max_ore_settimana ? String(p.max_ore_settimana) : "",
   })]));
   const invia = el("button", { type: "submit", class: "btn btn-primary" }, "Salva massimi ore");
@@ -189,7 +189,7 @@ function renderMassimiOre() {
     },
   },
   el("p", { class: "hint" }, "Massimo di ore lavorate a settimana (le ore di ferie non contano). "
-    + "Lascia vuoto per nessun limite."),
+    + "Nessuno può superare le 72 ore: lascia vuoto per il solo tetto di 72, o indica un massimo più basso."),
   el("div", { class: "table-scroll" }, el("table", { class: "tabella" },
     el("caption", { class: "sr-only" }, "Massimo di ore a settimana per dipendente"),
     el("thead", {}, el("tr", {},

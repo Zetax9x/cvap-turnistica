@@ -17,6 +17,7 @@ SOGLIA_CONSECUTIVI = 3    # da qui in su si segnala come eccezione
 SCARTO_ORE_MAX = 12
 ORE_FERIE_GIORNO = 6      # ore che conta ogni giorno di ferie nel confronto con la media
 ORE_MIN_SETTIMANA = 36    # ore minime di ogni dipendente, ferie comprese
+ORE_MAX_SETTIMANA = 72    # ore lavorate massime di ogni dipendente (le ferie non contano): nessuno le supera
 ASCOLI = "Ascoli"
 MAX_TURNI_ASCOLI = 2      # turni a settimana per dipendente ad Ascoli
 MAX_TURNI_ASCOLI_EXTREMIS = 3  # solo se non c'è altra soluzione (avviso); oltre è vietato
@@ -326,6 +327,11 @@ def minimo_ore(p: Persona) -> int:
     return ORE_MIN_SETTIMANA if p.max_ore_settimana is None else min(ORE_MIN_SETTIMANA, p.max_ore_settimana)
 
 
+def massimo_ore(p: Persona) -> int:
+    """Ore lavorate massime della settimana: ORE_MAX_SETTIMANA, o il massimo ore della persona se più basso."""
+    return ORE_MAX_SETTIMANA if p.max_ore_settimana is None else min(ORE_MAX_SETTIMANA, p.max_ore_settimana)
+
+
 def sotto_minimo(giorni, assegnazioni, persone, ferie) -> list[dict]:
     """Dipendenti presenti (non in ferie tutta la settimana) con ore lavorate + ferie sotto il minimo."""
     lavorate = Counter()
@@ -349,10 +355,10 @@ def _ore(giorni, assegnazioni, persone, ferie, scarto_ore_max=SCARTO_ORE_MAX):
         lavorate[a.persona_id] += a.ore
     out = []
     for p in persone.values():
-        tetto = p.max_ore_settimana
         if not (p.dipendente and giorni_disponibili(giorni, ferie.get(p.id, set()))):
             continue  # come nel generatore: chi è in ferie tutta la settimana non conta
-        if tetto is not None and lavorate[p.id] > tetto:  # le ferie non contano nel tetto
+        tetto = massimo_ore(p)
+        if lavorate[p.id] > tetto:  # le ferie non contano nel tetto
             out.append(Violazione("errore", "ore_max",
                                   f"{p.nome}: {lavorate[p.id]}h, oltre il massimo di {tetto}h a settimana", p.id))
     for x in sotto_minimo(giorni, assegnazioni, persone, ferie):

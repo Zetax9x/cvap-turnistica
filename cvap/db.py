@@ -10,6 +10,7 @@ from datetime import date, timedelta
 
 from .calendario import lunedi
 from .modello import Assegnazione, Divieto, Fabbisogno, Persona, Postazione
+from .vincoli import ORE_MAX_SETTIMANA
 
 RIFERIMENTO_A_DEFAULT = "2026-10-19"
 SCARTO_ORE_MAX_DEFAULT = 12
@@ -222,6 +223,9 @@ def _migra(conn) -> None:
         except Exception:
             if "max_ore_settimana" not in _colonne(conn, "persone"):
                 raise
+    # prima il massimo personale arrivava a 168: oltre il tetto di 72 ore scende a 72 (idempotente)
+    conn.execute("UPDATE persone SET max_ore_settimana = ? WHERE max_ore_settimana > ?",
+                 (ORE_MAX_SETTIMANA, ORE_MAX_SETTIMANA))
 
 
 # --- persone ---------------------------------------------------------------

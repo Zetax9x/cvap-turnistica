@@ -10,7 +10,7 @@ Vincoli rigidi (mai violati):
   - al massimo 3 giorni (o 3 notti) di fila
   - al massimo 3 turni ad Ascoli a settimana per dipendente
   - ad Ascoli mai due giorni (o due notti) di fila allo stesso dipendente
-  - ore lavorate entro il massimo settimanale del dipendente, se ne ha uno (le ferie non contano)
+  - ore lavorate entro `ORE_MAX_SETTIMANA` (72), o entro il massimo del dipendente se più basso (le ferie non contano)
   - nessun turno vietato al dipendente (postazione e/o tipo di turno)
 Vincoli rigidi "con evidenza": se impossibili il modello resta risolvibile ma paga una penalità enorme
 e il risultato li segnala:
@@ -41,7 +41,8 @@ from .modello import (PROGRAMMATI, STANDBY, Assegnazione, Fabbisogno, Persona, U
 from .slot import unita_da_coprire
 from .storico import CATEGORIE_RICHIESTA, CATEGORIE_WEEKEND, StoricoPersona, categoria_weekend
 from .vincoli import (ASCOLI, MAX_CONSECUTIVI, MAX_TURNI_ASCOLI, MAX_TURNI_ASCOLI_EXTREMIS, SCARTO_ORE_MAX,
-                      ORE_MIN_SETTIMANA, differenza_ore, giorni_disponibili, media_ore, minimo_ore, ore_ferie,
+                      ORE_MIN_SETTIMANA, differenza_ore, giorni_disponibili, massimo_ore, media_ore, minimo_ore,
+                      ore_ferie,
                       sotto_minimo, valida_settimana)
 
 __all__ = ["Risultato", "StoricoPersona", "genera"]
@@ -342,8 +343,7 @@ class _Modello:
                       if not any(in_conflitto(u, t) for t in presi[pid]) and di_fila(pid, u) <= 2
                       and (u.postazione != ASCOLI or (ascoli(pid) < MAX_TURNI_ASCOLI_EXTREMIS
                                                       and not ascoli_vicino(pid, u)))
-                      and (per_id[pid].max_ore_settimana is None
-                           or ore[pid] + u.ore <= per_id[pid].max_ore_settimana)]
+                      and ore[pid] + u.ore <= massimo_ore(per_id[pid])]
             if not validi:
                 continue
             altra = "notte" if u.fascia == "giorno" else "giorno"
@@ -455,7 +455,9 @@ class _Modello:
         # variabili ausiliarie: tengono piccoli i vincoli (altrimenti ogni riga conterrebbe tutte le x)
         self.ore = {}
         for p in self.dipendenti:
-            h = self.model.NewIntVar(0, 24 * 7, f"ore_{p.id}")
+            # tetto rigido sulle ore lavorate (72h, o il massimo ore se più basso; le ferie non contano),
+            # nel dominio della variabile; i turni fissati a mano oltre il tetto restano (li segnala il validatore)
+            h = self.model.NewIntVar(0, max(massimo_ore(p), fisse[p.id]), f"ore_{p.id}")
             self.model.Add(h == sum(u.ore * v for u, v in self._vars_di(p.id)) + fisse[p.id])
             self.ore[p.id] = h
         crediti = sum(self.crediti.values())
@@ -470,10 +472,6 @@ class _Modello:
         saldo_medio = sum(saldi.values()) / m
         for p in self.dipendenti:
             tetto = p.max_ore_settimana
-            if tetto is not None:
-                # tetto rigido sulle ore lavorate (le ferie non contano); i turni fissati a mano oltre
-                # il tetto restano (li segnala il validatore)
-                self.model.Add(self.ore[p.id] <= max(tetto, fisse[p.id]))
             # minimo con evidenza: se non si raggiunge, paga ogni ora mancante
             minimo = minimo_ore(p)
             sotto = self.model.NewIntVar(0, minimo, "")
