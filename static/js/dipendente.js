@@ -93,14 +93,15 @@ function render() {
     root.append(el("div", { class: "banner banner-info" },
       s.stato === "nuova" ? "Turni non ancora generati per questa settimana." : "Settimana in bozza: i turni possono ancora cambiare."));
   }
-  root.append(renderTurni(s, persona), renderTotali(s, persona));
+  root.append(...renderTurni(s, persona), renderTotali(s, persona));
 }
 
 function descriviTurno(a) {
   return `${orarioTurno(a.fascia, a.segmento)} · ${a.postazione} · ${etichetta("ruolo", a.ruolo)}`;
 }
 
-function renderTurni(s, persona) {
+/** Per ogni giorno: turni della persona e contenuto da mostrare (turni, ferie, indisponibilità o riposo). */
+function giorniPersona(s, persona) {
   const ferie = new Set((s.ferie || []).filter((x) => x.persona_id === persona.id).map((x) => x.data));
   const indisp = new Map();  // data -> parti indisponibili
   for (const x of (s.indisponibilita || []).filter((x) => x.persona_id === persona.id)) {
@@ -110,32 +111,48 @@ function renderTurni(s, persona) {
   const errori = new Set((s.violazioni || [])
     .filter((v) => v.persona_id === persona.id && v.livello === "errore" && v.data).map((v) => v.data));
 
-  const righe = s.giorni.map((g) => {
+  return s.giorni.map((g) => {
     const turni = s.assegnazioni.filter((a) => a.persona_id === persona.id && a.data === g)
       .sort((a, b) => oraInizio(a.fascia, a.segmento) - oraInizio(b.fascia, b.segmento));
-    let contenuto;
-    if (turni.length) {
-      contenuto = el("ul", { class: "turni-persona" }, turni.map((a) => el("li", {},
-        el("span", { class: `chip chip-${a.origine}` }, el("span", { class: "chip-nome" }, descriviTurno(a))))));
-    } else if (ferie.has(g)) {
-      contenuto = el("span", { class: "badge badge-ferie" }, "Ferie");
-    } else {
-      contenuto = el("span", { class: "muted" }, indisp.has(g) ? `Indisponibile: ${etichettaParti(indisp.get(g)).toLowerCase()}` : "Riposo");
-    }
-    return el("tr", { class: indiceGiorno(g) >= 5 ? "weekend" : null },
-      el("th", { scope: "row" }, dataEstesa(g)),
-      el("td", {}, contenuto,
-        errori.has(g) ? el("span", { class: "badge badge-errore", title: "Vedi i Controlli nella pagina Settimana" }, "da controllare") : null),
-      el("td", { class: "num" }, turni.length ? formatOre(turni.reduce((t, a) => t + a.ore, 0)) : "—"));
+    const contenuto = () => {
+      if (turni.length) {
+        return el("ul", { class: "turni-persona" }, turni.map((a) => el("li", {},
+          el("span", { class: `chip chip-${a.origine}` }, el("span", { class: "chip-nome" }, descriviTurno(a))))));
+      }
+      if (ferie.has(g)) return el("span", { class: "badge badge-ferie" }, "Ferie");
+      return el("span", { class: "muted" }, indisp.has(g) ? `Indisponibile: ${etichettaParti(indisp.get(g)).toLowerCase()}` : "Riposo");
+    };
+    return { data: g, weekend: indiceGiorno(g) >= 5, turni, contenuto, errore: errori.has(g) };
   });
+}
 
-  return el("section", { class: "pannello", "aria-label": `Turni di ${persona.nome}` },
-    el("div", { class: "table-scroll" }, el("table", { class: "tabella tabella-turni-persona" },
-      el("thead", {}, el("tr", {},
-        el("th", { scope: "col" }, "Giorno"),
-        el("th", { scope: "col" }, "Turno"),
-        el("th", { scope: "col", class: "num" }, "Ore"))),
-      el("tbody", {}, righe))));
+function renderTurni(s, persona) {
+  const giorni = giorniPersona(s, persona);
+  const righe = giorni.map((x) => el("tr", { class: x.weekend ? "weekend" : null },
+    el("th", { scope: "row" }, dataEstesa(x.data)),
+    el("td", {}, x.contenuto(),
+      x.errore ? el("span", { class: "badge badge-errore", title: "Vedi i Controlli nella pagina Settimana" }, "da controllare") : null),
+    el("td", { class: "num" }, x.turni.length ? formatOre(x.turni.reduce((t, a) => t + a.ore, 0)) : "—")));
+
+  return [
+    el("section", { class: "pannello", "aria-label": `Turni di ${persona.nome}` },
+      el("div", { class: "table-scroll" }, el("table", { class: "tabella tabella-turni-persona" },
+        el("thead", {}, el("tr", {},
+          el("th", { scope: "col" }, "Giorno"),
+          el("th", { scope: "col" }, "Turno"),
+          el("th", { scope: "col", class: "num" }, "Ore"))),
+        el("tbody", {}, righe)))),
+    renderTurniOrizzontali(giorni),
+  ];
+}
+
+/** Stessi turni con i giorni in colonna: compare solo in stampa (senza ore né totali). */
+function renderTurniOrizzontali(giorni) {
+  return el("section", { class: "turni-orizzontali" },
+    el("table", { class: "tabella-turni-orizzontale" },
+      el("thead", {}, el("tr", {}, giorni.map((x) => el("th", { scope: "col", class: x.weekend ? "weekend" : null },
+        dataEstesa(x.data))))),
+      el("tbody", {}, el("tr", {}, giorni.map((x) => el("td", { class: x.weekend ? "weekend" : null }, x.contenuto()))))));
 }
 
 function renderTotali(s, persona) {
