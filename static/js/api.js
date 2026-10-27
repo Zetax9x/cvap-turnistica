@@ -85,4 +85,10 @@ export const api = {
   eliminaFerie: (id) => richiesta("DELETE", `/ferie/${enc(id)}`),
 
   statistiche: () => richiesta("GET", "/statistiche"),
+  statisticheIndisponibilita: (dal, al) => {
+    const q = new URLSearchParams();
+    if (dal) q.set("dal", dal);
+    if (al) q.set("al", al);
+    return richiesta("GET", `/statistiche/indisponibilita${q.size ? `?${q}` : ""}`);
+  },
 };

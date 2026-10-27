@@ -474,17 +474,26 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
 
 @media print {
   @page { size: A4 landscape; margin: 10mm; }
+  /* stampa a colori, sempre con la tavolozza chiara (anche se lo schermo è in tema scuro) */
   :root {
-    --bg: #fff; --surface: #fff; --surface-2: #eee; --text: #000; --muted: #333;
-    --border: #777; --border-strong: #000; --weekend: #f3f3f3;
-    --vol-bg: #fff; --man-bg: #fff; --gen-bg: #fff;
-    --vol-text: #000; --man-text: #000; --gen-text: #000;
-    --err: #000; --err-bg: #fff;
+    --bg: #fff; --surface: #fff; --surface-2: #eef1f5; --text: #000; --muted: #3d4450;
+    --border: #9aa3af; --border-strong: #333; --weekend: #fff1d1;
+    --accent: #b3121f; --accent-text: #fff;
+    --vol-bg: #d4f0dc;  --vol-border: #2f8a4a;  --vol-text: #0f4d22;
+    --man-bg: #d6e3fb;  --man-border: #2f5fc4;  --man-text: #12347d;
+    --gen-bg: #eceff3;  --gen-border: #6b7686;  --gen-text: #1d232c;
+    --err: #b3121f;  --err-bg: #fde3e6;
+    --warn: #7a4a00; --warn-bg: #ffeec2; --warn-border: #d99000;
+    --ok: #1d6b35;   --ok-bg: #dcf2e3;
+    --info-bg: #e1eafb;
+    /* fasce: giorno giallo, notte blu */
+    --stampa-giorno: #fff3c4; --stampa-giorno-bordo: #d99000;
+    --stampa-notte: #dfe4fa;  --stampa-notte-bordo: #3949ab; --stampa-notte-cella: #f3f5fd;
     color-scheme: light;
   }
   body { font-size: 10pt; background: #fff; }
-  .app-header, .skip-link, .toolbar, .week-nav, .legenda, .pannelli, .report, .banner, .disponibilita, .richieste,
-  .toast-area, .overlay, dialog, #view-personale, #view-statistiche, #view-impostazioni { display: none !important; }
+  .app-header, .skip-link, .toolbar, .week-nav, .pannelli, .report, .banner, .disponibilita, .richieste,
+  .toast-area, .overlay, dialog, #view-personale, #view-impostazioni { display: none !important; }
   main { padding: 0; max-width: none; }
   .week-header { margin-bottom: 4mm; }
   .griglie { gap: 5mm; }
@@ -493,10 +502,17 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
   .griglia { min-width: 0; font-size: 8.5pt; }
   .griglia .col-turno { position: static; width: 26mm; }
   .cella-btn { min-height: 0; padding: 1mm; }
-  .chip { border-width: 0 0 0 2px; padding: 0 2px; font-size: 8pt; }
+  .chip { border-width: 1px 1px 1px 3px; padding: 0 2px; font-size: 8pt; }
   .chip-manuale .chip-nome { text-decoration: underline; }
   .chip-alert { display: none; }
-  .scoperto { border: 1px dashed #000; font-size: 7.5pt; }
+  .scoperto { border: 1px dashed var(--err); font-size: 7.5pt; }
+  .legenda { margin: 0 0 3mm; font-size: 8pt; }
+  /* righe di giorno e di notte riconoscibili a colpo d'occhio */
+  .griglia tr.fascia-giorno .col-turno { background: var(--stampa-giorno); border-left: 3px solid var(--stampa-giorno-bordo); }
+  .griglia tr.fascia-notte .col-turno { background: var(--stampa-notte); border-left: 3px solid var(--stampa-notte-bordo); }
+  .griglia tr.fascia-notte td:not(.weekend):not(.cella-non-richiesta) { background: var(--stampa-notte-cella); }
+  .griglia .fascia-label { color: var(--text); }
+  .griglia-titolo { border-left-color: var(--accent); }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-shadow: none !important; }
 }
 
@@ -563,9 +579,9 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
 .campo-check .check { margin-left: 0; font-weight: 500; }
 
 @media print {
-  .eccesso { border: 1px dotted #000; color: #000; background: #fff; font-size: 7.5pt; }
+  .eccesso { font-size: 7.5pt; }
   .griglia-sottotitolo { display: none; }
-  .cella-non-richiesta, .cella-non-richiesta.weekend { background: #fff; }
+  .cella-non-richiesta, .cella-non-richiesta.weekend { background: #f6f7f9; }
 }
 
 /* ---------- Tempo massimo di generazione ---------- */
@@ -592,16 +608,22 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
   .giorno-btn { text-decoration: none; padding: 0; margin: 0; }
 
   /* "Stampa liberi": solo intestazione della settimana e riepilogo dei liberi */
-  body.stampa-liberi-attiva .griglie, body.stampa-liberi-attiva .week-postazioni { display: none !important; }
+  body.stampa-liberi-attiva .griglie, body.stampa-liberi-attiva .week-postazioni,
+  body.stampa-liberi-attiva .legenda { display: none !important; }
   body.stampa-liberi-attiva .stampa-liberi { display: block !important; }
   .stampa-liberi h2 { font-size: 12pt; margin: 0 0 3mm; }
   .tabella-liberi { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 8.5pt; }
   .tabella-liberi th, .tabella-liberi td { border: 1px solid #777; padding: 1.2mm; vertical-align: top; text-align: left; }
   .tabella-liberi tbody th { width: 20mm; }
-  .tabella-liberi .weekend { background: #f3f3f3; }
+  .tabella-liberi thead th { background: var(--surface-2); }
+  .tabella-liberi .weekend { background: var(--weekend); }
+  .tabella-liberi .riga-liberi th { background: var(--ok-bg); color: var(--ok); }
+  .tabella-liberi .riga-indisponibili th { background: var(--warn-bg); color: var(--warn); }
+  .tabella-liberi .riga-ferie th { background: var(--info-bg); color: var(--man-text); }
+  .tabella-liberi .riga-indisponibili td, .tabella-liberi .riga-ferie td { color: var(--muted); }
   .tabella-liberi .lista-liberi { gap: 1mm; }
   .tabella-liberi .lista-liberi li { gap: 1mm; }
-  .tabella-liberi .badge { font-size: 7pt; padding: 0 1mm; border: 1px solid #000; background: #fff; color: #000; }
+  .tabella-liberi .badge { font-size: 7pt; padding: 0 1mm; }
   .nota-stampa { font-size: 8pt; margin-top: 2mm; }
 
   /* "Turni dipendente": tabella orizzontale, senza ore né totali */
@@ -609,7 +631,46 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
   #view-dipendente .turni-orizzontali { display: block !important; }
   .tabella-turni-orizzontale { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 9pt; }
   .tabella-turni-orizzontale th, .tabella-turni-orizzontale td { border: 1px solid #777; padding: 1.5mm; vertical-align: top; text-align: left; }
-  .tabella-turni-orizzontale .weekend { background: #f3f3f3; }
+  .tabella-turni-orizzontale thead th { background: var(--surface-2); }
+  .tabella-turni-orizzontale .weekend { background: var(--weekend); }
   .tabella-turni-orizzontale .turni-persona { gap: 1mm; }
-  .tabella-turni-orizzontale .chip { white-space: normal; }
+  .tabella-turni-orizzontale .chip { white-space: normal; color: var(--text); }
+  .tabella-turni-orizzontale .turno-giorno .chip { background: var(--stampa-giorno); border-color: var(--stampa-giorno-bordo); }
+  .tabella-turni-orizzontale .turno-notte .chip { background: var(--stampa-notte); border-color: var(--stampa-notte-bordo); }
+}
+
+/* ---------- Statistiche: schede e indisponibilità per giorno ---------- */
+.schede { display: flex; gap: .25rem; border-bottom: 1px solid var(--border); margin-bottom: 1rem; }
+.scheda {
+  padding: .5rem .9rem; border: 1px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0;
+  color: var(--muted); text-decoration: none; font-weight: 600; margin-bottom: -1px;
+}
+.scheda:hover { color: var(--text); background: var(--surface-2); }
+.scheda[aria-current="page"] { color: var(--text); background: var(--surface); border-color: var(--border); }
+.periodo-indisp label { font-weight: 600; }
+.tabella-indisp-stat td.indisp-cella { text-align: center; vertical-align: middle; min-width: 3.4rem; }
+.tabella-indisp-stat th.weekend, .tabella-indisp-stat td.weekend.indisp-liv-0 { background: var(--weekend); }
+.indisp-num { display: block; font-weight: 700; font-size: 1.05rem; }
+.indisp-parti { display: block; font-size: .72rem; color: inherit; opacity: .85; white-space: nowrap; }
+.indisp-liv-0 { color: var(--muted); }
+.indisp-liv-1 { background: color-mix(in srgb, var(--warn-border) 15%, var(--surface)); }
+.indisp-liv-2 { background: color-mix(in srgb, var(--warn-border) 30%, var(--surface)); }
+.indisp-liv-3 { background: color-mix(in srgb, var(--accent) 35%, var(--surface)); }
+.indisp-liv-4 { background: color-mix(in srgb, var(--accent) 55%, var(--surface)); color: var(--text); }
+.indisp-totale { font-weight: 700; }
+.view-header-riga { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }
+.avviso-notte { background: color-mix(in srgb, #3949ab 14%, var(--surface)); color: var(--text); border-color: #5c6bc0; }
+.solo-stampa { display: none; }
+
+@media print {
+  .solo-stampa { display: block; }
+  .periodo-indisp { display: none !important; }
+  /* Statistiche: senza schede né comandi, colori delle celle mantenuti */
+  #view-statistiche .schede, #view-statistiche .btn, #view-statistiche .filtri,
+  #view-statistiche .hint, .sort-ind { display: none !important; }
+  .tabella-stat, .tabella-indisp-stat { font-size: 8.5pt; }
+  .tabella-stat thead th, .tabella-indisp-stat thead th { background: var(--surface-2); }
+  .tabella-indisp-stat th.weekend, .tabella-indisp-stat td.weekend.indisp-liv-0 { background: var(--weekend); }
+  .table-scroll { overflow: visible; }
+  .sort-btn { font-weight: 700; }
 }
