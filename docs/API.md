@@ -23,7 +23,7 @@ Orari: giorno 8-20, notte 20-8 (giorno dopo). Le settimane iniziano di lunedì; 
 
 ```
 persone(id INTEGER PK, nome TEXT NOT NULL, tipo TEXT, qualifica TEXT, attivo INTEGER DEFAULT 1,
-        autista_programmati INTEGER, max_ore_settimana INTEGER /*NULL = nessun limite*/)
+        autista_programmati INTEGER, max_ore_settimana INTEGER /*NULL = solo il tetto di 72h*/)
 postazioni(id INTEGER PK, nome TEXT UNIQUE, solo_settimane_b INTEGER, ordine INTEGER)
    seed: Acquasanta(0,1), Venarotta(0,2), Ascoli(1,3)
 impostazioni(chiave TEXT PK, valore TEXT)        -- data_riferimento_a (default 2026-10-19), scarto_ore_max (default 12)
@@ -57,8 +57,11 @@ non di ferie (calcolata dalle assegnazioni reali, così le modifiche manuali con
 - `PUT /persone/{id}` `{nome, tipo, qualifica, attivo}` → persona · 404
 - `DELETE /persone/{id}` → 204; se ha assegnazioni viene solo disattivata (`attivo=0`)
 - `GET /postazioni` → `[{id, nome, solo_settimane_b}]`
-- `PUT /persone/{id}/parametri` `{max_ore_settimana: int 1..168 | null}` → persona (con `max_ore_settimana`) · 404 · 422.
+- `PUT /persone/{id}/parametri` `{max_ore_settimana: int 1..72 | null}` → persona (con `max_ore_settimana`) · 404 · 422.
   Il massimo conta le ore lavorate (non le ferie): oltre è `ore_max`; la banda ore si calcola da min(media, massimo).
+  Per tutti i dipendenti vale comunque il tetto rigido di 72 ore lavorate a settimana (`ORE_MAX_SETTIMANA`):
+  il generatore non lo supera mai (se non basta il personale lascia posti scoperti, indicati nel report) e
+  il validatore segnala `ore_max` anche per chi non ha un massimo personale.
 - `GET /divieti` → `[{id, persona_id, postazione|null, turno|null}]` · `POST /divieti` `{persona_id, postazione?, turno?}`
   (turno: `mattina|pomeriggio|giorno|notte`; almeno uno tra postazione e turno; solo dipendenti; niente duplicati → 400;
   persona inesistente → 404) → 201 · `DELETE /divieti/{id}` → 204 · 404.

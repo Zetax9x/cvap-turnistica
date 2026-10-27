@@ -21,7 +21,7 @@ from .modello import (INTERO_DI, PARTI_TURNO, POSTAZIONI_A_RICHIESTA, PROGRAMMAT
                       TURNI_VIETABILI, Assegnazione, Fabbisogno, Persona, si_sovrappongono, turni_ammessi)
 from .storico import (CATEGORIE_WEEKEND, SettimanaPassata, calcola_storico, categoria_weekend,
                       dalla_prima_generata)
-from .vincoli import differenza_ore, giorni_disponibili, media_ore, ore_ferie, valida_settimana
+from .vincoli import ORE_MAX_SETTIMANA, differenza_ore, giorni_disponibili, media_ore, ore_ferie, valida_settimana
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 GIORNI_CONTESTO = 3
@@ -58,7 +58,7 @@ class PersonaUpdate(PersonaIn):
 
 
 class ParametriIn(BaseModel):
-    max_ore_settimana: int | None = Field(ge=1, le=24 * 7)  # obbligatorio; null = nessun limite
+    max_ore_settimana: int | None = Field(ge=1, le=ORE_MAX_SETTIMANA)  # obbligatorio; null = solo il tetto di 72h
 
 
 class DivietoIn(BaseModel):
