@@ -36,6 +36,13 @@ const stato = {
 };
 
 let dialogCella = null;
+let dialogLiberi = null;
+
+// Avvisi sui dipendenti liberi (campo `liberi` del payload)
+const AVVISI_LIBERI = {
+  smonto_notte: { breve: "smonto notte", lungo: "Smonta dalla notte (finisce alle 8)" },
+  notte: { breve: "notte", lungo: "Fa la notte questa sera" },
+};
 
 // ---------------------------------------------------------------- ingresso
 
@@ -120,7 +127,11 @@ function render() {
   frammento.append(griglie);
 
   frammento.append(el("div", { class: "pannelli" }, renderViolazioni(s), renderRiepilogo(s)));
+  if (haTurni(s)) frammento.append(renderStampaLiberi(s));
   clear(stato.root).append(frammento);
+  if (dialogLiberi && dialogLiberi.open) {
+    if (haTurni(s) && s.giorni.includes(dialogLiberi.dataset.data)) renderDialogLiberi(); else dialogLiberi.close();
+  }
 }
 
 function renderTestata(s) {
@@ -173,7 +184,11 @@ function renderToolbar(s) {
       ? el("button", { type: "button", class: "btn", disabled: dis, onclick: onRiapri }, "Riapri")
       : el("button", { type: "button", class: "btn btn-success", disabled: dis || s.stato === "nuova" && !s.assegnazioni.length, onclick: onConferma }, "Conferma settimana"),
     el("span", { class: "toolbar-spacer" }),
-    el("button", { type: "button", class: "btn btn-ghost", onclick: () => window.print() }, "Stampa"),
+    el("button", {
+      type: "button", class: "btn btn-ghost", disabled: !haTurni(s), onclick: stampaLiberi,
+      title: "Stampa per ogni giorno della settimana chi è libero",
+    }, "Stampa liberi"),
+    el("button", { type: "button", class: "btn btn-ghost", onclick: stampaGriglia }, "Stampa"),
   );
 }
 
@@ -383,8 +398,14 @@ function renderGriglia(s, postazione) {
     el("th", { scope: "col", class: "col-turno" }, "Turno"),
     s.giorni.map((g) => {
       const i = indiceGiorno(g);
+      const etichettaGiorno = [el("span", { class: "giorno-nome" }, GIORNI_BREVI[i]), " ", el("span", { class: "giorno-data" }, ddmm(g))];
       return el("th", { scope: "col", class: i >= 5 ? "weekend" : null },
-        el("span", { class: "giorno-nome" }, GIORNI_BREVI[i]), " ", el("span", { class: "giorno-data" }, ddmm(g)));
+        haTurni(s)
+          ? el("button", {
+            type: "button", class: "giorno-btn", title: "Chi è libero questo giorno",
+            "aria-label": `${GIORNI_BREVI[i]} ${ddmm(g)}: chi è libero`, onclick: () => apriLiberi(g),
+          }, etichettaGiorno)
+          : etichettaGiorno);
     }),
   ));
 
@@ -863,6 +884,99 @@ async function onCambiaProgrammati(data, segmento, ruolo, input) {
     input.value = precedente;
     input.disabled = false;
   }
+}
+
+// ---------------------------------------------------------------- dipendenti liberi
+
+/** I liberi hanno senso solo quando la settimana ha dei turni. */
+function haTurni(s) {
+  return s.assegnazioni.length > 0 && Array.isArray(s.liberi);
+}
+
+function liberiDel(s, data) {
+  return (s.liberi || []).find((x) => x.data === data) || { data, liberi: [], indisponibili: [], ferie: [] };
+}
+
+function badgeAvvisi(avvisi, formato) {
+  return (avvisi || []).map((a) => el("span", {
+    class: "badge badge-avviso", title: AVVISI_LIBERI[a] ? AVVISI_LIBERI[a].lungo : a,
+  }, AVVISI_LIBERI[a] ? AVVISI_LIBERI[a][formato] : a));
+}
+
+function voceLibero(v, formato) {
+  return el("li", {}, el("span", { class: "libero-nome" }, v.nome),
+    v.parti ? el("span", { class: "muted" }, ` (${etichettaParti(new Set(v.parti)).toLowerCase()})`) : null,
+    badgeAvvisi(v.avvisi, formato));
+}
+
+function apriLiberi(data) {
+  if (!dialogLiberi) {
+    dialogLiberi = el("dialog", { class: "dialog dialog-liberi", "aria-labelledby": "liberi-titolo" });
+    document.body.appendChild(dialogLiberi);
+  }
+  dialogLiberi.dataset.data = data;
+  renderDialogLiberi();
+  if (!dialogLiberi.open) dialogLiberi.showModal();
+  const chiudi = dialogLiberi.querySelector(".dialog-actions .btn");
+  if (chiudi) chiudi.focus();
+}
+
+function renderDialogLiberi() {
+  const s = stato.settimana;
+  const g = liberiDel(s, dialogLiberi.dataset.data);
+  const d = clear(dialogLiberi);
+  d.append(el("div", { class: "dialog-head" },
+    el("h2", { id: "liberi-titolo", class: "dialog-title" }, `Liberi · ${dataEstesa(g.data)}`),
+    el("p", { class: "muted" }, "Dipendenti senza turni di giorno."),
+    el("button", { type: "button", class: "dialog-x", "aria-label": "Chiudi", onclick: () => d.close() }, "×")));
+  d.append(el("section", { class: "dialog-section", "aria-label": "Liberi" },
+    el("h3", {}, `Liberi (${g.liberi.length})`),
+    g.liberi.length
+      ? el("ul", { class: "lista-liberi" }, g.liberi.map((v) => voceLibero(v, "lungo")))
+      : el("p", { class: "muted" }, "Nessun dipendente libero.")));
+  if (g.indisponibili.length) {
+    d.append(el("section", { class: "dialog-section", "aria-label": "Indisponibili" },
+      el("h3", {}, `Indisponibili (${g.indisponibili.length})`),
+      el("ul", { class: "lista-liberi" }, g.indisponibili.map((v) => voceLibero(v, "lungo")))));
+  }
+  if (g.ferie.length) {
+    d.append(el("section", { class: "dialog-section", "aria-label": "In ferie" },
+      el("h3", {}, `In ferie (${g.ferie.length})`),
+      el("ul", { class: "lista-liberi" }, g.ferie.map((v) => voceLibero(v, "lungo")))));
+  }
+  d.append(el("div", { class: "dialog-actions" },
+    el("button", { type: "button", class: "btn", onclick: () => d.close() }, "Chiudi")));
+}
+
+/** Riepilogo dei liberi di tutta la settimana: visibile solo nella stampa "Stampa liberi". */
+function renderStampaLiberi(s) {
+  const giorni = s.giorni.map((g) => liberiDel(s, g));
+  const riga = (titolo, chiave) => el("tr", {},
+    el("th", { scope: "row" }, titolo),
+    giorni.map((g, i) => el("td", { class: i >= 5 ? "weekend" : null },
+      g[chiave].length ? el("ul", { class: "lista-liberi" }, g[chiave].map((v) => voceLibero(v, "breve"))) : "—")));
+  return el("section", { class: "stampa-liberi" },
+    el("h2", {}, "Dipendenti liberi"),
+    el("table", { class: "tabella tabella-liberi" },
+      el("thead", {}, el("tr", {},
+        el("th", { scope: "col" }, ""),
+        s.giorni.map((g, i) => el("th", { scope: "col", class: i >= 5 ? "weekend" : null },
+          `${GIORNI_BREVI[i]} ${ddmm(g)}`)))),
+      el("tbody", {}, riga("Liberi", "liberi"), riga("Indisponibili", "indisponibili"), riga("In ferie", "ferie"))),
+    el("p", { class: "nota-stampa" },
+      "Smonto notte = ha fatto la notte il giorno prima (finisce alle 8) · Notte = fa la notte quella sera."));
+}
+
+// Se "afterprint" non arriva (alcuni browser) la classe resta: la stampa normale la toglie comunque.
+function stampaGriglia() {
+  document.body.classList.remove("stampa-liberi-attiva");
+  window.print();
+}
+
+function stampaLiberi() {
+  document.body.classList.add("stampa-liberi-attiva");
+  window.addEventListener("afterprint", () => document.body.classList.remove("stampa-liberi-attiva"), { once: true });
+  window.print();
 }
 
 // ---------------------------------------------------------------- dialog cella

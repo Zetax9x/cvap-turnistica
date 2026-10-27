@@ -76,6 +76,11 @@ non di ferie (calcolata dalle assegnazioni reali, così le modifiche manuali con
                  giorni_ferie, giorni_indisponibili /* con almeno una parte */}],
     media_ore,            // media a tempo pieno dei dipendenti attivi nella settimana
     scarto_ore_max,       // banda ore ammessa dalla media (impostazione)
+    liberi: [{data,       // un elemento per giorno; solo dipendenti attivi, in ordine di nome
+              liberi: [{persona_id, nome, avvisi}],                // nessun turno di giorno quel giorno
+              indisponibili: [{persona_id, nome, parti, avvisi}],  // senza turni di giorno ma con parti indisponibili
+              ferie: [{persona_id, nome}]}],
+              // avvisi ⊆ ["smonto_notte" (notte il giorno prima, anche la domenica precedente), "notte" (notte quel giorno)]
     report                // ultimo report di generazione o null
   }
   ```
