@@ -20,7 +20,7 @@ from .liberi import liberi_settimana
 from .modello import (INTERO_DI, PARTI_TURNO, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, SEGMENTI, STANDBY,
                       TURNI_VIETABILI, Assegnazione, Fabbisogno, Persona, si_sovrappongono, turni_ammessi)
 from .storico import (CATEGORIE_WEEKEND, SettimanaPassata, calcola_storico, categoria_weekend,
-                      dalla_prima_generata)
+                      solo_generate)
 from .vincoli import ORE_MAX_SETTIMANA, differenza_ore, giorni_disponibili, media_ore, ore_ferie, valida_settimana
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
@@ -633,8 +633,9 @@ def create_app(db_path: str) -> FastAPI:
     @app.get("/api/statistiche")
     def statistiche(conn: Conn):
         righe = db.lista_settimane(conn)
-        # calcola_storico filtra già da sé; qui serve anche per i volontari, contati più sotto
-        passate = dalla_prima_generata([_settimana_passata(conn, r) for r in righe])
+        # solo le settimane con turni generati (anche per i volontari, contati più sotto); il generatore
+        # invece usa tutte quelle dalla prima generata, per non perdere il saldo ore
+        passate = solo_generate([_settimana_passata(conn, r) for r in righe])
         storico = calcola_storico(passate)
         persone = {p["id"]: p for p in db.lista_persone(conn)}
 

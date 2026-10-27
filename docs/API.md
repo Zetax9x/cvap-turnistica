@@ -107,7 +107,8 @@ non di ferie (calcolata dalle assegnazioni reali, così le modifiche manuali con
   (400 se dal > al, periodo > 366 giorni, sovrapposto ad altre ferie della persona o persona non dipendente · 404) ·
   `DELETE /ferie/{id}` → 204 · 404
 - `GET /statistiche` → `[{persona_id, nome, tipo, qualifica, settimane, ore_totali, saldo_ore, ore_giorno, ore_notte, weekend: {sab_giorno, sab_notte, dom_giorno, dom_notte}}]`
-  su tutte le settimane in `settimane` (volontari: solo totali, saldo 0).
+  solo sulle settimane con turni generati (`storico.solo_generate`; volontari: solo totali, saldo 0).
+  Il generatore invece usa come storico tutte le settimane dalla prima generata in poi.
 
 `GET /` → `static/index.html`; `/static/*` → file statici.
 App factory: `create_app(db_path: str) -> FastAPI` in `cvap/app.py`; `uvicorn cvap.app:app` usa `data/turni.db`.

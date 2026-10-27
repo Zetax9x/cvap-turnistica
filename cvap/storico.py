@@ -45,6 +45,11 @@ def dalla_prima_generata(settimane: list[SettimanaPassata]) -> list[SettimanaPas
     return []
 
 
+def solo_generate(settimane: list[SettimanaPassata]) -> list[SettimanaPassata]:
+    """Le settimane con turni generati: le sole che contano nelle statistiche."""
+    return [s for s in settimane if any(a.origine == "generato" for a in s.assegnazioni)]
+
+
 def calcola_storico(settimane: list[SettimanaPassata]) -> dict[int, StoricoPersona]:
     storico: dict[int, StoricoPersona] = {}
     for s in dalla_prima_generata(settimane):

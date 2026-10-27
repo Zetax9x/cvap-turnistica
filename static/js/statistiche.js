@@ -58,7 +58,7 @@ function render() {
   root.append(el("header", { class: "view-header" },
     el("h1", {}, "Statistiche"),
     el("p", { class: "muted" },
-      "Dati cumulati su tutte le settimane registrate. Il saldo ore indica la differenza rispetto alla media dei dipendenti (per i volontari è sempre 0).")));
+      "Dati cumulati sulle settimane con turni generati (le settimane compilate solo a mano non contano). Il saldo ore indica la differenza rispetto alla media dei dipendenti (per i volontari è sempre 0).")));
 
   root.append(el("div", { class: "filtri", role: "group", "aria-label": "Filtra per tipo" },
     [["tutti", "Tutti"], ["dipendente", "Dipendenti"], ["volontario", "Volontari"]].map(([v, t]) =>
