@@ -98,3 +98,20 @@ def test_il_massimo_personale_non_puo_superare_72(tmp_path):
     url = f"/api/persone/{p['id']}/parametri"
     assert client.put(url, json={"max_ore_settimana": 73}).status_code == 422
     assert client.put(url, json={"max_ore_settimana": 72}).status_code == 200
+
+
+def test_i_massimi_personali_oltre_72_salvati_prima_scendono_a_72(tmp_path):
+    from cvap import db
+
+    percorso = str(tmp_path / "t.db")
+    conn = db.connetti(percorso)
+    mario = db.crea_persona(conn, "Mario", "dipendente", "autista")
+    luca = db.crea_persona(conn, "Luca", "dipendente", "autista")
+    with conn:  # valori ammessi dalle versioni precedenti (fino a 168)
+        conn.execute("UPDATE persone SET max_ore_settimana = 100 WHERE id = ?", (mario["id"],))
+        conn.execute("UPDATE persone SET max_ore_settimana = 30 WHERE id = ?", (luca["id"],))
+    conn.close()
+    conn = db.connetti(percorso)
+    massimi = {p["nome"]: p["max_ore_settimana"] for p in db.lista_persone(conn)}
+    assert massimi == {"Mario": 72, "Luca": 30}
+    conn.close()
