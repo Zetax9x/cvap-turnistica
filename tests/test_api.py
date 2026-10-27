@@ -497,6 +497,24 @@ def test_statistiche_partono_dalla_prima_settimana_generata(client):
     assert stats[ids[0]]["weekend"]["dom_giorno"] + stats[ids[8]]["weekend"]["dom_notte"] <= 2
 
 
+def test_statistiche_contano_solo_le_settimane_generate(client):
+    ids = staff_14(client)
+    vol = crea(client, "Volontario", "volontario", "soccorritore")
+    assert client.post(f"/api/settimane/{LUNEDI_A}/genera", json={"tempo_max": 5}).status_code == 200
+    # settimana dopo: solo turni inseriti a mano e confermata, senza generazione
+    assert prenota(client, LUNEDI_B, ids[0], ruolo="autista").status_code == 201
+    assert prenota(client, LUNEDI_B, vol["id"], postazione="Venarotta").status_code == 201
+    assert client.post(f"/api/settimane/{LUNEDI_B}/conferma").status_code == 200
+    # e quella dopo ancora: generata e poi svuotata dei generati
+    terza = "2026-11-02"
+    assert client.post(f"/api/settimane/{terza}/genera", json={"tempo_max": 5}).status_code == 200
+    assert client.delete(f"/api/settimane/{terza}/generati").status_code == 200
+    stats = {x["persona_id"]: x for x in client.get("/api/statistiche").json()}
+    assert all(x["settimane"] == 1 for x in stats.values() if x["tipo"] == "dipendente")
+    assert sum(x["ore_totali"] for x in stats.values()) == 672
+    assert vol["id"] not in stats
+
+
 def test_settimana_manuale_di_avvio_e_solo_contesto_per_il_generatore(client, monkeypatch):
     from cvap import solver
     ids = staff_14(client)
