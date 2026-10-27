@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field, StringConstraints, model_validator
 
 from . import db
 from .calendario import giorni_settimana, lunedi, postazioni_attive, tipo_settimana
+from .liberi import liberi_settimana
 from .modello import (INTERO_DI, PARTI_TURNO, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, SEGMENTI, STANDBY,
                       TURNI_VIETABILI, Assegnazione, Fabbisogno, Persona, si_sovrappongono, turni_ammessi)
 from .storico import (CATEGORIE_WEEKEND, SettimanaPassata, calcola_storico, categoria_weekend,
@@ -198,7 +199,8 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
     scarto_ore_max = db.get_scarto_ore_max(conn)
     rilevanti = {pid: db.a_persona(p, divieti.get(pid, ())) for pid, p in persone.items()
                  if p["tipo"] == "volontario" or p["attivo"] or pid in presenti}
-    violazioni = valida_settimana(giorni, attive, assegnazioni, rilevanti, contesto=_contesto(conn, giorni),
+    contesto = _contesto(conn, giorni)
+    violazioni = valida_settimana(giorni, attive, assegnazioni, rilevanti, contesto=contesto,
                                   ferie=ferie, indisponibili=indisponibili, fabbisogno=fabbisogno,
                                   scarto_ore_max=scarto_ore_max)
 
@@ -233,6 +235,9 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
     if differenza:
         differenza = {**differenza, "limite": scarto_ore_max}
 
+    liberi = liberi_settimana(giorni, {p["id"]: p["nome"] for p in dipendenti_attivi}, assegnazioni + contesto,
+                              ferie, indisponibili)
+
     riga = db.get_settimana(conn, giorni[0])
     return {
         "inizio": giorni[0].isoformat(),
@@ -260,6 +265,7 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
         "media_ore": media,
         "scarto_ore_max": scarto_ore_max,
         "differenza_ore": differenza,
+        "liberi": liberi,
         "report": riga["report"] if riga else None,
     }
 

@@ -571,3 +571,45 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
 /* ---------- Tempo massimo di generazione ---------- */
 .tempo-generazione { display: inline-flex; align-items: center; gap: .25rem; color: var(--muted); font-size: .9rem; }
 .tempo-generazione input { width: 4.5rem; }
+
+/* ---------- Dipendenti liberi ---------- */
+.giorno-btn {
+  font: inherit; color: inherit; background: none; border: 0; padding: .1rem .3rem; margin: -.1rem -.3rem;
+  border-radius: 5px; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px;
+}
+.giorno-btn:hover { background: var(--surface); }
+.giorno-btn:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
+.lista-liberi { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; }
+.lista-liberi li { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.libero-nome { font-weight: 600; }
+.stampa-liberi { display: none; }
+
+/* ---------- Turni di un dipendente: tabella orizzontale solo in stampa ---------- */
+.turni-orizzontali { display: none; }
+
+@media print {
+  .stampa-liberi { display: none !important; }
+  .giorno-btn { text-decoration: none; padding: 0; margin: 0; }
+
+  /* "Stampa liberi": solo intestazione della settimana e riepilogo dei liberi */
+  body.stampa-liberi-attiva .griglie, body.stampa-liberi-attiva .week-postazioni { display: none !important; }
+  body.stampa-liberi-attiva .stampa-liberi { display: block !important; }
+  .stampa-liberi h2 { font-size: 12pt; margin: 0 0 3mm; }
+  .tabella-liberi { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 8.5pt; }
+  .tabella-liberi th, .tabella-liberi td { border: 1px solid #777; padding: 1.2mm; vertical-align: top; text-align: left; }
+  .tabella-liberi tbody th { width: 20mm; }
+  .tabella-liberi .weekend { background: #f3f3f3; }
+  .tabella-liberi .lista-liberi { gap: 1mm; }
+  .tabella-liberi .lista-liberi li { gap: 1mm; }
+  .tabella-liberi .badge { font-size: 7pt; padding: 0 1mm; border: 1px solid #000; background: #fff; color: #000; }
+  .nota-stampa { font-size: 8pt; margin-top: 2mm; }
+
+  /* "Turni dipendente": tabella orizzontale, senza ore né totali */
+  #view-dipendente .pannello { display: none !important; }
+  #view-dipendente .turni-orizzontali { display: block !important; }
+  .tabella-turni-orizzontale { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 9pt; }
+  .tabella-turni-orizzontale th, .tabella-turni-orizzontale td { border: 1px solid #777; padding: 1.5mm; vertical-align: top; text-align: left; }
+  .tabella-turni-orizzontale .weekend { background: #f3f3f3; }
+  .tabella-turni-orizzontale .turni-persona { gap: 1mm; }
+  .tabella-turni-orizzontale .chip { white-space: normal; }
+}
