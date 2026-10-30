@@ -3,37 +3,37 @@
    rosso CVAP solo per il marchio e i problemi, verde per i volontari e le conferme, blu per le azioni. */
 
 :root {
-  --bg: #f4f2ed;
-  --surface: #fffdf9;
-  --surface-2: #efece5;
-  --text: #25282c;
-  --muted: #5b6067;
-  --border: #e0dcd3;
-  --border-strong: #a8a399;
-  --control-border: #7a776f;  /* bordi di campi e pulsanti: almeno 3:1 */
+  --bg: #f6f8fb;
+  --surface: #ffffff;
+  --surface-2: #eef2f7;
+  --text: #1f2937;
+  --muted: #566173;
+  --border: #dde3ec;
+  --border-strong: #a3adbb;
+  --control-border: #7b8494;  /* bordi di campi e pulsanti: almeno 3:1 */
   --accent: #b3121f;          /* rosso CVAP */
   --accent-text: #ffffff;
-  --primary: #2d5aa8;
-  --primary-hover: #244a8c;
-  --primary-soft: #e8edf6;
+  --primary: #2563c9;
+  --primary-hover: #1d4fa3;
+  --primary-soft: #e6effc;
   --primary-text: #ffffff;
   --focus: #0a3fa8;           /* 9:1 sul bianco */
-  --weekend: #faf3e3;
-  --giorno: #a86f00;          /* icona del sole */
-  --notte: #4a5598;           /* icona della luna */
+  --weekend: #fff7e6;
+  --giorno: #b07400;          /* icona del sole */
+  --notte: #4654b8;           /* icona della luna */
 
-  --vol-bg: #e0f0e3;  --vol-border: #3d8a56;  --vol-text: #1c4f2e;
-  --man-bg: #e2eafb;  --man-border: #2f5fc4;  --man-text: #12347d;
-  --gen-bg: #fffdf9;  --gen-border: #c9c4b9;  --gen-text: #25282c;
+  --vol-bg: #dcf5e4;  --vol-border: #2f9a55;  --vol-text: #14532d;
+  --man-bg: #e3edfd;  --man-border: #2f5fc4;  --man-text: #12347d;
+  --gen-bg: #ffffff;  --gen-border: #c5cdd8;  --gen-text: #1f2937;
 
-  --err: #b0222c;  --err-bg: #fbecec;
-  --warn: #7f5208; --warn-bg: #fbf1d9; --warn-border: #d99000;
-  --ok: #2a6f45;   --ok-bg: #e3f1e6;
-  --info-bg: #e8edf6;
+  --err: #c8202f;  --err-bg: #fdecee;
+  --warn: #8a5a00; --warn-bg: #fff5dc; --warn-border: #d99000;
+  --ok: #1a7a42;   --ok-bg: #e2f6e8;
+  --info-bg: #e6effc;
 
   --radius: 10px;
   --radius-sm: 6px;
-  --shadow: 0 1px 3px rgba(60, 50, 30, .07);
+  --shadow: 0 1px 3px rgba(30, 41, 59, .07);
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --tap: 44px;                /* altezza minima dei comandi principali */
   color-scheme: light;
@@ -41,11 +41,11 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #16181b;
-    --surface: #1e2125;
-    --surface-2: #262a2f;
-    --text: #e7e5e0;
-    --muted: #aaaba6;
+    --bg: #14171b;
+    --surface: #1c2026;
+    --surface-2: #252a31;
+    --text: #e8eaed;
+    --muted: #a7adb7;
     --border: #33373c;
     --border-strong: #5d636a;
     --control-border: #7f858b;
@@ -62,7 +62,7 @@
 
     --vol-bg: #183323;  --vol-border: #5aae74;  --vol-text: #bfe8c9;
     --man-bg: #172a4d;  --man-border: #6f9dff;  --man-text: #cfe0ff;
-    --gen-bg: #22262a;  --gen-border: #484e55;  --gen-text: #e7e5e0;
+    --gen-bg: #22262a;  --gen-border: #484e55;  --gen-text: #e8eaed;
 
     --err: #f08a91;  --err-bg: #3a1a1d;
     --warn: #f0c46a; --warn-bg: #33291a; --warn-border: #c98a12;
@@ -340,6 +340,8 @@ input[type="checkbox"] { min-height: 0; width: 1.1rem; height: 1.1rem; accent-co
 .fascia-notte .fascia-icona { color: var(--notte); }
 .ruolo-label { display: block; font-weight: 700; }
 .griglia tr.inizio-fascia > * { border-top: 2px solid var(--border-strong); }
+/* stacco netto tra i turni di giorno e quelli di notte */
+.griglia tr.fascia-notte.inizio-fascia > * { border-top: 3px solid var(--text); }
 .griglia thead + tbody tr.inizio-fascia:first-child > * { border-top: 0; }
 .griglia .weekend { background: var(--weekend); }
 .griglia thead th.weekend { background: var(--weekend); }
@@ -866,9 +868,9 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
   #view-settimana .griglia-titolo { font-size: 15pt; font-weight: 800; margin-bottom: 2mm; }
   #view-settimana .griglia thead th { font-size: 11pt; color: #000; }
   #view-settimana .giorno-data { color: #000; }
-  #view-settimana .griglia .col-turno { width: 32mm; vertical-align: middle; }
-  #view-settimana .fascia-icona { display: none; }
-  #view-settimana .griglia .fascia-label { font-size: 10pt; font-weight: 800; color: #000; letter-spacing: 0; }
+  #view-settimana .griglia .col-turno { width: 36mm; vertical-align: middle; }
+  #view-settimana .fascia-icona { display: inline; color: #000 !important; font-size: 13pt; margin-right: 1mm; }
+  #view-settimana .griglia .fascia-label { white-space: nowrap; font-size: 9.5pt; font-weight: 800; color: #000; letter-spacing: 0; }
   #view-settimana .griglia .ruolo-label { font-size: 10.5pt; font-weight: 800; overflow-wrap: anywhere; }
   #view-settimana .griglia .cella { vertical-align: middle; }
   #view-settimana .cella-btn { align-items: center; justify-content: center; text-align: center; gap: 1mm; }
@@ -878,6 +880,10 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
   #view-settimana .chip-seg { font-size: 9pt; opacity: 1; }
   #view-settimana .scoperto { align-self: center; font-size: 10pt; border-width: 1.5px; }
   #view-settimana .eccesso { align-self: center; font-size: 9pt; }
+  #view-settimana .griglia-titolo::before { display: none; }
+  /* stacco netto tra i turni di giorno e quelli di notte */
+  #view-settimana .griglia tr.fascia-notte.inizio-fascia > th,
+  #view-settimana .griglia tr.fascia-notte.inizio-fascia > td { border-top: 3px solid #000; }
 }
 
 /* ---------- Altre stampe: testo grande e nero, colori tenui solo dove distinguono qualcosa ---------- */
