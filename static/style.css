@@ -3,33 +3,33 @@
    rosso CVAP solo per il marchio e i problemi, verde per i volontari e le conferme, blu per le azioni. */
 
 :root {
-  --bg: #e6eaf0;
-  --surface: #f8f9fb;
-  --surface-2: #edf0f4;
+  --bg: #dbe0e7;
+  --surface: #f1f3f6;
+  --surface-2: #e5e9ee;
   --text: #1f2937;
-  --muted: #515c6d;
-  --border: #d3d9e1;
-  --border-strong: #9ea8b6;
-  --control-border: #767f8e;  /* bordi di campi e pulsanti: almeno 3:1 */
+  --muted: #4d5868;
+  --border: #c9d0da;
+  --border-strong: #96a0ae;
+  --control-border: #6f7887;  /* bordi di campi e pulsanti: almeno 3:1 */
   --accent: #b3121f;          /* rosso CVAP */
   --accent-text: #ffffff;
   --primary: #2b5fb8;
   --primary-hover: #234f9a;
-  --primary-soft: #e3ebf8;
+  --primary-soft: #dde6f5;
   --primary-text: #ffffff;
   --focus: #0a3fa8;           /* 9:1 sul bianco */
-  --weekend: #f7efdc;
+  --weekend: #f1e7cf;
   --giorno: #b07400;          /* icona del sole */
   --notte: #4654b8;           /* icona della luna */
 
   --vol-bg: #d9efe0;  --vol-border: #2f9a55;  --vol-text: #14532d;
   --man-bg: #dfe8f8;  --man-border: #2f5fc4;  --man-text: #12347d;
-  --gen-bg: #f8f9fb;  --gen-border: #c3cbd6;  --gen-text: #1f2937;
+  --gen-bg: #f1f3f6;  --gen-border: #c3cbd6;  --gen-text: #1f2937;
 
   --err: #c8202f;  --err-bg: #f9e6e8;
   --warn: #8a5a00; --warn-bg: #f9efd6; --warn-border: #d99000;
   --ok: #22744a;   --ok-bg: #e0f1e6;
-  --info-bg: #e3ebf8;
+  --info-bg: #dde6f5;
 
   --radius: 10px;
   --radius-sm: 6px;
