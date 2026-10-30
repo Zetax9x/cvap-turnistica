@@ -46,6 +46,28 @@ const AVVISI_LIBERI = {
 
 // ---------------------------------------------------------------- ingresso
 
+// Il menu "Altre opzioni" si chiude cliccando fuori o con Esc, come un normale menu a tendina.
+document.addEventListener("click", (e) => {
+  for (const menu of document.querySelectorAll(".altre-opzioni[open]")) {
+    if (!menu.contains(e.target)) menu.open = false;
+  }
+});
+document.addEventListener("keydown", (e) => {
+  // con una finestra aperta Esc chiude solo la finestra (che poi ridà il focus al suo pulsante)
+  if (e.key !== "Escape" || e.defaultPrevented || document.querySelector("dialog[open]")) return;
+  for (const menu of document.querySelectorAll(".altre-opzioni[open]")) {
+    menu.open = false;
+    menu.querySelector("summary").focus();
+  }
+});
+// ...e quando con Tab si esce dal menu
+document.addEventListener("focusout", (e) => {
+  const menu = e.target.closest && e.target.closest(".altre-opzioni[open]");
+  if (menu && e.relatedTarget && !menu.contains(e.relatedTarget) && !document.querySelector("dialog[open]")) {
+    menu.open = false;
+  }
+});
+
 export async function mostra(root, parametro) {
   stato.root = root;
   let data = parametro && /^\d{4}-\d{2}-\d{2}$/.test(parametro) ? parametro : null;
@@ -109,7 +131,7 @@ function render() {
   const s = stato.settimana;
   const confermata = s.stato === "confermata";
   const frammento = document.createDocumentFragment();
-  frammento.append(renderTestata(s), renderToolbar(s));
+  frammento.append(renderTestata(s), renderPassi(s), renderToolbar(s));
   if (confermata) {
     frammento.append(el("div", { class: "banner banner-info" },
       "Settimana confermata: le modifiche sono bloccate. Usa “Riapri” per modificarla."));
@@ -140,9 +162,9 @@ function renderTestata(s) {
     onchange: (e) => { if (e.target.value) vaiA(e.target.value); },
   });
   const nav = el("div", { class: "week-nav", role: "group", "aria-label": "Navigazione settimane" },
-    el("button", { type: "button", class: "btn", onclick: () => vaiA(addDays(stato.data, -7)), "aria-label": "Settimana precedente" }, "‹ Prec."),
+    el("button", { type: "button", class: "btn btn-freccia", onclick: () => vaiA(addDays(stato.data, -7)), "aria-label": "Settimana precedente", title: "Settimana precedente" }, "‹"),
     el("button", { type: "button", class: "btn", onclick: () => vaiA(todayISO()) }, "Oggi"),
-    el("button", { type: "button", class: "btn", onclick: () => vaiA(addDays(stato.data, 7)), "aria-label": "Settimana successiva" }, "Succ. ›"),
+    el("button", { type: "button", class: "btn btn-freccia", onclick: () => vaiA(addDays(stato.data, 7)), "aria-label": "Settimana successiva", title: "Settimana successiva" }, "›"),
     el("label", { class: "sr-only", for: "settimana-data" }, "Vai alla settimana del giorno"),
     inputData,
   );
@@ -150,10 +172,12 @@ function renderTestata(s) {
   const titolo = el("div", { class: "week-title" });
   if (s) {
     titolo.append(
-      el("h1", {}, el("span", { class: "week-tipo" }, `Settimana ${s.tipo} `),
+      el("h1", {}, el("span", { class: "sr-only week-tipo" }, `Settimana ${s.tipo}, `),
         el("span", { class: "week-range" }, `${ddmm(s.inizio)} – ${dataLunga(s.fine || addDays(s.inizio, 6))}`)),
-      el("span", { class: `badge badge-stato badge-${s.stato}` }, etichetta("stato", s.stato)),
-      el("span", { class: "muted week-postazioni" }, s.postazioni.join(" · ")),
+      el("div", { class: "week-meta" },
+        el("span", { class: "badge badge-tipo week-tipo", "aria-hidden": "true" }, `Settimana ${s.tipo}`),
+        el("span", { class: `badge badge-stato badge-${s.stato}` }, etichetta("stato", s.stato)),
+        el("span", { class: "muted week-postazioni" }, s.postazioni.join(" · "))),
     );
   } else {
     titolo.append(el("h1", {}, "Settimana"));
@@ -161,28 +185,54 @@ function renderTestata(s) {
   return el("header", { class: "week-header" }, titolo, nav);
 }
 
+/** I quattro passi di ogni settimana, con quello a cui si è arrivati evidenziato. */
+function renderPassi(s) {
+  const passi = [
+    ["Disponibilità", "Segna indisponibili e richieste"],
+    ["Genera", "Crea i turni in automatico"],
+    ["Controlla", "Correggi le celle se serve"],
+    ["Conferma", "Blocca la settimana"],
+  ];
+  const generati = s.assegnazioni.some((a) => a.origine === "generato");
+  const attuale = s.stato === "confermata" ? 4 : generati ? 2 : s.assegnazioni.length ? 1 : 0;
+  return el("ol", { class: "passi", role: "list", "aria-label": "Passi della settimana" },
+    passi.map(([titolo, sotto], i) => {
+      const fatto = i < attuale;
+      const classe = fatto ? "passo passo-fatto" : i === attuale ? "passo passo-attuale" : "passo";
+      return el("li", { class: classe, "aria-current": i === attuale ? "step" : null },
+        el("span", { class: "passo-num", "aria-hidden": "true" }, fatto ? "✓" : String(i + 1)),
+        el("span", { class: "passo-testo" },
+          el("span", { class: "passo-titolo" }, titolo, fatto ? el("span", { class: "sr-only" }, " (fatto)") : null),
+          el("span", { class: "passo-sotto" }, sotto)));
+    }));
+}
+
 function renderToolbar(s) {
   const confermata = s.stato === "confermata";
   const haGenerati = s.assegnazioni.some((a) => a.origine === "generato");
   const dis = stato.occupato;
-  return el("div", { class: "toolbar", role: "toolbar", "aria-label": "Azioni settimana" },
+  const altre = el("details", { class: "altre-opzioni" },
+    el("summary", {}, "Altre opzioni"),
+    el("div", { class: "altre-opzioni-menu" },
+      el("label", { class: "tempo-generazione", title: "Più tempo = soluzioni migliori quando ci sono molti posti" },
+        "Tempo massimo di generazione ",
+        el("input", {
+          type: "number", id: "tempo-generazione", min: String(TEMPO_MIN), max: String(TEMPO_MAX), step: "10",
+          value: String(tempoGenerazione()), disabled: confermata || dis, inputmode: "numeric",
+          onchange: (e) => salvaTempo(e.target),
+        }),
+        " s"),
+      el("button", {
+        type: "button", class: "btn btn-danger", disabled: confermata || dis || !haGenerati, onclick: onRimuoviGenerati,
+      }, "Rimuovi i turni generati")));
+  return el("div", { class: "toolbar", role: "group", "aria-label": "Azioni settimana" },
     el("button", {
-      type: "button", class: "btn btn-primary", disabled: confermata || dis, onclick: onGenera,
-    }, "Genera turni"),
-    el("label", { class: "tempo-generazione", title: "Più tempo = soluzioni migliori quando ci sono molti posti" },
-      "Tempo max ",
-      el("input", {
-        type: "number", id: "tempo-generazione", min: String(TEMPO_MIN), max: String(TEMPO_MAX), step: "10",
-        value: String(tempoGenerazione()), disabled: confermata || dis, inputmode: "numeric",
-        onchange: (e) => salvaTempo(e.target),
-      }),
-      " s"),
-    el("button", {
-      type: "button", class: "btn", disabled: confermata || dis || !haGenerati, onclick: onRimuoviGenerati,
-    }, "Rimuovi generati"),
+      type: "button", class: "btn btn-primary btn-grande", disabled: confermata || dis, onclick: onGenera,
+    }, haGenerati ? "Rigenera turni" : "Genera turni"),
     confermata
-      ? el("button", { type: "button", class: "btn", disabled: dis, onclick: onRiapri }, "Riapri")
-      : el("button", { type: "button", class: "btn btn-success", disabled: dis || s.stato === "nuova" && !s.assegnazioni.length, onclick: onConferma }, "Conferma settimana"),
+      ? el("button", { type: "button", class: "btn btn-grande", disabled: dis, onclick: onRiapri }, "Riapri")
+      : el("button", { type: "button", class: "btn btn-success btn-grande", disabled: dis || s.stato === "nuova" && !s.assegnazioni.length, onclick: onConferma }, "Conferma settimana"),
+    altre,
     el("span", { class: "toolbar-spacer" }),
     el("button", {
       type: "button", class: "btn btn-ghost", disabled: !haTurni(s), onclick: stampaLiberi,
@@ -205,7 +255,9 @@ function renderLegenda(conSpeciali) {
 function renderReport(r) {
   const okStati = ["ottimo", "ammissibile"];
   const classe = okStati.includes(r.stato) ? (r.scoperti && r.scoperti.length ? "avviso" : "ok") : "errore";
+  const icona = { ok: "✓", avviso: "!", errore: "×" }[classe];
   const dettagli = el("div", { class: `report report-${classe}`, role: "region", "aria-label": "Report di generazione" },
+    el("span", { class: "report-icona", "aria-hidden": "true" }, icona),
     el("div", { class: "report-head" },
       el("strong", {}, "Ultima generazione: ", etichetta("statoReport", r.stato)),
       r.media_ore !== undefined && r.media_ore !== null ? el("span", {}, `Media ore dipendenti: ${formatOre(r.media_ore)}`) : null,
@@ -220,7 +272,11 @@ function renderReport(r) {
         `${dataEstesa(u.data)} · ${u.postazione} · ${orarioTurno(u.fascia, u.segmento)} · ${etichetta("ruolo", u.ruolo)}`))),
     );
   }
-  if (r.qualita) dettagli.append(renderQualita(r.qualita, r.qualita_precedente));
+  if (r.qualita) {
+    dettagli.append(el("details", { class: "report-dettagli" },
+      el("summary", {}, "Dettagli della generazione"),
+      renderQualita(r.qualita, r.qualita_precedente)));
+  }
   return dettagli;
 }
 
@@ -414,7 +470,9 @@ function renderGriglia(s, postazione) {
     const classeRiga = riga.segmento ? `riga-${riga.segmento}` : `riga-${riga.fascia}`;
     const tr = el("tr", { class: `${classeRiga} fascia-${riga.fascia}${riga.inizio ? " inizio-fascia" : ""}` },
       el("th", { scope: "row", class: "col-turno" },
-        el("span", { class: "fascia-label" }, riga.etichettaTurno),
+        el("span", { class: "fascia-label" },
+          el("span", { class: "fascia-icona", "aria-hidden": "true" }, riga.fascia === "notte" ? "☾" : "☀"),
+          riga.etichettaTurno),
         el("span", { class: "ruolo-label" }, etichetta("ruolo", riga.ruolo))));
     for (const g of s.giorni) {
       const cella = { data: g, postazione, fascia: riga.fascia, ruolo: riga.ruolo };

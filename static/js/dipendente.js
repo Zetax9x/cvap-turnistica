@@ -72,14 +72,15 @@ function render() {
   const root = clear(stato.root);
   root.append(el("header", { class: "week-header" },
     el("div", { class: "week-title" },
-      el("h1", {}, persona ? persona.nome : "Turni dipendente",
-        el("span", { class: "week-range" }, ` ${ddmm(s.inizio)} – ${dataLunga(s.fine)}`)),
-      el("span", { class: `badge badge-stato badge-${s.stato}` }, etichetta("stato", s.stato))),
+      el("h1", {}, persona ? persona.nome : "Turni dipendente"),
+      el("div", { class: "week-meta" },
+        el("span", { class: "week-range muted" }, `${ddmm(s.inizio)} – ${dataLunga(s.fine)}`),
+        el("span", { class: `badge badge-stato badge-${s.stato}` }, etichetta("stato", s.stato)))),
     el("div", { class: "week-nav", role: "group", "aria-label": "Scelta dipendente e settimana" },
       el("label", { class: "sr-only", for: "dip-persona" }, "Dipendente"), select,
-      el("button", { type: "button", class: "btn", "aria-label": "Settimana precedente", onclick: () => vaiA(stato.personaId, addDays(stato.data, -7)) }, "‹ Prec."),
+      el("button", { type: "button", class: "btn btn-freccia", "aria-label": "Settimana precedente", title: "Settimana precedente", onclick: () => vaiA(stato.personaId, addDays(stato.data, -7)) }, "‹"),
       el("button", { type: "button", class: "btn", onclick: () => vaiA(stato.personaId, todayISO()) }, "Oggi"),
-      el("button", { type: "button", class: "btn", "aria-label": "Settimana successiva", onclick: () => vaiA(stato.personaId, addDays(stato.data, 7)) }, "Succ. ›"),
+      el("button", { type: "button", class: "btn btn-freccia", "aria-label": "Settimana successiva", title: "Settimana successiva", onclick: () => vaiA(stato.personaId, addDays(stato.data, 7)) }, "›"),
       el("label", { class: "sr-only", for: "dip-data" }, "Vai alla settimana del giorno"), inputData,
       persona ? el("button", { type: "button", class: "btn btn-ghost", onclick: () => window.print() }, "Stampa") : null)));
 
