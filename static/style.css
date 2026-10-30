@@ -11,7 +11,7 @@
   --border: #b3bcc8;
   --border-strong: #7f8a99;
   --control-border: #5e6878;  /* bordi di campi e pulsanti: almeno 3:1 */
-  --accent: #b3121f;          /* rosso CVAP */
+  --accent: #009541;          /* verde Croce Verde, come il logo */
   --accent-text: #ffffff;
   --primary: #25509d;
   --primary-hover: #1d4384;
@@ -41,7 +41,7 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
-html { -webkit-text-size-adjust: 100%; scroll-padding-top: 68px; }
+html { -webkit-text-size-adjust: 100%; scroll-padding-top: 76px; }
 
 body {
   margin: 0;
@@ -87,15 +87,16 @@ a { color: var(--primary); }
 .app-header {
   display: flex; align-items: center; gap: 1rem;
   padding: 0 clamp(.75rem, 3vw, 2rem);
-  min-height: 60px;
+  min-height: 68px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   position: sticky; top: 0; z-index: 20;
 }
-.brand { display: flex; align-items: center; gap: .55rem; font-size: 1.1rem; white-space: nowrap; }
-.brand-mark {
-  display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 8px;
-  background: var(--accent); color: var(--accent-text); font-weight: 800; font-size: 1.3rem; line-height: 1;
+.brand { display: flex; align-items: center; gap: .75rem; white-space: nowrap; }
+.brand-logo { display: block; height: 52px; width: auto; }
+.brand-text {
+  padding-left: .75rem; border-left: 2px solid var(--border-strong);
+  font-size: 1.15rem; font-weight: 700; color: var(--text); letter-spacing: .01em;
 }
 .nav { display: flex; gap: .15rem; margin-left: auto; align-self: stretch; }
 .nav a {
@@ -530,6 +531,7 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
   body { font-size: 15px; padding-bottom: calc(68px + env(safe-area-inset-bottom)); }
   h1, .week-title h1 { font-size: 1.35rem; }
   .app-header { min-height: 52px; }
+  .brand-logo { height: 40px; }
   .nav {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; margin: 0;
     display: grid; grid-template-columns: repeat(5, 1fr);
@@ -591,7 +593,7 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
   :root {
     --bg: #fff; --surface: #fff; --surface-2: #eef1f5; --text: #000; --muted: #3d4450;
     --border: #9aa3af; --border-strong: #333; --weekend: #fff1d1;
-    --accent: #b3121f; --accent-text: #fff;
+    --accent: #009541; --accent-text: #fff;
     --vol-bg: #d4f0dc;  --vol-border: #2f8a4a;  --vol-text: #0f4d22;
     --man-bg: #d6e3fb;  --man-border: #2f5fc4;  --man-text: #12347d;
     --gen-bg: #eceff3;  --gen-border: #6b7686;  --gen-text: #1d232c;
@@ -787,8 +789,8 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
 .indisp-liv-0 { color: var(--muted); }
 .indisp-liv-1 { background: color-mix(in srgb, var(--warn-border) 15%, var(--surface)); }
 .indisp-liv-2 { background: color-mix(in srgb, var(--warn-border) 30%, var(--surface)); }
-.indisp-liv-3 { background: color-mix(in srgb, var(--accent) 35%, var(--surface)); }
-.indisp-liv-4 { background: color-mix(in srgb, var(--accent) 55%, var(--surface)); color: var(--text); }
+.indisp-liv-3 { background: color-mix(in srgb, var(--err) 35%, var(--surface)); }
+.indisp-liv-4 { background: color-mix(in srgb, var(--err) 55%, var(--surface)); color: var(--text); }
 .indisp-totale { font-weight: 700; }
 .view-header-riga { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }
 .avviso-notte { background: color-mix(in srgb, #3949ab 14%, var(--surface)); color: var(--text); border-color: #5c6bc0; }
@@ -851,7 +853,7 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
   #view-settimana .chip-seg { font-size: 9pt; opacity: 1; }
   #view-settimana .scoperto { align-self: center; font-size: 10pt; border-width: 1.5px; }
   #view-settimana .eccesso { align-self: center; font-size: 9pt; }
-  #view-settimana .griglia-titolo::before { display: inline-block; width: 4mm; height: 4mm; background: #b3121f; }
+  #view-settimana .griglia-titolo::before { display: inline-block; width: 4mm; height: 4mm; background: #009541; }
   /* stacco netto tra i turni di giorno e quelli di notte */
   #view-settimana .griglia tr.fascia-notte.inizio-fascia > th,
   #view-settimana .griglia tr.fascia-notte.inizio-fascia > td { border-top: 3px solid #000; }
