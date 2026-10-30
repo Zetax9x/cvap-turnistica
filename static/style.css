@@ -849,12 +849,16 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
   #view-settimana .week-header h1 { font-size: 16pt; }
   #view-settimana .week-range { color: #000; font-weight: 700; font-size: inherit; }
 
-  /* colori solo per i volontari (verde) e i posti scoperti (rosso) */
-  #view-settimana .griglia .weekend, #view-settimana .griglia thead th, #view-settimana .griglia thead th.weekend,
-  #view-settimana .griglia tr.fascia-giorno .col-turno, #view-settimana .griglia tr.fascia-notte .col-turno,
-  #view-settimana .griglia tr.fascia-notte td:not(.weekend):not(.cella-non-richiesta),
-  #view-settimana .cella-non-richiesta, #view-settimana .cella-non-richiesta.weekend { background: #fff !important; }
-  #view-settimana .griglia tr.fascia-giorno .col-turno, #view-settimana .griglia tr.fascia-notte .col-turno { border-left: 1px solid #555; }
+  /* colori tenui che separano: giorno giallo, notte azzurro, weekend crema; volontari verdi, scoperti rossi */
+  #view-settimana .griglia thead th { background: #e9eef6 !important; }
+  #view-settimana .griglia thead th.weekend { background: #fbeccb !important; }
+  #view-settimana .griglia tr.fascia-giorno .col-turno { background: #ffe9a8 !important; border-left: 4px solid #d99a00; }
+  #view-settimana .griglia tr.fascia-notte .col-turno { background: #d3dbf7 !important; border-left: 4px solid #3f4ba8; }
+  #view-settimana .griglia tr.fascia-giorno td { background: #fff8de !important; }
+  #view-settimana .griglia tr.fascia-notte td { background: #eef1fc !important; }
+  #view-settimana .griglia tr.fascia-giorno td.weekend { background: #fdf0c8 !important; }
+  #view-settimana .griglia tr.fascia-notte td.weekend { background: #e2e7f8 !important; }
+  #view-settimana .cella-non-richiesta, #view-settimana .cella-non-richiesta.weekend { background: #f3f3f3 !important; }
   #view-settimana .griglia th, #view-settimana .griglia td { border-color: #555; }
   #view-settimana .griglia-titolo { border-left: 0; padding-left: 0; }
   #view-settimana .chip-generato, #view-settimana .chip-manuale { background: none; border: 0; color: #000; }
@@ -869,7 +873,9 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
   #view-settimana .griglia thead th { font-size: 11pt; color: #000; }
   #view-settimana .giorno-data { color: #000; }
   #view-settimana .griglia .col-turno { width: 36mm; vertical-align: middle; }
-  #view-settimana .fascia-icona { display: inline; color: #000 !important; font-size: 13pt; margin-right: 1mm; }
+  #view-settimana .fascia-icona { display: inline; font-size: 13pt; margin-right: 1mm; }
+  #view-settimana .fascia-giorno .fascia-icona { color: #b07400 !important; }
+  #view-settimana .fascia-notte .fascia-icona { color: #3f4ba8 !important; }
   #view-settimana .griglia .fascia-label { white-space: nowrap; font-size: 9.5pt; font-weight: 800; color: #000; letter-spacing: 0; }
   #view-settimana .griglia .ruolo-label { font-size: 10.5pt; font-weight: 800; overflow-wrap: anywhere; }
   #view-settimana .griglia .cella { vertical-align: middle; }
@@ -880,7 +886,7 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
   #view-settimana .chip-seg { font-size: 9pt; opacity: 1; }
   #view-settimana .scoperto { align-self: center; font-size: 10pt; border-width: 1.5px; }
   #view-settimana .eccesso { align-self: center; font-size: 9pt; }
-  #view-settimana .griglia-titolo::before { display: none; }
+  #view-settimana .griglia-titolo::before { display: inline-block; width: 4mm; height: 4mm; background: #b3121f; }
   /* stacco netto tra i turni di giorno e quelli di notte */
   #view-settimana .griglia tr.fascia-notte.inizio-fascia > th,
   #view-settimana .griglia tr.fascia-notte.inizio-fascia > td { border-top: 3px solid #000; }
