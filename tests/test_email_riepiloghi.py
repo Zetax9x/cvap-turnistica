@@ -19,15 +19,17 @@ def client(tmp_path, postino):
     return TestClient(create_app(str(tmp_path / "t.db"), postino=postino))
 
 
-def aggiungi(c, email, contenuti, nome=None):
-    r = c.post("/api/destinatari", json={"email": email, "nome": nome, "contenuti": contenuti})
+def aggiungi(c, email, contenuti, nome=None, responsabile=False):
+    r = c.post("/api/destinatari", json={"email": email, "nome": nome, "contenuti": contenuti,
+                                         "responsabile": responsabile})
     assert r.status_code == 201, r.text
     return r.json()
 
 
 def test_destinatari_si_aggiungono_modificano_ed_eliminano(client):
     d = aggiungi(client, "capo@example.org", ["turni", "liberi"], "Responsabile")
-    assert d == {"id": d["id"], "email": "capo@example.org", "nome": "Responsabile", "contenuti": ["turni", "liberi"]}
+    assert d == {"id": d["id"], "email": "capo@example.org", "nome": "Responsabile", "contenuti": ["turni", "liberi"],
+                 "responsabile": False}
     r = client.put(f"/api/destinatari/{d['id']}", json={"email": "capo@example.org", "nome": "Capo",
                                                          "contenuti": ["statistiche"]})
     assert r.status_code == 200 and r.json()["contenuti"] == ["statistiche"] and r.json()["nome"] == "Capo"
@@ -102,3 +104,44 @@ def test_tutti_i_contenuti_insieme(client, postino):
     for titolo in ("Turni della settimana", "Dipendenti liberi", "Indisponibilità della settimana",
                    "Statistiche dei turni", "Statistiche delle indisponibilità"):
         assert titolo in t, titolo
+
+
+# --- responsabili: ricevono turni e liberi con "Invia i turni via email" della settimana ---------
+
+def test_il_responsabile_riceve_turni_e_liberi_con_l_invio_della_settimana(client, postino):
+    mario = crea(client, "Mario", "mario@example.org")
+    turno(client, mario["id"], "2026-10-20")
+    aggiungi(client, "capo@example.org", ["statistiche"], "Capo", responsabile=True)
+    aggiungi(client, "altro@example.org", ["turni"])  # non responsabile: con l'invio della settimana non riceve
+    client.post(f"/api/settimane/{LUNEDI}/conferma")
+
+    stato = client.get(f"/api/settimane/{LUNEDI}/email").json()
+    assert [r["email"] for r in stato["responsabili"]] == ["capo@example.org"]
+
+    r = client.post(f"/api/settimane/{LUNEDI}/email", json={}).json()
+    assert sorted(x["email"] for x in r["inviate"]) == ["capo@example.org", "mario@example.org"]
+    per = {m["To"]: m for m in postino.inviati}
+    assert "altro@example.org" not in per
+    capo = contenuto(per["capo@example.org"])
+    assert "Turni della settimana" in capo and "Dipendenti liberi" in capo
+    assert "Statistiche" not in capo  # con l'invio della settimana: solo turni e liberi
+
+
+def test_il_responsabile_riceve_l_aggiornamento_solo_se_qualcosa_cambia(client, postino):
+    mario = crea(client, "Mario", "mario@example.org")
+    turno(client, mario["id"], "2026-10-20")
+    aggiungi(client, "capo@example.org", ["turni"], responsabile=True)
+    client.post(f"/api/settimane/{LUNEDI}/conferma")
+    client.post(f"/api/settimane/{LUNEDI}/email", json={})
+    postino.inviati.clear()
+
+    client.post(f"/api/settimane/{LUNEDI}/email", json={"solo_modifiche": True})
+    assert postino.inviati == []
+
+    client.post(f"/api/settimane/{LUNEDI}/riapri")
+    turno(client, mario["id"], "2026-10-23", "Venarotta")
+    client.post(f"/api/settimane/{LUNEDI}/conferma")
+    client.post(f"/api/settimane/{LUNEDI}/email", json={"solo_modifiche": True})
+    per = {m["To"]: m for m in postino.inviati}
+    assert set(per) == {"mario@example.org", "capo@example.org"}
+    assert "aggiornamento" in per["capo@example.org"]["Subject"].lower()
