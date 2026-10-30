@@ -1,21 +1,26 @@
 """API REST della turnistica (FastAPI). Contratto in docs/API.md."""
+import asyncio
 import dataclasses
+import logging
 import os
+import re
 import sqlite3
 import threading
 import time
 from contextlib import contextmanager
 from collections.abc import Iterator
 from datetime import date, datetime, timedelta
+from email.utils import getaddresses
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Path as PathParam, Response
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI, HTTPException, Path as PathParam, Request, Response
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, StringConstraints, model_validator
+from pydantic import BaseModel, BeforeValidator, Field, StringConstraints, model_validator
 
-from . import db
+from . import accesso, db, email_turni
+from .posta import PostinoBloccato, PostinoSmtp
 from .calendario import giorni_settimana, lunedi, postazioni_attive, tipo_settimana
 from .liberi import liberi_settimana
 from .modello import (INTERO_DI, PARTI_TURNO, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, SEGMENTI, STANDBY,
@@ -47,16 +52,50 @@ Tipo = Literal["dipendente", "volontario"]
 Qualifica = Literal["autista", "soccorritore"]
 
 
+# un solo indirizzo semplice (ASCII, niente virgole, <>, virgolette): mai più destinatari in un campo
+_EMAIL = re.compile(r"^[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$")
+PROVE_PER_ORA = 10  # email di prova al massimo in un'ora (limite salvato nel database: vale anche su Vercel)
+
+
+def _email(v):
+    """Stringa vuota = nessuna email; altrimenti un solo indirizzo semplice."""
+    if v is None:
+        return None
+    v = str(v).strip()
+    if not v:
+        return None
+    if len(v) > 254 or not _EMAIL.match(v) or getaddresses([v]) != [("", v)]:
+        raise ValueError("indirizzo email non valido")
+    return v
+
+
+Email = Annotated[str | None, BeforeValidator(_email)]
+
+
 class PersonaIn(BaseModel):
     nome: Nome
     tipo: Tipo
     qualifica: Qualifica
     autista_programmati: bool = False
+    email: Email = None
 
 
 class PersonaUpdate(PersonaIn):
     attivo: bool = True
     autista_programmati: bool | None = None  # assente = resta com'è
+    # email assente = resta com'è (vedi model_fields_set); "" o null = nessuna
+
+
+class AccessoIn(BaseModel):
+    password: Annotated[str, StringConstraints(max_length=200)]
+
+
+class InvioEmailIn(BaseModel):
+    solo_modifiche: bool = False  # True: solo a chi non l'ha ancora ricevuta o ha i turni cambiati
+
+
+class ProvaEmailIn(BaseModel):
+    indirizzo: Annotated[str, BeforeValidator(_email)]
 
 
 class ParametriIn(BaseModel):
@@ -167,6 +206,11 @@ def _info_settimana(conn, inizio: date) -> tuple[list[date], str, list[str]]:
     giorni = giorni_settimana(inizio)
     tipo = tipo_settimana(inizio, db.get_riferimento_a(conn))
     return giorni, tipo, postazioni_attive(tipo, db.postazioni(conn))
+
+
+def _motivo_non_configurato(postino) -> str:
+    return getattr(postino, "motivo", None) or ("Invio email non configurato: mancano i dati del servizio di "
+                                                 "posta (SMTP_HOST, SMTP_USER, SMTP_PASSWORD) sul server")
 
 
 def _in_malattia(v):
@@ -351,13 +395,62 @@ def _verifica_modificabile(conn, inizio: date) -> None:
 
 # --- app ---------------------------------------------------------------------
 
-def create_app(db_path: str) -> FastAPI:
+def create_app(db_path: str, password: str | None = None, postino=None) -> FastAPI:
+    """`password`: se c'è, le API chiedono l'accesso (vedi accesso.py). `postino`: chi spedisce le email
+    (predefinito: SMTP configurato dalle variabili d'ambiente)."""
     db_path = str(db_path)
     db.connetti(db_path).close()  # crea schema e seed
+    postino = postino if postino is not None else PostinoSmtp.da_ambiente()
 
-    app = FastAPI(title="CVAP Turnistica")
+    # con la password la documentazione automatica dell'API non è pubblica
+    nascosta = {"docs_url": None, "redoc_url": None, "openapi_url": None} if password else {}
+    app = FastAPI(title="CVAP Turnistica", **nascosta)
     blocco = threading.Lock()
     app.state.blocco_scrittura = blocco
+
+    # --- accesso con password ---
+    # chiave di firma: password + segreto casuale (da SESSIONE_SEGRETO o generato e salvato nel database),
+    # così un cookie rubato non permette di indovinare la password provando a firmare
+    chiave = None
+    if password:
+        conn = db.connetti(db_path)
+        try:
+            segreto = os.environ.get("SESSIONE_SEGRETO") or db.segreto_sessione(conn)
+        finally:
+            conn.close()
+        chiave = accesso.chiave(password, segreto)
+    libere = {"/api/accesso", "/api/sessione", "/api/uscita"}
+
+    def autenticato(request: Request) -> bool:
+        return chiave is None or accesso.token_valido(chiave, request.cookies.get(accesso.COOKIE))
+
+    @app.middleware("http")
+    async def richiedi_accesso(request: Request, chiama):
+        if request.url.path.startswith("/api/") and request.url.path not in libere and not autenticato(request):
+            return JSONResponse({"detail": "Accesso richiesto: inserisci la password"}, status_code=401)
+        return await chiama(request)
+
+    @app.get("/api/sessione")
+    def sessione(request: Request):
+        return {"protetto": chiave is not None, "autenticato": autenticato(request)}
+
+    @app.post("/api/accesso")
+    async def entra(body: AccessoIn, request: Request, response: Response):
+        if chiave is None:
+            return {"autenticato": True}
+        if not accesso.password_giusta(body.password, password):
+            await asyncio.sleep(1)  # rallenta i tentativi a caso senza tenere occupato il server
+            raise HTTPException(401, "Password errata")
+        https = request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
+        response.set_cookie(accesso.COOKIE, accesso.crea_token(chiave), max_age=accesso.DURATA_S,
+                            httponly=True, samesite="lax", secure=https, path="/")
+        return {"autenticato": True}
+
+    @app.post("/api/uscita", status_code=204)
+    def esci():
+        risposta = Response(status_code=204)
+        risposta.delete_cookie(accesso.COOKIE, path="/")
+        return risposta
 
     @contextmanager
     def scrittura(attendi: bool = True):
@@ -386,12 +479,13 @@ def create_app(db_path: str) -> FastAPI:
 
     @app.post("/api/persone", status_code=201)
     def crea_persona(body: PersonaIn, conn: Conn):
-        return db.crea_persona(conn, body.nome, body.tipo, body.qualifica, body.autista_programmati)
+        return db.crea_persona(conn, body.nome, body.tipo, body.qualifica, body.autista_programmati, body.email)
 
     @app.put("/api/persone/{persona_id}")
     def aggiorna_persona(persona_id: IdPath, body: PersonaUpdate, conn: Conn):
+        email = body.email if "email" in body.model_fields_set else db.INVARIATA
         p = db.aggiorna_persona(conn, persona_id, body.nome, body.tipo, body.qualifica, body.attivo,
-                                body.autista_programmati)
+                                body.autista_programmati, email)
         if p is None:
             raise HTTPException(404, "Persona non trovata")
         return p
@@ -578,6 +672,79 @@ def create_app(db_path: str) -> FastAPI:
             db.elimina_generati(conn, inizio, inizio + timedelta(days=6))
             return payload_settimana(conn, inizio)
 
+    # --- email dei turni ---
+    def destinatari(conn, s: dict) -> tuple[list[dict], list[str]]:
+        """Persone con email (dipendenti attivi, volontari attivi e chiunque abbia turni questa settimana)
+        e nomi di chi non ha l'email, con lo stato dell'invio."""
+        con_turni = {a["persona_id"] for a in s["assegnazioni"]}
+        persone = [p for p in db.lista_persone(conn) if p["attivo"] or p["id"] in con_turni]
+        inviate = db.impronte_inviate(conn, date.fromisoformat(s["inizio"]))
+        lista = []
+        for p in persone:
+            if not p["email"]:
+                continue
+            impr = email_turni.impronta(s, p["id"])
+            stato = "da_inviare" if p["id"] not in inviate else ("inviata" if inviate[p["id"]] == impr else "cambiata")
+            lista.append({"persona_id": p["id"], "nome": p["nome"], "email": p["email"], "stato": stato,
+                          "_persona": p, "_impronta": impr})
+        senza = [p["nome"] for p in persone if not p["email"] and (p["tipo"] == "dipendente" or p["id"] in con_turni)]
+        return lista, senza
+
+    def _pubblico(d: dict) -> dict:
+        return {k: v for k, v in d.items() if not k.startswith("_")}
+
+    @app.get("/api/settimane/{data}/email")
+    def stato_email(data: str, conn: Conn):
+        s = payload_settimana(conn, lunedi(_data(data)))
+        lista, senza = destinatari(conn, s)
+        return {"configurato": bool(postino.configurato),
+                "motivo": None if postino.configurato else _motivo_non_configurato(postino),
+                "stato_settimana": s["stato"],
+                "destinatari": [_pubblico(d) for d in lista], "senza_email": senza}
+
+    @app.post("/api/settimane/{data}/email")
+    def invia_email(data: str, body: InvioEmailIn, conn: Conn):
+        if not postino.configurato:
+            raise _errore(_motivo_non_configurato(postino))
+        inizio = lunedi(_data(data))
+        s = payload_settimana(conn, inizio)
+        if s["stato"] != "confermata":
+            raise _errore("Prima conferma la settimana: le email si inviano solo con i turni definitivi")
+        lista, _ = destinatari(conn, s)
+        if body.solo_modifiche:
+            lista = [d for d in lista if d["stato"] != "inviata"]
+        messaggi = [email_turni.componi(s, d["_persona"], aggiornamento=d["stato"] == "cambiata") for d in lista]
+        esito = postino.invia(messaggi)
+        quando = datetime.now().isoformat(timespec="seconds")
+        inviate, errori = [], []
+        for d in lista:
+            errore = esito.get(d["email"], "non inviata")
+            if errore is None:
+                db.segna_inviata(conn, inizio, d["persona_id"], d["_impronta"], quando)
+                inviate.append({"persona_id": d["persona_id"], "nome": d["nome"], "email": d["email"]})
+            else:
+                errori.append({"persona_id": d["persona_id"], "nome": d["nome"], "email": d["email"], "errore": errore})
+        return {"inviate": inviate, "errori": errori}
+
+    @app.post("/api/settimane/{data}/email/prova")
+    def prova_email(data: str, body: ProvaEmailIn, conn: Conn):
+        if not postino.configurato:
+            raise _errore(_motivo_non_configurato(postino))
+        if not db.registra_prova_email(conn, time.time(), PROVE_PER_ORA, 3600):
+            raise HTTPException(429, f"Troppe email di prova: al massimo {PROVE_PER_ORA} all'ora. Riprova più tardi")
+        s = payload_settimana(conn, lunedi(_data(data)))
+        # come la riceverebbe il primo che ha turni (o il primo dipendente attivo)
+        con_turni = {a["persona_id"] for a in s["assegnazioni"]}
+        persone = [p for p in db.lista_persone(conn) if p["attivo"] or p["id"] in con_turni]
+        esempio = next((p for p in persone if p["id"] in con_turni), persone[0] if persone else None)
+        if esempio is None:
+            raise _errore("Nessuna persona registrata: non c'è niente da mostrare")
+        errore = postino.invia([email_turni.componi(s, esempio, body.indirizzo, prova=True)]).get(body.indirizzo,
+                                                                                                    "non inviata")
+        if errore:
+            raise _errore(f"Invio non riuscito: {errore}")
+        return {"inviata_a": body.indirizzo, "esempio": esempio["nome"]}
+
     # --- ferie ---
     @app.get("/api/ferie")
     def lista_ferie(conn: Conn):
@@ -725,12 +892,18 @@ def create_app(db_path: str) -> FastAPI:
 
 
 def _app_predefinita() -> FastAPI:
+    password = os.environ.get("APP_PASSWORD") or None  # senza: sito aperto (uso locale)
     turso = os.environ.get("TURSO_DATABASE_URL")
+    postino = PostinoSmtp.da_ambiente()
+    if turso and not password:
+        # sito pubblico senza password: chiunque potrebbe far partire email a nome dell'associazione
+        logging.getLogger("cvap").warning("APP_PASSWORD non impostata: sito aperto e invio email disattivato")
+        postino = PostinoBloccato("Invio email disattivato: prima imposta la password del sito (APP_PASSWORD)")
     if turso:  # su Vercel il filesystem è in sola lettura: si usa Turso
-        return create_app(turso)
+        return create_app(turso, password=password, postino=postino)
     percorso = Path(os.environ.get("CVAP_DB", "data/turni.db"))
     percorso.parent.mkdir(parents=True, exist_ok=True)
-    return create_app(str(percorso))
+    return create_app(str(percorso), password=password, postino=postino)
 
 
 app = _app_predefinita()

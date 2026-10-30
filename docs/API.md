@@ -53,9 +53,14 @@ non di ferie (calcolata dalle assegnazioni reali, così le modifiche manuali con
 
 ## Endpoint REST (prefisso `/api`, JSON)
 
-- `GET /persone` → `[{id, nome, tipo, qualifica, attivo}]` (tutte, anche non attive)
-- `POST /persone` `{nome, tipo, qualifica}` → 201 persona · 422 se valori non validi
-- `PUT /persone/{id}` `{nome, tipo, qualifica, attivo}` → persona · 404
+Con `APP_PASSWORD` impostata (`create_app(..., password=...)`) tutte le API tranne le tre qui sotto rispondono
+401 senza il cookie `cvap_sessione` (HttpOnly, SameSite=Lax, 30 giorni, firmato HMAC: vedi `cvap/accesso.py`).
+- `GET /sessione` → `{protetto, autenticato}` · `POST /accesso` `{password}` → 200 e cookie · 401 se errata ·
+  `POST /uscita` → 204 (cancella il cookie)
+
+- `GET /persone` → `[{id, nome, tipo, qualifica, attivo, autista_programmati, max_ore_settimana, email}]` (tutte, anche non attive)
+- `POST /persone` `{nome, tipo, qualifica, email?}` → 201 persona · 422 se valori non validi (anche email non valida)
+- `PUT /persone/{id}` `{nome, tipo, qualifica, attivo, email?}` → persona · 404 (email assente = invariata; `""`/null = nessuna)
 - `DELETE /persone/{id}` → 204; se ha assegnazioni viene solo disattivata (`attivo=0`)
 - `GET /postazioni` → `[{id, nome, solo_settimane_b}]`
 - `PUT /persone/{id}/parametri` `{max_ore_settimana: int 1..72 | null}` → persona (con `max_ore_settimana`) · 404 · 422.
@@ -115,8 +120,16 @@ non di ferie (calcolata dalle assegnazioni reali, così le modifiche manuali con
   `[{persona_id, nome, attivo, totale, giorni: [{totale, mattina, pomeriggio, notte} x7 (lunedì..domenica)]}]`:
   dipendenti attivi più i disattivati con indisponibilità nel periodo, in ordine di nome; `totale` = giorni con almeno una parte.
 
+- `GET /settimane/{data}/email` → `{configurato, stato_settimana, destinatari: [{persona_id, nome, email, stato}],
+  senza_email: [nome]}`; `stato`: `da_inviare` | `inviata` | `cambiata` (turni diversi da quelli inviati, per impronta)
+- `POST /settimane/{data}/email` `{solo_modifiche?}` → `{inviate: [{persona_id, nome, email}], errori: [{…, errore}]}`;
+  400 se la settimana non è confermata o l'invio non è configurato. Email: turni personali + tabellone (`cvap/email_turni.py`);
+  a chi ha `stato = cambiata` l'oggetto inizia con "AGGIORNAMENTO". Le impronte inviate stanno in `email_inviate`.
+- `POST /settimane/{data}/email/prova` `{indirizzo}` → `{inviata_a, esempio}`: l'email di una persona d'esempio, anche in bozza.
+
 `GET /` → `static/index.html`; `/static/*` → file statici.
-App factory: `create_app(db_path: str) -> FastAPI` in `cvap/app.py`; `uvicorn cvap.app:app` usa `data/turni.db`.
+App factory: `create_app(db_path, password=None, postino=None) -> FastAPI` in `cvap/app.py`; `uvicorn cvap.app:app`
+usa `data/turni.db` (o Turso) e legge `APP_PASSWORD` e le variabili SMTP (`cvap/posta.py`).
 
 ## Postazioni a richiesta: Standby e Programmati (solo settimane A)
 

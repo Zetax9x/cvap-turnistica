@@ -469,6 +469,24 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
 .lista-assegnati li { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
 .lista-assegnati .btn { margin-left: auto; }
 
+/* ---------- Email dei turni e accesso ---------- */
+.dialog-email { width: min(640px, calc(100vw - 1.5rem)); }
+.lista-email { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; max-height: 320px; overflow-y: auto; }
+.lista-email li { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .6rem; }
+.email-indirizzo { font-size: .9rem; overflow-wrap: anywhere; }
+.lista-email .badge { margin-left: auto; }
+.email-errore { flex: 1 1 100%; color: var(--err); font-size: .88rem; }
+.cella-email { font-size: .9rem; overflow-wrap: anywhere; max-width: 16rem; }
+.esci { margin-left: .5rem; align-self: center; }
+body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
+.accesso {
+  max-width: 380px; margin: 8vh auto 0; display: flex; flex-direction: column; gap: .6rem; text-align: left;
+}
+.accesso h1 { font-size: 1.4rem; }
+.accesso-logo { height: 64px; width: auto; align-self: flex-start; margin-bottom: .25rem; }
+.accesso label { font-weight: 650; }
+.accesso-errore { color: var(--err); font-weight: 650; margin: 0; min-height: 1.4em; }
+
 /* ---------- Overlay / spinner ---------- */
 
 .overlay {

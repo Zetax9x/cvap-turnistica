@@ -48,6 +48,23 @@ per la pianificazione): considera tutta la settimana insieme, non un turno alla 
 - equilibrio tra giorni e notti, nella settimana e nello storico
 - sabati e domeniche (giorno e notte) distribuiti in modo equo su tutto lo storico
 
+## Password e invio dei turni via email
+
+Variabili d'ambiente (su Vercel: *Settings → Environment Variables*):
+
+| Variabile | A cosa serve |
+|---|---|
+| `APP_PASSWORD` | Password unica del sito. Senza, il sito è aperto (va bene solo in locale). Cambiarla chiude tutte le sessioni. |
+| `SESSIONE_SEGRETO` | Facoltativa: stringa casuale in più per firmare il cookie di accesso. |
+| `SMTP_HOST`, `SMTP_PORT` | Server di posta. Gmail: `smtp.gmail.com`, `587`. Brevo: `smtp-relay.brevo.com`, `587`. |
+| `SMTP_USER`, `SMTP_PASSWORD` | Utente e password SMTP (Gmail: indirizzo e *password per le app*; Brevo: login e chiave SMTP). |
+| `EMAIL_MITTENTE` | Indirizzo che spedisce (predefinito `SMTP_USER`). |
+| `EMAIL_NOME_MITTENTE` | Nome mostrato (predefinito "Croce Verde Ascoli Piceno - Turni"). |
+
+In **Personale** si inserisce l'email di ognuno. Dopo **Conferma settimana** compare **Invia i turni via email**:
+ognuno riceve i propri turni e il tabellone completo. Se la settimana viene riaperta e modificata, si può
+inviare l'aggiornamento solo a chi ha i turni cambiati. In *Altre opzioni* c'è **Invia una prova a me**.
+
 ## Impostazioni
 
 La **data di riferimento** indica una settimana A (solo Acquasanta e Venarotta); le settimane

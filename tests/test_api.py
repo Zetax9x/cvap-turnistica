@@ -54,7 +54,7 @@ def test_crud_persone(client):
     assert r.status_code == 200
     assert r.json() == {"id": p["id"], "nome": "Mario", "tipo": "volontario",
                         "qualifica": "soccorritore", "autista_programmati": False, "attivo": False,
-                        "max_ore_settimana": None}
+                        "max_ore_settimana": None, "email": None}
     assert len(client.get("/api/persone").json()) == 1
     assert client.delete(f"/api/persone/{p['id']}").status_code == 204
     assert client.get("/api/persone").json() == []

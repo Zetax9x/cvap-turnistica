@@ -5,6 +5,8 @@ import * as personale from "./js/personale.js";
 import * as dipendente from "./js/dipendente.js";
 import * as statistiche from "./js/statistiche.js";
 import * as impostazioni from "./js/impostazioni.js";
+import { api } from "./js/api.js";
+import { el } from "./js/util.js";
 
 const VISTE = {
   settimana: { modulo: settimana, titolo: "Settimana" },
@@ -47,5 +49,72 @@ function instrada() {
   }
 }
 
-window.addEventListener("hashchange", instrada);
-instrada();
+// ---------------------------------------------------------------- accesso con password
+
+let protetto = false;
+
+function mostraAccesso() {
+  document.body.classList.add("senza-accesso");
+  const main = document.getElementById("main");
+  for (const sezione of main.querySelectorAll(".view")) sezione.hidden = true;
+  let box = document.getElementById("accesso");
+  if (box) { box.querySelector("input").focus(); return; }
+  const input = el("input", { id: "accesso-password", type: "password", required: true, autocomplete: "current-password" });
+  const errore = el("p", { class: "accesso-errore", role: "alert" });
+  const bottone = el("button", { type: "submit", class: "btn btn-primary btn-grande" }, "Entra");
+  box = el("form", {
+    id: "accesso", class: "accesso card", "aria-labelledby": "accesso-titolo",
+    onsubmit: async (e) => {
+      e.preventDefault();
+      bottone.disabled = true;
+      errore.textContent = "";
+      try {
+        await api.accedi(input.value);
+        box.remove();
+        document.body.classList.remove("senza-accesso");
+        aggiornaEsci();
+        vistaCorrente = null;
+        instrada();
+      } catch (err) {
+        errore.textContent = err.status === 401 ? "Password errata." : err.message;
+        input.select();
+      } finally {
+        bottone.disabled = false;
+      }
+    },
+  },
+  el("img", { src: "/static/img/logo-croce-verde.png", alt: "Croce Verde Ascoli Piceno", class: "accesso-logo" }),
+  el("h1", { id: "accesso-titolo" }, "Turnistica"),
+  el("p", { class: "muted" }, "Inserisci la password dell'associazione."),
+  el("label", { for: "accesso-password" }, "Password"), input, errore, bottone);
+  main.append(box);
+  input.focus();
+}
+
+function aggiornaEsci() {
+  const nav = document.querySelector(".nav");
+  let esci = document.getElementById("esci");
+  if (!protetto) { if (esci) esci.remove(); return; }
+  if (esci) return;
+  esci = el("button", {
+    id: "esci", type: "button", class: "btn btn-ghost btn-small esci",
+    onclick: async () => {
+      try { await api.esci(); } catch { /* comunque si torna alla password */ }
+      mostraAccesso();
+    },
+  }, "Esci");
+  nav.after(esci);
+}
+
+window.addEventListener("cvap:accesso-richiesto", mostraAccesso);
+window.addEventListener("hashchange", () => { if (!document.getElementById("accesso")) instrada(); });
+
+(async () => {
+  try {
+    const s = await api.sessione();
+    protetto = s.protetto;
+    if (s.protetto && !s.autenticato) { mostraAccesso(); return; }
+  } catch { /* se il controllo fallisce si prova comunque: le API diranno se serve la password */ }
+  aggiornaEsci();
+  instrada();
+})();
