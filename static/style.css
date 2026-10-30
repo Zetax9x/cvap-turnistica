@@ -880,42 +880,56 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
   #view-settimana .eccesso { align-self: center; font-size: 9pt; }
 }
 
-/* ---------- Altre stampe: grandi, in bianco e nero, un'informazione per riga ---------- */
+/* ---------- Altre stampe: testo grande e nero, colori tenui solo dove distinguono qualcosa ---------- */
 @media print {
+  :root {
+    --st-giorno: #fff4cc; --st-giorno-bordo: #d9a400;   /* giorno: giallo chiaro */
+    --st-notte: #e3e8fb;  --st-notte-bordo: #4a5598;    /* notte: azzurro */
+    --st-weekend: #fbf3e0;
+    --st-testa: #eef1f6;                                /* intestazioni delle tabelle */
+    --st-liberi: #e3f2e6; --st-liberi-testo: #1c5a32;
+    --st-indisp: #fdf0d5; --st-indisp-testo: #7a4a00;
+    --st-ferie: #e3eafa;  --st-ferie-testo: #24408a;
+  }
+
   /* Turni dipendente: nome e settimana in grande, ogni turno su tre righe (orario, postazione, ruolo) */
   #view-dipendente .badge-stato { display: none; }
   #view-dipendente .week-header h1 { font-size: 22pt; }
   #view-dipendente .week-range { color: #000; font-size: 13pt; font-weight: 600; }
   .tabella-turni-orizzontale { font-size: 12pt; margin-top: 4mm; }
-  .tabella-turni-orizzontale th, .tabella-turni-orizzontale td { border: 1px solid #333; padding: 3mm 2mm; }
-  .tabella-turni-orizzontale thead th { background: #fff; font-size: 11pt; text-align: center; border-bottom: 2px solid #000; }
+  .tabella-turni-orizzontale th, .tabella-turni-orizzontale td { border: 1px solid #555; padding: 2mm; }
+  .tabella-turni-orizzontale thead th { background: var(--st-testa); font-size: 11pt; text-align: center; border-bottom: 2px solid #000; }
+  .tabella-turni-orizzontale thead th.weekend, .tabella-turni-orizzontale td.weekend { background: var(--st-weekend); }
   .tabella-turni-orizzontale td { height: 45mm; text-align: center; vertical-align: middle; }
-  .tabella-turni-orizzontale .weekend { background: #fff; }
-  .tabella-turni-orizzontale .turni-persona { gap: 3mm; }
-  .tabella-turni-orizzontale .turni-persona li + li { border-top: 1px dashed #777; padding-top: 3mm; }
+  .tabella-turni-orizzontale .turni-persona { gap: 2mm; }
+  .tabella-turni-orizzontale .turni-persona li { border-radius: 2mm; padding: 2.5mm 1.5mm; border-left: 3px solid; }
+  .tabella-turni-orizzontale .turni-persona li.turno-giorno { background: var(--st-giorno); border-color: var(--st-giorno-bordo); }
+  .tabella-turni-orizzontale .turni-persona li.turno-notte { background: var(--st-notte); border-color: var(--st-notte-bordo); }
   .tabella-turni-orizzontale .chip,
   .tabella-turni-orizzontale .turno-giorno .chip, .tabella-turni-orizzontale .turno-notte .chip {
-    display: block; background: none; border: 0; padding: 0; color: #000; font-size: inherit;
+    display: block; background: none; border: 0; padding: 0; color: #000; font-size: inherit; overflow-wrap: normal;
   }
   .tabella-turni-orizzontale .turno-sep { display: none; }
   .tabella-turni-orizzontale .turno-orario { display: block; font-size: 10.5pt; font-weight: 700; text-transform: uppercase; }
-  .tabella-turni-orizzontale .turno-postazione { display: block; font-size: 15pt; font-weight: 800; margin: .5mm 0; }
+  .tabella-turni-orizzontale .turno-giorno .fascia-icona { color: #a86f00; }
+  .tabella-turni-orizzontale .turno-notte .fascia-icona { color: var(--st-notte-bordo); }
+  .tabella-turni-orizzontale .turno-postazione { display: block; font-size: 13.5pt; font-weight: 800; margin: .5mm 0; overflow-wrap: normal; word-break: normal; }
   .tabella-turni-orizzontale .turno-ruolo { display: block; font-size: 11pt; font-weight: 500; }
-  .tabella-turni-orizzontale .fascia-icona { color: #000; }
-  .tabella-turni-orizzontale .muted, .tabella-turni-orizzontale .badge-ferie {
-    color: #000; font-size: 12pt; font-style: italic; background: none; border: 0;
+  .tabella-turni-orizzontale .muted { color: #444; font-size: 12pt; font-style: italic; }
+  .tabella-turni-orizzontale .badge-ferie {
+    font-size: 12pt; background: var(--st-ferie); color: var(--st-ferie-testo); border: 1px solid var(--st-ferie-testo);
   }
 
-  /* Stampa liberi: righe neutre, nomi in grassetto uno per riga, avvisi come testo tra parentesi */
+  /* Stampa liberi: righe con il loro colore, nomi in grassetto uno per riga, avvisi colorati tra parentesi */
   .stampa-liberi h2 { font-size: 15pt; }
   .tabella-liberi { font-size: 11pt; }
-  .tabella-liberi th, .tabella-liberi td { border-color: #333; padding: 2mm; }
-  .tabella-liberi thead th { background: #fff; font-size: 11pt; border-bottom: 2px solid #000; }
+  .tabella-liberi th, .tabella-liberi td { border-color: #555; padding: 2mm; }
+  .tabella-liberi thead th { background: var(--st-testa); font-size: 11pt; border-bottom: 2px solid #000; }
+  .tabella-liberi thead th.weekend, .tabella-liberi td.weekend { background: var(--st-weekend); }
   .tabella-liberi tbody th { width: 24mm; font-size: 11pt; }
-  .tabella-liberi .weekend,
-  .tabella-liberi .riga-liberi th, .tabella-liberi .riga-indisponibili th, .tabella-liberi .riga-ferie th {
-    background: #fff; color: #000;
-  }
+  .tabella-liberi .riga-liberi th { background: var(--st-liberi); color: var(--st-liberi-testo); }
+  .tabella-liberi .riga-indisponibili th { background: var(--st-indisp); color: var(--st-indisp-testo); }
+  .tabella-liberi .riga-ferie th { background: var(--st-ferie); color: var(--st-ferie-testo); }
   .tabella-liberi .riga-indisponibili td, .tabella-liberi .riga-ferie td { color: #000; }
   .tabella-liberi .riga-indisponibili > *, .tabella-liberi .riga-ferie > * { border-top: 2px solid #000; }
   .tabella-liberi .lista-liberi { gap: 1.5mm; }
@@ -923,28 +937,31 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
   .tabella-liberi .libero-nome { font-weight: 700; white-space: nowrap; }
   .tabella-liberi .muted { color: #000; }
   .tabella-liberi .badge {
-    display: inline; background: none; border: 0; padding: 0; color: #000;
-    font-size: 9.5pt; font-weight: 400; font-style: italic; white-space: normal;
+    display: inline; background: none; border: 0; padding: 0;
+    font-size: 9.5pt; font-weight: 600; font-style: italic; white-space: normal;
   }
+  .tabella-liberi .avviso-smonto_notte { color: #8a5300; }
+  .tabella-liberi .avviso-notte { color: var(--st-notte-bordo); }
   .tabella-liberi .badge::before { content: " ("; }
   .tabella-liberi .badge::after { content: ")"; }
   .nota-stampa { font-size: 9.5pt; color: #000; }
 
-  /* Statistiche: tutta la tabella dentro il foglio, intestazioni su più righe, numeri in nero */
+  /* Statistiche: tutta la tabella dentro il foglio, intestazioni colorate su più righe, righe alterne */
   #view-statistiche .view-header p { font-size: 9pt; color: #000; max-width: none; }
-  .tabella-stat, .tabella-indisp-stat { width: 100%; font-size: 9pt; border: 1px solid #333; }
+  .tabella-stat, .tabella-indisp-stat { width: 100%; font-size: 9pt; border: 1px solid #555; }
   .tabella-stat th, .tabella-stat td, .tabella-indisp-stat th, .tabella-indisp-stat td {
-    padding: 1.3mm 1.2mm; border-bottom: 1px solid #999;
+    padding: 1.3mm 1.2mm; border-bottom: 1px solid #bbb;
   }
   .tabella-stat thead th, .tabella-indisp-stat thead th {
     white-space: normal; text-transform: none; letter-spacing: 0; color: #000; font-size: 8.5pt;
-    background: #fff; border-bottom: 2px solid #000; vertical-align: bottom;
+    background: var(--st-testa); border-bottom: 2px solid #000; vertical-align: bottom;
   }
   .tabella-stat tbody th, .tabella-indisp-stat tbody th { white-space: nowrap; }
-  .tabella-stat tbody tr:nth-child(even), .tabella-indisp-stat tbody tr:nth-child(even) { background: #f2f2f2; }
-  .saldo-pos, .saldo-neg { color: #000; }
+  .tabella-stat tbody tr:nth-child(even), .tabella-indisp-stat tbody tr:nth-child(even) { background: #f5f6f8; }
+  .saldo-pos { color: #8a5300; }
+  .saldo-neg { color: #24408a; }
   .cella-rapporto { min-width: 0; }
-  .tabella-indisp-stat th.weekend, .tabella-indisp-stat td.weekend.indisp-liv-0 { background: transparent; }
+  .tabella-indisp-stat th.weekend, .tabella-indisp-stat td.weekend.indisp-liv-0 { background: var(--st-weekend); }
   .indisp-num { font-size: 11pt; }
   .indisp-parti { font-size: 7.5pt; opacity: 1; }
 }
