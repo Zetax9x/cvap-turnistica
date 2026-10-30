@@ -22,6 +22,7 @@ e il risultato li segnala:
 Obiettivi (minimizzati insieme, in ordine di peso):
   - il 3° turno ad Ascoli solo in extremis (pesa come 10 ore oltre il limite, meno di un posto scoperto)
   - evitare 3 giorni/notti di fila
+  - ad Ascoli giorno e notte alternati (non 2 giorni o 2 notti a testa nella settimana)
   - ore vicine alla media (o al massimo ore, se più basso), recuperando il saldo delle settimane precedenti
   - equilibrio giorni/notti, nella settimana e nello storico
   - sabati e domeniche distribuiti in modo equo rispetto allo storico
@@ -53,6 +54,9 @@ P_FUORI_BANDA = 100_000
 P_SOTTO_MINIMO = P_FUORI_BANDA  # per ogni ora sotto ORE_MIN_SETTIMANA
 P_TERZO_ASCOLI = 1_000_000
 P_TRE_DI_FILA = 5_000
+# per turno ad Ascoli della stessa fascia oltre l'equilibrio: batte lo scambio giorno/notte che peggiora
+# l'equilibrio generale di due persone (2 x 24h x (P_GIORNO_NOTTE + P_GIORNO_NOTTE_STORICO) = 1200)
+P_ASCOLI_GIORNO_NOTTE = 2_000
 P_DOPPIO_WEEKEND = 300
 P_ORE = 40
 P_ORE_MAX = 40
@@ -421,7 +425,26 @@ class _Modello:
             extra = self.model.NewIntVar(0, len(turni) + fissi, "")
             self.model.Add(sum(turni) + fissi - MAX_TURNI_ASCOLI <= extra)
             self.obiettivo.append((P_TERZO_ASCOLI * self.scala, extra))
+            self._ascoli_giorno_notte(p)
         self._ascoli_di_fila()
+
+    def _ascoli_giorno_notte(self, p):
+        """Ad Ascoli un giorno e una notte (o quasi): paga ogni turno della stessa fascia oltre il primo
+        in più rispetto all'altra (2 giorni e 1 notte va bene, 2 giorni e 0 notti no). Anche mezzo turno conta."""
+        conta, quanti = {}, 0
+        for fascia in ("giorno", "notte"):
+            fissi = sum(1 for a in self.fissi_settimana
+                        if a.persona_id == p.id and a.postazione == ASCOLI and a.fascia == fascia)
+            turni = [v for u, v in self._vars_di(p.id, lambda u, f=fascia: u.postazione == ASCOLI and u.fascia == f)]
+            conta[fascia] = sum(turni) + fissi
+            quanti += len(turni) + fissi
+        for a, b in (("giorno", "notte"), ("notte", "giorno")):
+            espr = conta[a] - conta[b] - 1
+            if isinstance(espr, int):
+                continue
+            eccesso = self.model.NewIntVar(0, quanti, "")
+            self.model.Add(espr <= eccesso)
+            self.obiettivo.append((P_ASCOLI_GIORNO_NOTTE * self.scala, eccesso))
 
     def _ascoli_di_fila(self):
         settimana = set(self.giorni)

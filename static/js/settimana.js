@@ -150,8 +150,8 @@ function renderTestata(s) {
   const titolo = el("div", { class: "week-title" });
   if (s) {
     titolo.append(
-      el("h1", {}, `Settimana ${s.tipo}`,
-        el("span", { class: "week-range" }, ` ${ddmm(s.inizio)} – ${dataLunga(s.fine || addDays(s.inizio, 6))}`)),
+      el("h1", {}, el("span", { class: "week-tipo" }, `Settimana ${s.tipo} `),
+        el("span", { class: "week-range" }, `${ddmm(s.inizio)} – ${dataLunga(s.fine || addDays(s.inizio, 6))}`)),
       el("span", { class: `badge badge-stato badge-${s.stato}` }, etichetta("stato", s.stato)),
       el("span", { class: "muted week-postazioni" }, s.postazioni.join(" · ")),
     );
@@ -696,7 +696,7 @@ function renderDisponibilita(s) {
         return el("td", { class: classe }, el("span", { class: "badge badge-ferie", title: "In ferie" }, "Ferie"));
       }
       const menu = menuIndisponibilita(indisp.get(`${p.id}|${g}`) || new Set());
-      return el("td", { class: classe }, el("select", {
+      return el("td", { class: `${classe}${menu.valore ? " disp-indisponibile" : ""}` }, el("select", {
         id: `disp-${p.id}-${g}`,  // per ridare il focus dopo il salvataggio (il pannello si ricostruisce)
         disabled: confermata || stato.occupato,
         "aria-label": `${p.nome} indisponibile ${GIORNI_BREVI[i]} ${ddmm(g)}`,
@@ -730,6 +730,8 @@ async function onCambiaIndisponibilita(p, data, menu) {
   const idFocus = menu.id;
   const precedente = menu.dataset.precedente;
   const scelte = menu.value ? menu.value.split("+") : [];
+  const cella = menu.closest("td");
+  cella.classList.toggle("disp-indisponibile", Boolean(menu.value));  // subito, senza aspettare il server
   menu.disabled = true;
   try {
     // le altre indisponibilità si leggono al momento dell'invio, dopo i salvataggi precedenti in coda
@@ -744,6 +746,7 @@ async function onCambiaIndisponibilita(p, data, menu) {
   } catch (err) {
     toastErrore(err);
     menu.value = precedente;
+    cella.classList.toggle("disp-indisponibile", Boolean(precedente));
     menu.disabled = false;
   }
 }

@@ -93,6 +93,7 @@ def valida_settimana(
 
     violazioni += _ore(giorni, assegnazioni, persone, ferie, scarto_ore_max)
     violazioni += _ascoli(assegnazioni, persone)
+    violazioni += _ascoli_giorno_notte(assegnazioni, persone)
     return violazioni
 
 
@@ -270,6 +271,21 @@ def _ascoli_di_fila(pid, nome, turni, settimana):
                 out.append(Violazione("errore", "ascoli_di_fila",
                                       f"{nome}: due {etichetta} di fila ad Ascoli ({_fmt(d)} e {_fmt(dopo)})",
                                       pid, dopo))
+    return out
+
+
+def _ascoli_giorno_notte(assegnazioni, persone):
+    """Ad Ascoli giorno e notte alternati: avviso se una fascia supera l'altra di 2 o più turni
+    (anche mezzo turno conta). Vale solo per i dipendenti."""
+    conta = Counter((a.persona_id, a.fascia) for a in assegnazioni if a.postazione == ASCOLI)
+    out = []
+    for pid in sorted({pid for pid, _ in conta}):
+        p = persone.get(pid)
+        giorni, notti = conta[pid, "giorno"], conta[pid, "notte"]
+        if not p or not p.dipendente or abs(giorni - notti) < 2:
+            continue
+        out.append(Violazione("avviso", "ascoli_giorno_notte",
+                              f"{p.nome}: ad Ascoli {giorni} giorni e {notti} notti (meglio alternarli)", pid))
     return out
 
 
