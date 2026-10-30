@@ -3,37 +3,37 @@
    rosso CVAP solo per il marchio e i problemi, verde per i volontari e le conferme, blu per le azioni. */
 
 :root {
-  --bg: #f3f4f1;
-  --surface: #ffffff;
-  --surface-2: #f0f1ee;
-  --text: #1a1d21;
-  --muted: #5a6068;
-  --border: #d9dbd6;
-  --border-strong: #9a9f98;
-  --control-border: #767c75;  /* bordi di campi e pulsanti: almeno 3:1 */
+  --bg: #f4f2ed;
+  --surface: #fffdf9;
+  --surface-2: #efece5;
+  --text: #25282c;
+  --muted: #5b6067;
+  --border: #e0dcd3;
+  --border-strong: #a8a399;
+  --control-border: #7a776f;  /* bordi di campi e pulsanti: almeno 3:1 */
   --accent: #b3121f;          /* rosso CVAP */
   --accent-text: #ffffff;
-  --primary: #1b5bd1;
-  --primary-hover: #1649a9;
-  --primary-soft: #e7eefc;
+  --primary: #2d5aa8;
+  --primary-hover: #244a8c;
+  --primary-soft: #e8edf6;
   --primary-text: #ffffff;
   --focus: #0a3fa8;           /* 9:1 sul bianco */
-  --weekend: #fbf3e2;
+  --weekend: #faf3e3;
   --giorno: #a86f00;          /* icona del sole */
-  --notte: #4a56b0;           /* icona della luna */
+  --notte: #4a5598;           /* icona della luna */
 
-  --vol-bg: #ddf3e3;  --vol-border: #2f8a4a;  --vol-text: #0f4d22;
+  --vol-bg: #e0f0e3;  --vol-border: #3d8a56;  --vol-text: #1c4f2e;
   --man-bg: #e2eafb;  --man-border: #2f5fc4;  --man-text: #12347d;
-  --gen-bg: #ffffff;  --gen-border: #c3c7c0;  --gen-text: #1a1d21;
+  --gen-bg: #fffdf9;  --gen-border: #c9c4b9;  --gen-text: #25282c;
 
-  --err: #b3121f;  --err-bg: #fdeaec;
-  --warn: #8a5300; --warn-bg: #fff3d6; --warn-border: #d99000;
-  --ok: #1d6b35;   --ok-bg: #e2f4e7;
-  --info-bg: #e7eefc;
+  --err: #b0222c;  --err-bg: #fbecec;
+  --warn: #7f5208; --warn-bg: #fbf1d9; --warn-border: #d99000;
+  --ok: #2a6f45;   --ok-bg: #e3f1e6;
+  --info-bg: #e8edf6;
 
   --radius: 10px;
   --radius-sm: 6px;
-  --shadow: 0 1px 2px rgba(20, 24, 20, .06);
+  --shadow: 0 1px 3px rgba(60, 50, 30, .07);
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --tap: 44px;                /* altezza minima dei comandi principali */
   color-scheme: light;
@@ -41,32 +41,32 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #111315;
-    --surface: #1a1d20;
-    --surface-2: #23272b;
-    --text: #eceeec;
-    --muted: #a5aba5;
-    --border: #33383d;
-    --border-strong: #5d646b;
-    --control-border: #7d858c;
-    --accent: #ff5a66;
+    --bg: #16181b;
+    --surface: #1e2125;
+    --surface-2: #262a2f;
+    --text: #e7e5e0;
+    --muted: #aaaba6;
+    --border: #33373c;
+    --border-strong: #5d636a;
+    --control-border: #7f858b;
+    --accent: #f0707a;
     --accent-text: #14181f;
-    --primary: #79a6ff;
-    --primary-hover: #9cbdff;
-    --primary-soft: #1d2a44;
+    --primary: #8fb2f2;
+    --primary-hover: #adc6f5;
+    --primary-soft: #1f2b41;
     --primary-text: #0b1220;
     --focus: #ffc94d;
-    --weekend: #24201a;
+    --weekend: #25211a;
     --giorno: #f0b323;
     --notte: #9aa6ff;
 
-    --vol-bg: #143320;  --vol-border: #4fbf6f;  --vol-text: #b9f0c8;
+    --vol-bg: #183323;  --vol-border: #5aae74;  --vol-text: #bfe8c9;
     --man-bg: #172a4d;  --man-border: #6f9dff;  --man-text: #cfe0ff;
-    --gen-bg: #1f2327;  --gen-border: #444b52;  --gen-text: #eceeec;
+    --gen-bg: #22262a;  --gen-border: #484e55;  --gen-text: #e7e5e0;
 
-    --err: #ff6b76;  --err-bg: #3a1519;
-    --warn: #ffc14d; --warn-bg: #352710; --warn-border: #c98a12;
-    --ok: #6bd88a;   --ok-bg: #12301c;
+    --err: #f08a91;  --err-bg: #3a1a1d;
+    --warn: #f0c46a; --warn-bg: #33291a; --warn-border: #c98a12;
+    --ok: #7ccf98;   --ok-bg: #16301f;
     --info-bg: #182640;
 
     --shadow: 0 1px 2px rgba(0, 0, 0, .4);
@@ -299,13 +299,6 @@ input[type="checkbox"] { min-height: 0; width: 1.1rem; height: 1.1rem; accent-co
 .report-head { display: flex; flex-wrap: wrap; gap: .3rem 1.25rem; align-items: baseline; }
 .report-head strong { font-size: 1.02rem; }
 .report-msg { margin: .2rem 0 0; }
-.report-dettagli { margin-top: .5rem; }
-.report-dettagli > summary { cursor: pointer; color: var(--muted); font-size: .9rem; font-weight: 600; width: fit-content; }
-.report-dettagli > summary:hover { color: var(--text); }
-.report-qualita { margin-top: .6rem; font-size: .9rem; max-width: 640px; }
-.report-qualita p { margin: .3rem 0 0; }
-.tabella-qualita caption { text-align: left; font-weight: 600; padding-bottom: .2rem; }
-.tabella-qualita th[scope="row"] { font-weight: normal; text-align: left; }
 .report-scoperti-titolo { margin: .5rem 0 .2rem; font-weight: 700; color: var(--err); }
 .report-scoperti { margin: 0; padding-left: 1.2rem; columns: 2 18rem; font-size: .92rem; }
 
@@ -885,4 +878,73 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
   #view-settimana .chip-seg { font-size: 9pt; opacity: 1; }
   #view-settimana .scoperto { align-self: center; font-size: 10pt; border-width: 1.5px; }
   #view-settimana .eccesso { align-self: center; font-size: 9pt; }
+}
+
+/* ---------- Altre stampe: grandi, in bianco e nero, un'informazione per riga ---------- */
+@media print {
+  /* Turni dipendente: nome e settimana in grande, ogni turno su tre righe (orario, postazione, ruolo) */
+  #view-dipendente .badge-stato { display: none; }
+  #view-dipendente .week-header h1 { font-size: 22pt; }
+  #view-dipendente .week-range { color: #000; font-size: 13pt; font-weight: 600; }
+  .tabella-turni-orizzontale { font-size: 12pt; margin-top: 4mm; }
+  .tabella-turni-orizzontale th, .tabella-turni-orizzontale td { border: 1px solid #333; padding: 3mm 2mm; }
+  .tabella-turni-orizzontale thead th { background: #fff; font-size: 11pt; text-align: center; border-bottom: 2px solid #000; }
+  .tabella-turni-orizzontale td { height: 45mm; text-align: center; vertical-align: middle; }
+  .tabella-turni-orizzontale .weekend { background: #fff; }
+  .tabella-turni-orizzontale .turni-persona { gap: 3mm; }
+  .tabella-turni-orizzontale .turni-persona li + li { border-top: 1px dashed #777; padding-top: 3mm; }
+  .tabella-turni-orizzontale .chip,
+  .tabella-turni-orizzontale .turno-giorno .chip, .tabella-turni-orizzontale .turno-notte .chip {
+    display: block; background: none; border: 0; padding: 0; color: #000; font-size: inherit;
+  }
+  .tabella-turni-orizzontale .turno-sep { display: none; }
+  .tabella-turni-orizzontale .turno-orario { display: block; font-size: 10.5pt; font-weight: 700; text-transform: uppercase; }
+  .tabella-turni-orizzontale .turno-postazione { display: block; font-size: 15pt; font-weight: 800; margin: .5mm 0; }
+  .tabella-turni-orizzontale .turno-ruolo { display: block; font-size: 11pt; font-weight: 500; }
+  .tabella-turni-orizzontale .fascia-icona { color: #000; }
+  .tabella-turni-orizzontale .muted, .tabella-turni-orizzontale .badge-ferie {
+    color: #000; font-size: 12pt; font-style: italic; background: none; border: 0;
+  }
+
+  /* Stampa liberi: righe neutre, nomi in grassetto uno per riga, avvisi come testo tra parentesi */
+  .stampa-liberi h2 { font-size: 15pt; }
+  .tabella-liberi { font-size: 11pt; }
+  .tabella-liberi th, .tabella-liberi td { border-color: #333; padding: 2mm; }
+  .tabella-liberi thead th { background: #fff; font-size: 11pt; border-bottom: 2px solid #000; }
+  .tabella-liberi tbody th { width: 24mm; font-size: 11pt; }
+  .tabella-liberi .weekend,
+  .tabella-liberi .riga-liberi th, .tabella-liberi .riga-indisponibili th, .tabella-liberi .riga-ferie th {
+    background: #fff; color: #000;
+  }
+  .tabella-liberi .riga-indisponibili td, .tabella-liberi .riga-ferie td { color: #000; }
+  .tabella-liberi .riga-indisponibili > *, .tabella-liberi .riga-ferie > * { border-top: 2px solid #000; }
+  .tabella-liberi .lista-liberi { gap: 1.5mm; }
+  .tabella-liberi .lista-liberi li { display: block; line-height: 1.25; }
+  .tabella-liberi .libero-nome { font-weight: 700; white-space: nowrap; }
+  .tabella-liberi .muted { color: #000; }
+  .tabella-liberi .badge {
+    display: inline; background: none; border: 0; padding: 0; color: #000;
+    font-size: 9.5pt; font-weight: 400; font-style: italic; white-space: normal;
+  }
+  .tabella-liberi .badge::before { content: " ("; }
+  .tabella-liberi .badge::after { content: ")"; }
+  .nota-stampa { font-size: 9.5pt; color: #000; }
+
+  /* Statistiche: tutta la tabella dentro il foglio, intestazioni su più righe, numeri in nero */
+  #view-statistiche .view-header p { font-size: 9pt; color: #000; max-width: none; }
+  .tabella-stat, .tabella-indisp-stat { width: 100%; font-size: 9pt; border: 1px solid #333; }
+  .tabella-stat th, .tabella-stat td, .tabella-indisp-stat th, .tabella-indisp-stat td {
+    padding: 1.3mm 1.2mm; border-bottom: 1px solid #999;
+  }
+  .tabella-stat thead th, .tabella-indisp-stat thead th {
+    white-space: normal; text-transform: none; letter-spacing: 0; color: #000; font-size: 8.5pt;
+    background: #fff; border-bottom: 2px solid #000; vertical-align: bottom;
+  }
+  .tabella-stat tbody th, .tabella-indisp-stat tbody th { white-space: nowrap; }
+  .tabella-stat tbody tr:nth-child(even), .tabella-indisp-stat tbody tr:nth-child(even) { background: #f2f2f2; }
+  .saldo-pos, .saldo-neg { color: #000; }
+  .cella-rapporto { min-width: 0; }
+  .tabella-indisp-stat th.weekend, .tabella-indisp-stat td.weekend.indisp-liv-0 { background: transparent; }
+  .indisp-num { font-size: 11pt; }
+  .indisp-parti { font-size: 7.5pt; opacity: 1; }
 }

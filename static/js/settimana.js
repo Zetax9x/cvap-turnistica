@@ -252,62 +252,40 @@ function renderLegenda(conSpeciali) {
   );
 }
 
+// Frasi tecniche del generatore che a chi fa i turni non servono (lo stato si vede già dal titolo).
+// Devono restare uguali ai testi di cvap/solver.py `genera()`.
+const FRASI_TECNICHE = [
+  /Soluzione buona ma non dimostrata ottima nel tempo disponibile\.\s*/,
+  /Tutti i posti coperti nel rispetto delle regole\.\s*/,
+  /Tutti i posti sono già coperti\.\s*/,
+  /\d+ posti non coperti: servono altri dipendenti o volontari\.\s*/,
+];
+
+/** Esito della generazione in parole semplici: posti scoperti e problemi da sistemare, niente dati tecnici. */
 function renderReport(r) {
-  const okStati = ["ottimo", "ammissibile"];
-  const classe = okStati.includes(r.stato) ? (r.scoperti && r.scoperti.length ? "avviso" : "ok") : "errore";
+  const riuscita = ["ottimo", "ammissibile"].includes(r.stato);
+  const scoperti = r.scoperti || [];
+  const note = riuscita
+    ? FRASI_TECNICHE.reduce((testo, frase) => testo.replace(frase, ""), r.messaggio || "").trim()
+    : r.messaggio || "";
+  const classe = !riuscita ? "errore" : scoperti.length || note ? "avviso" : "ok";
+  const titolo = !riuscita ? "Turni non generati"
+    : scoperti.length ? `Turni generati: ${scoperti.length === 1 ? "1 posto scoperto" : `${scoperti.length} posti scoperti`}`
+    : note ? "Turni generati: da controllare" : "Turni generati: tutti i posti coperti";
   const icona = { ok: "✓", avviso: "!", errore: "×" }[classe];
-  const dettagli = el("div", { class: `report report-${classe}`, role: "region", "aria-label": "Report di generazione" },
+  const riquadro = el("div", { class: `report report-${classe}`, role: "region", "aria-label": "Esito della generazione" },
     el("span", { class: "report-icona", "aria-hidden": "true" }, icona),
-    el("div", { class: "report-head" },
-      el("strong", {}, "Ultima generazione: ", etichetta("statoReport", r.stato)),
-      r.media_ore !== undefined && r.media_ore !== null ? el("span", {}, `Media ore dipendenti: ${formatOre(r.media_ore)}`) : null,
-      r.durata_s !== undefined && r.durata_s !== null ? el("span", { class: "muted" }, `Durata: ${formatOre(Math.round(r.durata_s * 10) / 10)} s`) : null,
-    ),
-    r.messaggio ? el("p", { class: "report-msg" }, r.messaggio) : null,
+    el("div", { class: "report-head" }, el("strong", {}, titolo)),
+    note ? el("p", { class: "report-msg" }, note) : null,
   );
-  if (r.scoperti && r.scoperti.length) {
-    dettagli.append(
-      el("p", { class: "report-scoperti-titolo" }, `Posti rimasti scoperti (${r.scoperti.length}):`),
-      el("ul", { class: "report-scoperti" }, r.scoperti.map((u) => el("li", {},
+  if (scoperti.length) {
+    riquadro.append(
+      el("p", { class: "report-scoperti-titolo" }, "Servono altri dipendenti o volontari per:"),
+      el("ul", { class: "report-scoperti" }, scoperti.map((u) => el("li", {},
         `${dataEstesa(u.data)} · ${u.postazione} · ${orarioTurno(u.fascia, u.segmento)} · ${etichetta("ruolo", u.ruolo)}`))),
     );
   }
-  if (r.qualita) {
-    dettagli.append(el("details", { class: "report-dettagli" },
-      el("summary", {}, "Dettagli della generazione"),
-      renderQualita(r.qualita, r.qualita_precedente)));
-  }
-  return dettagli;
-}
-
-const numIt = (n) => Number(n).toLocaleString("it-IT");
-
-/** Tabella degli indicatori di qualità, con il confronto con la generazione precedente se c'è. */
-function renderQualita(q, prec) {
-  const righe = [
-    ["Punteggio (più basso è meglio)", (x) => numIt(x.punteggio)],
-    ["Distanza dall'ottimo", (x) => `${numIt(x.gap_pct)}%${x.gap_pct === 0 ? " (ottimo dimostrato)" : ""}`],
-    ["Soluzioni trovate", (x) => numIt(x.soluzioni)],
-    ["Soluzione migliore trovata a", (x) => `${numIt(x.tempo_migliore_s)} s su ${numIt(x.tempo_max)} s`],
-    ["Worker", (x) => numIt(x.workers)],
-  ];
-  const tabella = el("table", { class: "tabella tabella-qualita" },
-    el("caption", {}, "Qualità della generazione"),
-    el("thead", {}, el("tr", {},
-      el("th", { scope: "col" }, "Indicatore"),
-      el("th", { scope: "col" }, "Questa"),
-      prec ? el("th", { scope: "col" }, "Precedente") : null)),
-    el("tbody", {}, righe.map(([nome, fmt]) => el("tr", {},
-      el("th", { scope: "row" }, nome),
-      el("td", {}, fmt(q)),
-      prec ? el("td", {}, fmt(prec)) : null))),
-  );
-  const rapporto = q.tempo_max ? q.tempo_migliore_s / q.tempo_max : null;
-  const consiglio = rapporto === null ? null
-    : rapporto < 0.5 ? "Più tempo probabilmente non serve."
-    : rapporto > 0.9 ? "Più tempo potrebbe migliorare il risultato." : null;
-  return el("div", { class: "report-qualita" }, el("div", { class: "table-scroll" }, tabella),
-    consiglio ? el("p", { class: "muted" }, consiglio) : null);
+  return riquadro;
 }
 
 // ---------------------------------------------------------------- griglia
@@ -1301,7 +1279,9 @@ async function onGenera() {
     const rep = r.report;
     const n = (rep.scoperti || []).length;
     const okStato = ["ottimo", "ammissibile"].includes(rep.stato);
-    toast(`${etichetta("statoReport", rep.stato)}${n ? ` · ${n} posti scoperti` : ""}`, okStato ? (n ? "avviso" : "ok") : "errore");
+    const testo = !okStato ? "Turni non generati: vedi il messaggio sopra la griglia."
+      : n ? `Turni generati: ${n === 1 ? "1 posto scoperto" : `${n} posti scoperti`}.` : "Turni generati.";
+    toast(testo, okStato ? (n ? "avviso" : "ok") : "errore");
   }
 }
 

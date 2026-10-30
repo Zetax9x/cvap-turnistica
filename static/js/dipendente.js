@@ -97,10 +97,6 @@ function render() {
   root.append(...renderTurni(s, persona), renderTotali(s, persona));
 }
 
-function descriviTurno(a) {
-  return `${orarioTurno(a.fascia, a.segmento)} · ${a.postazione} · ${etichetta("ruolo", a.ruolo)}`;
-}
-
 /** Per ogni giorno: turni della persona e contenuto da mostrare (turni, ferie, indisponibilità o riposo). */
 function giorniPersona(s, persona) {
   const ferie = new Set((s.ferie || []).filter((x) => x.persona_id === persona.id).map((x) => x.data));
@@ -118,7 +114,14 @@ function giorniPersona(s, persona) {
     const contenuto = () => {
       if (turni.length) {
         return el("ul", { class: "turni-persona" }, turni.map((a) => el("li", { class: `turno-${a.fascia}` },
-          el("span", { class: `chip chip-${a.origine}` }, el("span", { class: "chip-nome" }, descriviTurno(a))))));
+          el("span", { class: `chip chip-${a.origine}` }, el("span", { class: "chip-nome" },
+            el("span", { class: "turno-orario" },
+              el("span", { class: "fascia-icona", "aria-hidden": "true" }, a.fascia === "notte" ? "☾ " : "☀ "),
+              orarioTurno(a.fascia, a.segmento)),
+            el("span", { class: "turno-sep" }, " · "),
+            el("span", { class: "turno-postazione" }, a.postazione),
+            el("span", { class: "turno-sep" }, " · "),
+            el("span", { class: "turno-ruolo" }, etichetta("ruolo", a.ruolo)))))));
       }
       if (ferie.has(g)) return el("span", { class: "badge badge-ferie" }, "Ferie");
       return el("span", { class: "muted" }, indisp.has(g) ? `Indisponibile: ${etichettaParti(indisp.get(g)).toLowerCase()}` : "Riposo");
