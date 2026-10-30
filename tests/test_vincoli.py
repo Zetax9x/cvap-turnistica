@@ -326,3 +326,14 @@ def test_giorno_e_notte_ad_ascoli_non_vale_per_i_volontari():
     a = [ass(GIORNI[i], "Ascoli", "notte", "soccorritore", 3, origine="volontario") for i in (0, 3)]
     v = valida_settimana(GIORNI, ASCOLI, a, PERSONE)
     assert "ascoli_giorno_notte" not in codici(v) | codici(v, "avviso")
+
+
+def test_tre_notti_ad_ascoli_senza_giorni_sono_un_avviso():
+    a = [ass(GIORNI[i], "Ascoli", "notte", "autista", 1) for i in (0, 2, 4)]
+    assert "ascoli_giorno_notte" in codici(valida_settimana(GIORNI, ASCOLI, a, PERSONE), "avviso")
+
+
+def test_un_solo_turno_ad_ascoli_va_bene():
+    a = [ass(GIORNI[0], "Ascoli", "giorno", "autista", 1)]
+    v = valida_settimana(GIORNI, ASCOLI, a, PERSONE)
+    assert "ascoli_giorno_notte" not in codici(v) | codici(v, "avviso")
