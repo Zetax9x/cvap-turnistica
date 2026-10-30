@@ -1,4 +1,4 @@
-/* CVAP Turnistica — stile. Variabili per tema chiaro/scuro, stampa in fondo.
+/* CVAP Turnistica — stile. Sempre tema chiaro (scelta dell'utente), stampa in fondo.
    Direzione: calmo e pratico, come un tabellone turni. Pochi colori, ognuno con un significato:
    rosso CVAP solo per il marchio e i problemi, verde per i volontari e le conferme, blu per le azioni. */
 
@@ -37,41 +37,6 @@
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --tap: 44px;                /* altezza minima dei comandi principali */
   color-scheme: light;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #14171b;
-    --surface: #1c2026;
-    --surface-2: #252a31;
-    --text: #e8eaed;
-    --muted: #a7adb7;
-    --border: #33373c;
-    --border-strong: #5d636a;
-    --control-border: #7f858b;
-    --accent: #f0707a;
-    --accent-text: #14181f;
-    --primary: #8fb2f2;
-    --primary-hover: #adc6f5;
-    --primary-soft: #1f2b41;
-    --primary-text: #0b1220;
-    --focus: #ffc94d;
-    --weekend: #25211a;
-    --giorno: #f0b323;
-    --notte: #9aa6ff;
-
-    --vol-bg: #183323;  --vol-border: #5aae74;  --vol-text: #bfe8c9;
-    --man-bg: #172a4d;  --man-border: #6f9dff;  --man-text: #cfe0ff;
-    --gen-bg: #22262a;  --gen-border: #484e55;  --gen-text: #e8eaed;
-
-    --err: #f08a91;  --err-bg: #3a1a1d;
-    --warn: #f0c46a; --warn-bg: #33291a; --warn-border: #c98a12;
-    --ok: #7ccf98;   --ok-bg: #16301f;
-    --info-bg: #182640;
-
-    --shadow: 0 1px 2px rgba(0, 0, 0, .4);
-    color-scheme: dark;
-  }
 }
 
 *, *::before, *::after { box-sizing: border-box; }
