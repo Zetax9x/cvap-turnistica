@@ -35,6 +35,13 @@ CREATE TABLE IF NOT EXISTS email_inviate (
     inviata_il TEXT NOT NULL,
     PRIMARY KEY (inizio, persona_id)
 );
+CREATE TABLE IF NOT EXISTS destinatari_email (  -- indirizzi in più (Impostazioni) con i riepiloghi scelti
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL UNIQUE,
+    nome TEXT,
+    contenuti TEXT NOT NULL DEFAULT '[]',          -- JSON: turni, liberi, indisponibilita, statistiche, ...
+    responsabile INTEGER NOT NULL DEFAULT 0        -- riceve turni e liberi con l'invio dei turni della settimana
+);
 CREATE TABLE IF NOT EXISTS postazioni (
     id INTEGER PRIMARY KEY,
     nome TEXT NOT NULL UNIQUE,
@@ -654,3 +661,43 @@ def registra_prova_email(conn: sqlite3.Connection, adesso: float, massimo: int, 
         conn.execute("INSERT INTO impostazioni(chiave, valore) VALUES ('prove_email', ?) "
                      "ON CONFLICT(chiave) DO UPDATE SET valore = excluded.valore", (json.dumps(recenti + [adesso]),))
     return True
+
+
+# --- destinatari dei riepiloghi (Impostazioni) ------------------------------------------
+
+def _destinatario_dict(r) -> dict:
+    return {"id": r["id"], "email": r["email"], "nome": r["nome"], "contenuti": json.loads(r["contenuti"]),
+            "responsabile": bool(r["responsabile"])}
+
+
+def lista_destinatari(conn: sqlite3.Connection) -> list[dict]:
+    rows = conn.execute("SELECT * FROM destinatari_email ORDER BY email COLLATE NOCASE, id").fetchall()
+    return [_destinatario_dict(r) for r in rows]
+
+
+def destinatario_con_email(conn: sqlite3.Connection, email: str, escluso: int | None = None) -> bool:
+    return conn.execute("SELECT 1 FROM destinatari_email WHERE lower(email) = lower(?) AND id IS NOT ?",
+                        (email, escluso)).fetchone() is not None
+
+
+def crea_destinatario(conn: sqlite3.Connection, email: str, nome: str | None, contenuti: list[str],
+                      responsabile: bool) -> dict:
+    with conn:
+        cur = conn.execute("INSERT INTO destinatari_email(email, nome, contenuti, responsabile) VALUES (?, ?, ?, ?)",
+                           (email, nome, json.dumps(contenuti), int(responsabile)))
+    return _destinatario_dict(conn.execute("SELECT * FROM destinatari_email WHERE id = ?", (cur.lastrowid,)).fetchone())
+
+
+def aggiorna_destinatario(conn: sqlite3.Connection, dest_id: int, email: str, nome: str | None,
+                          contenuti: list[str], responsabile: bool) -> dict | None:
+    with conn:
+        cur = conn.execute("UPDATE destinatari_email SET email = ?, nome = ?, contenuti = ?, responsabile = ? "
+                           "WHERE id = ?", (email, nome, json.dumps(contenuti), int(responsabile), dest_id))
+    if not cur.rowcount:
+        return None
+    return _destinatario_dict(conn.execute("SELECT * FROM destinatari_email WHERE id = ?", (dest_id,)).fetchone())
+
+
+def elimina_destinatario(conn: sqlite3.Connection, dest_id: int) -> bool:
+    with conn:
+        return conn.execute("DELETE FROM destinatari_email WHERE id = ?", (dest_id,)).rowcount > 0

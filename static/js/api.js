@@ -62,6 +62,12 @@ export const api = {
     richiesta("POST", `/settimane/${enc(data)}/email`, { solo_modifiche: !!soloModifiche }),
   provaEmail: (data, indirizzo) => richiesta("POST", `/settimane/${enc(data)}/email/prova`, { indirizzo }),
 
+  destinatari: () => richiesta("GET", "/destinatari"),
+  creaDestinatario: (dati) => richiesta("POST", "/destinatari", dati),
+  aggiornaDestinatario: (id, dati) => richiesta("PUT", `/destinatari/${enc(id)}`, dati),
+  eliminaDestinatario: (id) => richiesta("DELETE", `/destinatari/${enc(id)}`),
+  inviaRiepiloghi: (data) => richiesta("POST", "/destinatari/invia", { data }),
+
   persone: () => richiesta("GET", "/persone"),
   creaPersona: (dati) => richiesta("POST", "/persone", dati),
   aggiornaPersona: (id, dati) => richiesta("PUT", `/persone/${enc(id)}`, dati),

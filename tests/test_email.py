@@ -81,12 +81,18 @@ def test_email_non_valida(client):
 
 # --- invio -----------------------------------------------------------------------------------
 
-def test_stato_dell_invio_elenca_destinatari_e_chi_non_ha_email(client):
-    crea(client, "Mario", "mario@example.org")
-    crea(client, "Luca")
+def test_stato_dell_invio_elenca_solo_chi_e_di_turno(client):
+    mario = crea(client, "Mario", "mario@example.org")
+    luca = crea(client, "Luca")
+    crea(client, "Anna", "anna@example.org")  # ha l'email ma nessun turno: non riceve
+    crea(client, "Piero")                     # né email né turni: non compare
+    vol = crea(client, "Vol. Sara", "sara@example.org", tipo="volontario", qualifica="soccorritore")
+    turno(client, mario["id"], "2026-10-20")
+    turno(client, luca["id"], "2026-10-21")
+    turno(client, vol["id"], "2026-10-22", ruolo="soccorritore")
     s = client.get(f"/api/settimane/{LUNEDI}/email").json()
     assert s["configurato"] is True
-    assert [(d["nome"], d["email"], d["stato"]) for d in s["destinatari"]] == [("Mario", "mario@example.org", "da_inviare")]
+    assert sorted((d["nome"], d["stato"]) for d in s["destinatari"]) == [("Mario", "da_inviare"), ("Vol. Sara", "da_inviare")]
     assert s["senza_email"] == ["Luca"]
 
 
@@ -119,15 +125,31 @@ def test_ognuno_riceve_i_suoi_turni_e_il_tabellone(client, postino):
     assert not any(p.get_content_type() == "text/calendar" for p in per["mario@example.org"].walk())
 
 
-def test_chi_non_ha_turni_riceve_comunque_il_tabellone(client, postino):
+def test_chi_non_e_di_turno_non_riceve_nulla(client, postino):
     mario = crea(client, "Mario", "mario@example.org")
     crea(client, "Anna", "anna@example.org")
     turno(client, mario["id"], "2026-10-20")
     client.post(f"/api/settimane/{LUNEDI}/conferma")
     client.post(f"/api/settimane/{LUNEDI}/email", json={})
-    [anna] = [m for m in postino.inviati if m["To"] == "anna@example.org"]
-    t = contenuto(anna)
-    assert "Nessun turno" in t and "Mario" in t
+    assert [m["To"] for m in postino.inviati] == ["mario@example.org"]
+
+
+def test_chi_perde_tutti_i_turni_dopo_l_invio_riceve_l_aggiornamento(client, postino):
+    mario = crea(client, "Mario", "mario@example.org")
+    luca = crea(client, "Luca", "luca@example.org")
+    turno(client, mario["id"], "2026-10-20")
+    s = turno(client, luca["id"], "2026-10-21")
+    [t] = [a for a in s["assegnazioni"] if a["persona_id"] == luca["id"]]
+    client.post(f"/api/settimane/{LUNEDI}/conferma")
+    client.post(f"/api/settimane/{LUNEDI}/email", json={})
+    postino.inviati.clear()
+    client.post(f"/api/settimane/{LUNEDI}/riapri")
+    assert client.delete(f"/api/assegnazioni/{t['id']}").status_code == 204
+    client.post(f"/api/settimane/{LUNEDI}/conferma")
+    client.post(f"/api/settimane/{LUNEDI}/email", json={"solo_modifiche": True})
+    [m] = postino.inviati
+    assert m["To"] == "luca@example.org" and "aggiornamento" in m["Subject"].lower()
+    assert "Nessun turno" in contenuto(m)
 
 
 def test_reinvio_solo_a_chi_ha_i_turni_cambiati(client, postino):
@@ -160,8 +182,9 @@ def test_errore_di_invio_per_un_indirizzo_non_blocca_gli_altri(client, tmp_path)
     postino = PostinoFinto(falliscono={"luca@example.org"})
     c = TestClient(create_app(str(tmp_path / "e.db"), postino=postino))
     mario = crea(c, "Mario", "mario@example.org")
-    crea(c, "Luca", "luca@example.org")
+    luca = crea(c, "Luca", "luca@example.org")
     turno(c, mario["id"], "2026-10-20")
+    turno(c, luca["id"], "2026-10-21")
     c.post(f"/api/settimane/{LUNEDI}/conferma")
     r = c.post(f"/api/settimane/{LUNEDI}/email", json={}).json()
     assert [x["nome"] for x in r["inviate"]] == ["Mario"]

@@ -62,8 +62,13 @@ Variabili d'ambiente (su Vercel: *Settings → Environment Variables*):
 | `EMAIL_NOME_MITTENTE` | Nome mostrato (predefinito "Croce Verde Ascoli Piceno - Turni"). |
 
 In **Personale** si inserisce l'email di ognuno. Dopo **Conferma settimana** compare **Invia i turni via email**:
-ognuno riceve i propri turni e il tabellone completo. Se la settimana viene riaperta e modificata, si può
+chi è di turno quella settimana (dipendente o volontario) riceve i propri turni e il tabellone completo; chi non ha turni non riceve nulla. Se la settimana viene riaperta e modificata, si può
 inviare l'aggiornamento solo a chi ha i turni cambiati. In *Altre opzioni* c'è **Invia una prova a me**.
+
+In **Impostazioni → Riepiloghi via email** si aggiungono indirizzi in più (responsabili, segreteria…) e per ognuno
+si sceglie cosa ricevere: turni della settimana, liberi, indisponibilità, statistiche dei turni, statistiche delle
+indisponibilità. **Invia i riepiloghi** manda a ognuno le sue parti per la settimana scelta. Chi ha la spunta
+**Responsabile** riceve anche turni e liberi ogni volta che si inviano i turni della settimana al personale.
 
 ## Impostazioni
 
