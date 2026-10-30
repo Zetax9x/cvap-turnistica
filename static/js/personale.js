@@ -1,7 +1,7 @@
 // Vista "Personale": elenco, aggiunta, modifica in linea, disattivazione/eliminazione, ferie.
 
 import { api } from "./api.js";
-import { el, clear, toast, toastErrore, chiediConferma, etichetta, dataEstesa, todayISO } from "./util.js";
+import { el, clear, toast, toastErrore, chiediConferma, etichetta, dataEstesa, todayISO, badgeAssenza } from "./util.js";
 
 const stato = {
   root: null,
@@ -261,8 +261,11 @@ function renderFerie() {
     dipendenti.map((p) => el("option", { value: String(p.id) }, p.nome)));
   const dal = el("input", { id: "ferie-dal", type: "date", required: true });
   const al = el("input", { id: "ferie-al", type: "date", required: true });
+  const motivo = el("select", { id: "ferie-motivo" },
+    el("option", { value: "ferie" }, "Ferie"),
+    el("option", { value: "malattia" }, "Malattia o infortunio"));
   dal.addEventListener("change", () => { if (dal.value && (!al.value || al.value < dal.value)) al.value = dal.value; });
-  const invia = el("button", { type: "submit", class: "btn btn-primary", disabled: !dipendenti.length }, "Aggiungi ferie");
+  const invia = el("button", { type: "submit", class: "btn btn-primary", disabled: !dipendenti.length }, "Aggiungi");
 
   const form = el("form", {
     class: "campi",
@@ -271,8 +274,8 @@ function renderFerie() {
       if (!persona.value || !dal.value || !al.value) { toast("Indica dipendente, dal e al.", "avviso"); return; }
       invia.disabled = true;
       try {
-        await api.creaFerie({ persona_id: Number(persona.value), dal: dal.value, al: al.value });
-        toast("Ferie aggiunte.", "ok");
+        await api.creaFerie({ persona_id: Number(persona.value), dal: dal.value, al: al.value, motivo: motivo.value });
+        toast(motivo.value === "malattia" ? "Malattia aggiunta." : "Ferie aggiunte.", "ok");
         await ricarica();
       } catch (err) {
         toastErrore(err);
@@ -281,6 +284,7 @@ function renderFerie() {
     },
   },
   el("div", { class: "campo campo-largo" }, el("label", { for: "ferie-persona" }, "Dipendente"), persona),
+  el("div", { class: "campo" }, el("label", { for: "ferie-motivo" }, "Motivo"), motivo),
   el("div", { class: "campo" }, el("label", { for: "ferie-dal" }, "Dal"), dal),
   el("div", { class: "campo" }, el("label", { for: "ferie-al" }, "Al (incluso)"), al),
   el("div", { class: "campo campo-azione" }, invia));
@@ -288,6 +292,7 @@ function renderFerie() {
   const tabella = (lista) => el("div", { class: "table-scroll" }, el("table", { class: "tabella" },
     el("thead", {}, el("tr", {},
       el("th", { scope: "col" }, "Dipendente"),
+      el("th", { scope: "col" }, "Motivo"),
       el("th", { scope: "col" }, "Dal"),
       el("th", { scope: "col" }, "Al"),
       el("th", { scope: "col", class: "num" }, "Giorni"),
@@ -296,11 +301,12 @@ function renderFerie() {
       const nome = nomi.get(f.persona_id) || `#${f.persona_id}`;
       return el("tr", {},
         el("th", { scope: "row" }, nome),
+        el("td", {}, badgeAssenza(f.motivo)),
         el("td", {}, dataEstesa(f.dal)),
         el("td", {}, dataEstesa(f.al)),
         el("td", { class: "num" }, String(giorniTra(f.dal, f.al))),
         el("td", { class: "azioni" }, el("button", {
-          type: "button", class: "btn btn-small btn-danger", "aria-label": `Elimina ferie di ${nome} dal ${f.dal}`,
+          type: "button", class: "btn btn-small btn-danger", "aria-label": `Elimina ${f.motivo === "malattia" ? "malattia" : "ferie"} di ${nome} dal ${f.dal}`,
           onclick: () => eliminaFerie(f, nome),
         }, "Elimina")));
     }))));
@@ -308,23 +314,24 @@ function renderFerie() {
   const correnti = stato.ferie.filter((f) => f.al >= oggi);
   const passate = stato.ferie.filter((f) => f.al < oggi).reverse();
   return el("section", { class: "card", "aria-labelledby": "titolo-ferie" },
-    el("h2", { id: "titolo-ferie", class: "card-title" }, "Ferie"),
+    el("h2", { id: "titolo-ferie", class: "card-title" }, "Ferie e malattia"),
     el("p", { class: "muted" },
-      "Nei giorni di ferie il dipendente non riceve turni e ogni giorno di ferie conta 6 ore nel confronto tra le ore dei dipendenti. ",
-      "Le ore che mancano non vanno recuperate nelle settimane successive."),
+      "Nei giorni di ferie o di malattia/infortunio il dipendente non riceve turni e ogni giorno conta 6 ore nel confronto tra le ore dei dipendenti. ",
+      "Le ore che mancano non vanno recuperate nelle settimane successive. Il motivo serve solo a distinguerle."),
     form,
-    correnti.length ? tabella(correnti) : el("p", { class: "muted" }, "Nessuna ferie in corso o in programma."),
+    correnti.length ? tabella(correnti) : el("p", { class: "muted" }, "Nessuna ferie o malattia in corso o in programma."),
     passate.length ? el("details", { class: "ferie-passate" },
-      el("summary", {}, `Ferie passate (${passate.length})`), tabella(passate)) : null);
+      el("summary", {}, `Passate (${passate.length})`), tabella(passate)) : null);
 }
 
 async function eliminaFerie(f, nome) {
-  const ok = await chiediConferma(`Eliminare le ferie di ${nome} dal ${dataEstesa(f.dal)} al ${dataEstesa(f.al)}?`,
-    { titolo: "Eliminare le ferie?", ok: "Elimina", pericolo: true });
+  const cosa = f.motivo === "malattia" ? "la malattia" : "le ferie";
+  const ok = await chiediConferma(`Eliminare ${cosa} di ${nome} dal ${dataEstesa(f.dal)} al ${dataEstesa(f.al)}?`,
+    { titolo: `Eliminare ${cosa}?`, ok: "Elimina", pericolo: true });
   if (!ok) return;
   try {
     await api.eliminaFerie(f.id);
-    toast("Ferie eliminate.", "ok");
+    toast(f.motivo === "malattia" ? "Malattia eliminata." : "Ferie eliminate.", "ok");
     await ricarica();
   } catch (err) {
     toastErrore(err);

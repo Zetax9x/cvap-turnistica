@@ -39,7 +39,7 @@ function render() {
     el("p", { class: "muted" },
       "Quante volte ogni dipendente ha chiesto di essere indisponibile in ciascun giorno della settimana. "
       + "Il numero conta i giorni (anche se indisponibile solo in una parte); sotto, il dettaglio per mattina (M), "
-      + "pomeriggio (P) e notte (N). Più la cella è scura, più il giorno ricorre per quel dipendente. Le ferie non sono comprese.")));
+      + "pomeriggio (P) e notte (N). Più la cella è scura, più il giorno ricorre per quel dipendente. Ferie e malattia non sono comprese.")));
   root.append(renderPeriodo(), el("p", { class: "solo-stampa" }, `Periodo: ${descriviPeriodo()}`));
 
   if (!stato.righe.length) {

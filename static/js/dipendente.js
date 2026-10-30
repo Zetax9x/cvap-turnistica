@@ -4,6 +4,7 @@ import { api } from "./api.js";
 import {
   el, clear, addDays, mondayOf, todayISO, ddmm, dataLunga, dataEstesa, indiceGiorno, etichetta, formatOre,
   orarioTurno, oraInizio, etichettaParti,
+  badgeAssenza,
 } from "./util.js";
 
 const CHIAVE_SETTIMANA = "cvap.settimana";
@@ -99,7 +100,7 @@ function render() {
 
 /** Per ogni giorno: turni della persona e contenuto da mostrare (turni, ferie, indisponibilità o riposo). */
 function giorniPersona(s, persona) {
-  const ferie = new Set((s.ferie || []).filter((x) => x.persona_id === persona.id).map((x) => x.data));
+  const ferie = new Map((s.ferie || []).filter((x) => x.persona_id === persona.id).map((x) => [x.data, x.motivo]));
   const indisp = new Map();  // data -> parti indisponibili
   for (const x of (s.indisponibilita || []).filter((x) => x.persona_id === persona.id)) {
     if (!indisp.has(x.data)) indisp.set(x.data, new Set());
@@ -123,7 +124,7 @@ function giorniPersona(s, persona) {
             el("span", { class: "turno-sep" }, " · "),
             el("span", { class: "turno-ruolo" }, etichetta("ruolo", a.ruolo)))))));
       }
-      if (ferie.has(g)) return el("span", { class: "badge badge-ferie" }, "Ferie");
+      if (ferie.has(g)) return badgeAssenza(ferie.get(g));
       return el("span", { class: "muted" }, indisp.has(g) ? `Indisponibile: ${etichettaParti(indisp.get(g)).toLowerCase()}` : "Riposo");
     };
     return { data: g, weekend: indiceGiorno(g) >= 5, turni, contenuto, errore: errori.has(g) };
@@ -161,10 +162,14 @@ function renderTurniOrizzontali(giorni) {
 
 function renderTotali(s, persona) {
   const r = (s.riepilogo || []).find((x) => x.persona_id === persona.id);
-  const giorniFerie = r ? r.giorni_ferie || 0 : 0;
+  const giorniFerie = r ? r.giorni_ferie || 0 : 0;  // ferie + malattia: 6 h al giorno
+  const giorniMalattia = r ? r.giorni_malattia || 0 : 0;
+  const soloFerie = giorniFerie - giorniMalattia;
+  const oreMalattia = r ? r.ore_malattia || 0 : 0;
   const voci = [
     ["Ore totali", `${formatOre(r ? r.ore : 0)} h`],
-    ...(giorniFerie ? [[`Ferie (${giorniFerie} gg)`, `${formatOre(r.ore_ferie || 0)} h`]] : []),
+    ...(soloFerie ? [[`Ferie (${soloFerie} gg)`, `${formatOre((r.ore_ferie || 0) - oreMalattia)} h`]] : []),
+    ...(giorniMalattia ? [[`Malattia (${giorniMalattia} gg)`, `${formatOre(oreMalattia)} h`]] : []),
     ["Giorno / notte", r ? `${formatOre(r.ore_giorno)} h / ${formatOre(r.ore_notte)} h` : "—"],
     ["Turni nel weekend", r ? String(r.turni_weekend) : "0"],
     ["Media dei dipendenti (informativa)",

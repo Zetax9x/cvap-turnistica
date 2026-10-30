@@ -5,7 +5,7 @@ il modello assegna solo i posti rimasti, ai dipendenti.
 
 Vincoli rigidi (mai violati):
   - un solo dipendente per posto, abilitato al ruolo (l'autista può fare il soccorritore, non viceversa)
-  - nessun turno nei giorni di ferie né nelle parti (mattina, pomeriggio, notte) indisponibili
+  - nessun turno nei giorni di ferie o malattia (`ferie` le comprende entrambe) né nelle parti (mattina, pomeriggio, notte) indisponibili
   - nessuna sovrapposizione e almeno 11h di riposo tra due turni (anche rispetto alle settimane vicine)
   - al massimo 3 giorni (o 3 notti) di fila
   - al massimo 3 turni ad Ascoli a settimana per dipendente

@@ -31,7 +31,8 @@ divieti(id INTEGER PK, persona_id INTEGER REFERENCES persone(id), postazione TEX
 settimane(inizio TEXT PK, stato TEXT ('bozza'|'confermata'), dipendenti TEXT /*JSON id*/, generata_il TEXT, report TEXT /*JSON*/)
 assegnazioni(id INTEGER PK, data TEXT, postazione TEXT, fascia TEXT, segmento TEXT, ruolo TEXT,
              persona_id INTEGER REFERENCES persone(id), origine TEXT)
-ferie(id INTEGER PK, persona_id INTEGER REFERENCES persone(id), dal TEXT, al TEXT)   -- estremi inclusi
+ferie(id INTEGER PK, persona_id INTEGER REFERENCES persone(id), dal TEXT, al TEXT,   -- estremi inclusi
+      motivo TEXT NOT NULL DEFAULT 'ferie')   -- 'ferie' | 'malattia' (malattia o infortunio): stesso conteggio, cambia solo l'etichetta
 indisponibilita_turni(persona_id INTEGER REFERENCES persone(id), data TEXT, parte TEXT, PK(persona_id, data, parte))
                                                         -- parte: mattina | pomeriggio | notte
 ```
@@ -74,15 +75,15 @@ non di ferie (calcolata dalle assegnazioni reali, così le modifiche manuali con
     giorni: [iso x7], postazioni: [nomi attive],
     assegnazioni: [{id, data, postazione, fascia, segmento, ruolo, persona_id, persona_nome, origine, ore}],
     violazioni: [{livello, codice, messaggio, persona_id, data}],
-    ferie: [{persona_id, data}], indisponibilita: [{persona_id, data, parte}],   // giorni di questa settimana
+    ferie: [{persona_id, data, motivo}], indisponibilita: [{persona_id, data, parte}],   // giorni di questa settimana
     riepilogo: [{persona_id, nome, tipo, qualifica, ore, ore_giorno, ore_notte, turni_weekend,
-                 giorni_ferie, giorni_indisponibili /* con almeno una parte */}],
+                 giorni_ferie /* ferie + malattia */, giorni_malattia, ore_malattia, giorni_indisponibili /* con almeno una parte */}],
     media_ore,            // media a tempo pieno dei dipendenti attivi nella settimana
     scarto_ore_max,       // banda ore ammessa dalla media (impostazione)
     liberi: [{data,       // un elemento per giorno; solo dipendenti attivi, in ordine di nome
               liberi: [{persona_id, nome, avvisi}],                // nessun turno di giorno quel giorno
               indisponibili: [{persona_id, nome, parti, avvisi}],  // senza turni di giorno ma con parti indisponibili
-              ferie: [{persona_id, nome}]}],
+              ferie: [{persona_id, nome, motivo}]}],
               // avvisi ⊆ ["smonto_notte" (notte il giorno prima, anche la domenica precedente), "notte" (notte quel giorno)]
     report                // ultimo report di generazione o null
   }
@@ -103,8 +104,9 @@ non di ferie (calcolata dalle assegnazioni reali, così le modifiche manuali con
 - `DELETE /settimane/{data}/generati` → settimana aggiornata (rimuove solo le `generato`)
 - `PUT /settimane/{data}/indisponibilita` `{persona_id, turni: [{data: iso, parte}], max 21}` → settimana aggiornata. Sostituisce le
   indisponibilità della persona in quella settimana. 400 se confermata, date fuori settimana o persona non dipendente · 404
-- `GET /ferie` → `[{id, persona_id, dal, al}]` · `POST /ferie` `{persona_id, dal, al}` → 201
-  (400 se dal > al, periodo > 366 giorni, sovrapposto ad altre ferie della persona o persona non dipendente · 404) ·
+- `GET /ferie` → `[{id, persona_id, dal, al, motivo}]` · `POST /ferie` `{persona_id, dal, al, motivo?}` → 201
+  (`motivo`: `ferie` predefinito o `malattia`; altro → 422)
+  (400 se dal > al, periodo > 366 giorni, sovrapposto ad altre ferie o malattia della persona o persona non dipendente · 404) ·
   `DELETE /ferie/{id}` → 204 · 404
 - `GET /statistiche` → `[{persona_id, nome, tipo, qualifica, settimane, ore_totali, saldo_ore, ore_giorno, ore_notte, weekend: {sab_giorno, sab_notte, dom_giorno, dom_notte}}]`
   solo sulle settimane con turni generati (`storico.solo_generate`; volontari: solo totali, saldo 0).

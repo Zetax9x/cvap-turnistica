@@ -4,7 +4,7 @@ import { api } from "./api.js";
 import {
   el, clear, toast, toastErrore, chiediConferma, addDays, mondayOf, todayISO, ddmm, dataLunga,
   dataEstesa, indiceGiorno, GIORNI_BREVI, etichetta, formatOre, formatSaldo, orarioTurno,
-  PARTI_TURNO, SCELTE_INDISPONIBILITA, partiTurno, valoreParti, etichettaParti,
+  PARTI_TURNO, SCELTE_INDISPONIBILITA, partiTurno, valoreParti, etichettaParti, badgeAssenza,
 } from "./util.js";
 
 const FASCE = ["giorno", "notte"];
@@ -637,7 +637,7 @@ function renderRiepilogo(s) {
     // ore contate = ore lavorate + ferie (6 h al giorno): sono quelle confrontate tra i dipendenti
     const contate = dip && r.giorni_ferie < 7 ? contateDi(r) : null;
     const estremo = dip ? estremi.get(r.persona_id) : null;
-    const assenze = [r.giorni_ferie ? `ferie ${r.giorni_ferie}g = ${formatOre(r.ore_ferie || 0)}h` : null,
+    const assenze = [r.giorni_ferie ? `${descriviAssenze(r)} = ${formatOre(r.ore_ferie || 0)}h` : null,
       r.giorni_indisponibili ? `indisp. ${r.giorni_indisponibili}g` : null].filter(Boolean).join(", ");
     return el("tr", { class: estremo ? "fuori-media" : null },
       el("th", { scope: "row" },
@@ -700,13 +700,14 @@ function renderDisponibilita(s) {
   const dipendenti = stato.persone
     .filter((p) => p.tipo === "dipendente" && p.attivo)
     .sort((a, b) => a.nome.localeCompare(b.nome, "it"));
-  const ferie = new Set((s.ferie || []).map((x) => `${x.persona_id}|${x.data}`));
+  const ferie = new Map((s.ferie || []).map((x) => [`${x.persona_id}|${x.data}`, x.motivo]));
   const indisp = partiIndisponibili(s.indisponibilita);
   const n = indisp.size;  // giorni con almeno una parte indisponibile
-  const nFerie = new Set((s.ferie || []).map((x) => x.persona_id)).size;
+  const nFerie = new Set((s.ferie || []).filter((x) => x.motivo !== "malattia").map((x) => x.persona_id)).size;
+  const nMalattia = new Set((s.ferie || []).filter((x) => x.motivo === "malattia").map((x) => x.persona_id)).size;
 
   const riepilogo = [n ? `${n} giorni indisponibili` : "nessuna indisponibilità",
-    nFerie ? `${nFerie} in ferie` : null].filter(Boolean).join(" · ");
+    nFerie ? `${nFerie} in ferie` : null, nMalattia ? `${nMalattia} in malattia` : null].filter(Boolean).join(" · ");
   const aperto = stato.dispAperta[s.inizio] ?? s.stato === "nuova";
   const blocco = el("details", {
     class: "pannello disponibilita", open: aperto,
@@ -717,7 +718,7 @@ function renderDisponibilita(s) {
     el("p", { class: "muted" },
       "Per ogni giorno scegli quando un dipendente non può lavorare (mattina, pomeriggio, notte): non riceverà ",
       "turni che coprono quella parte. La notte è quella che inizia la sera del giorno scelto. ",
-      "Le ferie si inseriscono in Personale: ogni giorno conta 6 ore."));
+      "Ferie e malattia si inseriscono in Personale: ogni giorno conta 6 ore."));
   if (!dipendenti.length) {
     blocco.append(el("p", { class: "muted" }, "Nessun dipendente attivo."));
     return blocco;
@@ -729,7 +730,7 @@ function renderDisponibilita(s) {
       const i = indiceGiorno(g);
       const classe = `disp-cella${i >= 5 ? " weekend" : ""}`;
       if (ferie.has(`${p.id}|${g}`)) {
-        return el("td", { class: classe }, el("span", { class: "badge badge-ferie", title: "In ferie" }, "Ferie"));
+        return el("td", { class: classe }, badgeAssenza(ferie.get(`${p.id}|${g}`)));
       }
       const menu = menuIndisponibilita(indisp.get(`${p.id}|${g}`) || new Set());
       return el("td", { class: `${classe}${menu.valore ? " disp-indisponibile" : ""}` }, el("select", {
@@ -942,9 +943,17 @@ function badgeAvvisi(avvisi, formato) {
   }, AVVISI_LIBERI[a] ? AVVISI_LIBERI[a][formato] : a));
 }
 
+/** "ferie 3g", "malattia 2g" o "ferie 1g + malattia 2g" (contano allo stesso modo: 6 h al giorno). */
+function descriviAssenze(r) {
+  const malattia = r.giorni_malattia || 0;
+  const ferie = r.giorni_ferie - malattia;
+  return [ferie ? `ferie ${ferie}g` : null, malattia ? `malattia ${malattia}g` : null].filter(Boolean).join(" + ");
+}
+
 function voceLibero(v, formato) {
   return el("li", {}, el("span", { class: "libero-nome" }, v.nome),
     v.parti ? el("span", { class: "muted" }, ` (${etichettaParti(new Set(v.parti)).toLowerCase()})`) : null,
+    v.motivo ? [" ", badgeAssenza(v.motivo)] : null,
     badgeAvvisi(v.avvisi, formato));
 }
 
@@ -979,8 +988,8 @@ function renderDialogLiberi() {
       el("ul", { class: "lista-liberi" }, g.indisponibili.map((v) => voceLibero(v, "lungo")))));
   }
   if (g.ferie.length) {
-    d.append(el("section", { class: "dialog-section", "aria-label": "In ferie" },
-      el("h3", {}, `In ferie (${g.ferie.length})`),
+    d.append(el("section", { class: "dialog-section", "aria-label": "In ferie o malattia" },
+      el("h3", {}, `In ferie o malattia (${g.ferie.length})`),
       el("ul", { class: "lista-liberi" }, g.ferie.map((v) => voceLibero(v, "lungo")))));
   }
   d.append(el("div", { class: "dialog-actions" },
@@ -1001,7 +1010,7 @@ function renderStampaLiberi(s) {
         el("th", { scope: "col" }, ""),
         s.giorni.map((g, i) => el("th", { scope: "col", class: i >= 5 ? "weekend" : null },
           `${GIORNI_BREVI[i]} ${ddmm(g)}`)))),
-      el("tbody", {}, riga("Liberi", "liberi"), riga("Indisponibili", "indisponibili"), riga("In ferie", "ferie"))),
+      el("tbody", {}, riga("Liberi", "liberi"), riga("Indisponibili", "indisponibili"), riga("Ferie / malattia", "ferie"))),
     el("p", { class: "nota-stampa" },
       "Smonto notte = ha fatto la notte il giorno prima (finisce alle 8) · Notte = fa la notte quella sera."));
 }
@@ -1103,7 +1112,7 @@ function renderFormAggiunta(c, mancanti) {
   const s = stato.settimana;
   const oreSettimana = new Map((s.riepilogo || []).map((r) => [r.persona_id, r.ore]));
   const giaInCella = new Set(assegnazioniCella(s, c).map((a) => a.persona_id));
-  const inFerie = giorniPersona(s.ferie, c.data);
+  const inFerie = new Map((s.ferie || []).filter((x) => x.data === c.data).map((x) => [x.persona_id, x.motivo]));
   // indisponibile solo se la sua indisponibilità tocca le ore di questo turno
   const indisponibili = giorniPersona(s.indisponibilita, c.data, partiTurno(c.fascia, segmentoCella(c)));
   const prog = c.postazione === PROGRAMMATI;
@@ -1131,7 +1140,7 @@ function renderFormAggiunta(c, mancanti) {
     el("option", { value: "" }, "— Seleziona —"),
     dipendenti.map((p) => {
       const ore = oreSettimana.get(p.id);
-      const extra = [inFerie.has(p.id) ? "IN FERIE" : null, indisponibili.has(p.id) ? "INDISPONIBILE" : null,
+      const extra = [inFerie.has(p.id) ? (inFerie.get(p.id) === "malattia" ? "IN MALATTIA" : "IN FERIE") : null, indisponibili.has(p.id) ? "INDISPONIBILE" : null,
         vietato(p.id, c.postazione, c.fascia, segmentoCella(c)) ? "NON PUÒ" : null,
         p.qualifica === "autista" ? "autista" : (prog && p.autista_programmati ? "autista programmati" : null), ore ? `${formatOre(ore)} h` : null, giaInCella.has(p.id) ? "già qui" : null]
         .filter(Boolean).join(", ");

@@ -19,6 +19,8 @@ ORE_FERIE_GIORNO = 6      # ore che conta ogni giorno di ferie nel confronto con
 ORE_MIN_SETTIMANA = 36    # ore minime di ogni dipendente, ferie comprese
 ORE_MAX_SETTIMANA = 72    # ore lavorate massime di ogni dipendente (le ferie non contano): nessuno le supera
 ASCOLI = "Ascoli"
+TESTO_FERIE = "è in ferie"        # nel messaggio di un turno in un giorno di ferie
+TESTO_MALATTIA = "è in malattia"  # stesso messaggio per un giorno di malattia (lo usa l'API)
 MAX_TURNI_ASCOLI = 2      # turni a settimana per dipendente ad Ascoli
 MAX_TURNI_ASCOLI_EXTREMIS = 3  # solo se non c'è altra soluzione (avviso); oltre è vietato
 
@@ -74,7 +76,7 @@ def valida_settimana(
     violazioni += _eccessi(giorni, assegnazioni, postazioni, fabbisogno)
     violazioni += _qualifiche(assegnazioni, persone)
     violazioni += _divieti(assegnazioni, persone)
-    violazioni += _assenze(assegnazioni, persone, ferie, "ferie", "è in ferie")
+    violazioni += _assenze(assegnazioni, persone, ferie, "ferie", TESTO_FERIE)
     violazioni += _indisponibilita(assegnazioni, persone, indisponibili)
 
     settimana = set(giorni)

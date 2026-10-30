@@ -344,7 +344,7 @@ def test_crud_ferie(client):
     r = client.post("/api/ferie", json={"persona_id": p["id"], "dal": "2026-10-20", "al": "2026-10-22"})
     assert r.status_code == 201, r.text
     f = r.json()
-    assert f == {"id": f["id"], "persona_id": p["id"], "dal": "2026-10-20", "al": "2026-10-22"}
+    assert f == {"id": f["id"], "persona_id": p["id"], "dal": "2026-10-20", "al": "2026-10-22", "motivo": "ferie"}
     assert client.get("/api/ferie").json() == [f]
     assert client.delete(f"/api/ferie/{f['id']}").status_code == 204
     assert client.get("/api/ferie").json() == []
@@ -364,6 +364,96 @@ def test_ferie_non_valide(client):
     for body in casi:
         assert client.post("/api/ferie", json=body).status_code == 400, body
     assert client.post("/api/ferie", json={**ok, "persona_id": 9999}).status_code == 404
+
+
+# --- malattia / infortunio: stessa regola delle ferie, solo un motivo diverso -------------
+
+def test_malattia_si_registra_come_assenza(client):
+    p = crea(client, "Mario")
+    r = client.post("/api/ferie", json={"persona_id": p["id"], "dal": "2026-10-20", "al": "2026-10-22",
+                                        "motivo": "malattia"})
+    assert r.status_code == 201, r.text
+    assert r.json()["motivo"] == "malattia"
+    assert [f["motivo"] for f in client.get("/api/ferie").json()] == ["malattia"]
+
+
+def test_motivo_dell_assenza_non_valido(client):
+    p = crea(client, "Mario")
+    r = client.post("/api/ferie", json={"persona_id": p["id"], "dal": "2026-10-20", "al": "2026-10-22",
+                                        "motivo": "vacanza"})
+    assert r.status_code == 422
+
+
+def test_malattia_e_ferie_non_si_sovrappongono(client):
+    p = crea(client, "Mario")
+    client.post("/api/ferie", json={"persona_id": p["id"], "dal": "2026-10-20", "al": "2026-10-25"})
+    r = client.post("/api/ferie", json={"persona_id": p["id"], "dal": "2026-10-24", "al": "2026-10-28",
+                                        "motivo": "malattia"})
+    assert r.status_code == 400
+
+
+def test_malattia_conta_come_le_ferie_ma_si_distingue(client):
+    p = crea(client, "Mario")
+    q = crea(client, "Luca")
+    crea(client, "Anna")
+    client.post("/api/ferie", json={"persona_id": p["id"], "dal": "2026-10-19", "al": "2026-10-21",
+                                    "motivo": "malattia"})
+    client.post("/api/ferie", json={"persona_id": q["id"], "dal": "2026-10-19", "al": "2026-10-19"})
+    s = client.get(f"/api/settimane/{LUNEDI_A}").json()
+    motivi = {(x["persona_id"], x["data"]): x["motivo"] for x in s["ferie"]}
+    assert motivi == {(p["id"], "2026-10-19"): "malattia", (p["id"], "2026-10-20"): "malattia",
+                      (p["id"], "2026-10-21"): "malattia", (q["id"], "2026-10-19"): "ferie"}
+    r = next(x for x in s["riepilogo"] if x["persona_id"] == p["id"])
+    # stesse ore delle ferie: 6 h al giorno
+    assert r["giorni_ferie"] == 3 and r["ore_ferie"] == 18 and r["giorni_malattia"] == 3
+    rq = next(x for x in s["riepilogo"] if x["persona_id"] == q["id"])
+    assert rq["giorni_ferie"] == 1 and rq["giorni_malattia"] == 0
+    lunedi = next(g for g in s["liberi"] if g["data"] == "2026-10-19")
+    assert {x["persona_id"]: x["motivo"] for x in lunedi["ferie"]} == {p["id"]: "malattia", q["id"]: "ferie"}
+
+
+def test_malattia_a_cavallo_di_due_settimane_e_mista_alle_ferie(client):
+    p = crea(client, "Mario")
+    crea(client, "Luca")
+    # malattia da giovedì della settimana prima a martedì, poi ferie mercoledì
+    client.post("/api/ferie", json={"persona_id": p["id"], "dal": "2026-10-15", "al": "2026-10-20",
+                                    "motivo": "malattia"})
+    client.post("/api/ferie", json={"persona_id": p["id"], "dal": "2026-10-21", "al": "2026-10-21"})
+    s = client.get(f"/api/settimane/{LUNEDI_A}").json()
+    r = next(x for x in s["riepilogo"] if x["persona_id"] == p["id"])
+    assert r["giorni_ferie"] == 3 and r["giorni_malattia"] == 2
+    assert r["ore_ferie"] == 18 and r["ore_malattia"] == 12
+
+
+def test_turno_in_malattia_e_segnalato_come_malattia(client):
+    p = crea(client, "Mario", qualifica="autista")
+    client.post("/api/ferie", json={"persona_id": p["id"], "dal": "2026-10-20", "al": "2026-10-20",
+                                    "motivo": "malattia"})
+    prenota(client, LUNEDI_A, p["id"], data="2026-10-20")
+    s = client.get(f"/api/settimane/{LUNEDI_A}").json()
+    [v] = [v for v in s["violazioni"] if v["codice"] == "ferie"]
+    assert "è in malattia" in v["messaggio"]
+
+
+def test_migrazione_colonna_motivo_delle_ferie(tmp_path):
+    import sqlite3
+
+    percorso = tmp_path / "vecchio.db"
+    conn = db.connetti(str(percorso))
+    pid = db.crea_persona(conn, "Mario", "dipendente", "autista")["id"]
+    conn.close()
+    vecchio = sqlite3.connect(percorso)  # tabella ferie come nelle versioni precedenti, senza motivo
+    vecchio.executescript(f"""
+        DROP TABLE ferie;
+        CREATE TABLE ferie (id INTEGER PRIMARY KEY AUTOINCREMENT, persona_id INTEGER NOT NULL,
+                            dal TEXT NOT NULL, al TEXT NOT NULL);
+        INSERT INTO ferie(persona_id, dal, al) VALUES ({pid}, '2026-10-20', '2026-10-22');
+    """)
+    vecchio.commit()
+    vecchio.close()
+    for _ in range(2):  # riaprire un DB già migrato non fallisce
+        c = TestClient(create_app(str(percorso)))
+        assert [f["motivo"] for f in c.get("/api/ferie").json()] == ["ferie"]
 
 
 def test_settimana_mostra_ferie_e_quota(client):

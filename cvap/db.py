@@ -58,7 +58,8 @@ CREATE TABLE IF NOT EXISTS ferie (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     persona_id INTEGER NOT NULL REFERENCES persone(id),
     dal TEXT NOT NULL,  -- inclusi entrambi
-    al TEXT NOT NULL
+    al TEXT NOT NULL,
+    motivo TEXT NOT NULL DEFAULT 'ferie'  -- 'ferie' | 'malattia' (malattia o infortunio): stesso conteggio
 );
 CREATE TABLE IF NOT EXISTS indisponibilita (
     persona_id INTEGER NOT NULL REFERENCES persone(id),
@@ -222,6 +223,12 @@ def _migra(conn) -> None:
             conn.execute("ALTER TABLE persone ADD COLUMN max_ore_settimana INTEGER")
         except Exception:
             if "max_ore_settimana" not in _colonne(conn, "persone"):
+                raise
+    if "motivo" not in _colonne(conn, "ferie"):
+        try:
+            conn.execute("ALTER TABLE ferie ADD COLUMN motivo TEXT NOT NULL DEFAULT 'ferie'")
+        except Exception:
+            if "motivo" not in _colonne(conn, "ferie"):
                 raise
     # prima il massimo personale arrivava a 168: oltre il tetto di 72 ore scende a 72 (idempotente)
     conn.execute("UPDATE persone SET max_ore_settimana = ? WHERE max_ore_settimana > ?",
@@ -490,7 +497,7 @@ def salva_generazione(conn: sqlite3.Connection, inizio: date, fine: date, nuove:
 # --- ferie e indisponibilità -------------------------------------------------------
 
 def _ferie_dict(r) -> dict:
-    return {"id": r["id"], "persona_id": r["persona_id"], "dal": r["dal"], "al": r["al"]}
+    return {"id": r["id"], "persona_id": r["persona_id"], "dal": r["dal"], "al": r["al"], "motivo": r["motivo"]}
 
 
 def lista_ferie(conn: sqlite3.Connection) -> list[dict]:
@@ -503,10 +510,10 @@ def ferie_sovrapposte(conn: sqlite3.Connection, persona_id: int, dal: date, al: 
                         (persona_id, al.isoformat(), dal.isoformat())).fetchone() is not None
 
 
-def crea_ferie(conn: sqlite3.Connection, persona_id: int, dal: date, al: date) -> dict:
+def crea_ferie(conn: sqlite3.Connection, persona_id: int, dal: date, al: date, motivo: str = "ferie") -> dict:
     with conn:
-        cur = conn.execute("INSERT INTO ferie(persona_id, dal, al) VALUES (?, ?, ?)",
-                           (persona_id, dal.isoformat(), al.isoformat()))
+        cur = conn.execute("INSERT INTO ferie(persona_id, dal, al, motivo) VALUES (?, ?, ?, ?)",
+                           (persona_id, dal.isoformat(), al.isoformat(), motivo))
     return _ferie_dict(conn.execute("SELECT * FROM ferie WHERE id = ?", (cur.lastrowid,)).fetchone())
 
 
@@ -515,17 +522,29 @@ def elimina_ferie(conn: sqlite3.Connection, ferie_id: int) -> bool:
         return conn.execute("DELETE FROM ferie WHERE id = ?", (ferie_id,)).rowcount > 0
 
 
-def ferie_periodo(conn: sqlite3.Connection, dal: date, al: date) -> dict[int, set[date]]:
-    """Giorni di ferie con data in [dal, al], per id persona."""
-    out: dict[int, set[date]] = {}
-    rows = conn.execute("SELECT persona_id, dal, al FROM ferie WHERE dal <= ? AND al >= ?",
+def _giorni_assenza(conn: sqlite3.Connection, dal: date, al: date, solo_malattia: bool = False):
+    """(id persona, giorno) di ogni assenza con data in [dal, al]."""
+    filtro = " AND motivo = 'malattia'" if solo_malattia else ""
+    rows = conn.execute(f"SELECT persona_id, dal, al FROM ferie WHERE dal <= ? AND al >= ?{filtro}",
                         (al.isoformat(), dal.isoformat())).fetchall()
     for r in rows:
         d = max(dal, date.fromisoformat(r["dal"]))
         fine = min(al, date.fromisoformat(r["al"]))
         while d <= fine:
-            out.setdefault(r["persona_id"], set()).add(d)
+            yield r["persona_id"], d
             d += timedelta(days=1)
+
+
+def giorni_malattia(conn: sqlite3.Connection, dal: date, al: date) -> set[tuple[int, date]]:
+    """Coppie (id persona, giorno) in [dal, al] in cui l'assenza è per malattia o infortunio."""
+    return set(_giorni_assenza(conn, dal, al, solo_malattia=True))
+
+
+def ferie_periodo(conn: sqlite3.Connection, dal: date, al: date) -> dict[int, set[date]]:
+    """Giorni di assenza (ferie o malattia: contano allo stesso modo) con data in [dal, al], per id persona."""
+    out: dict[int, set[date]] = {}
+    for pid, d in _giorni_assenza(conn, dal, al):
+        out.setdefault(pid, set()).add(d)
     return out
 
 
