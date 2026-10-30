@@ -3,7 +3,7 @@ from datetime import timedelta
 import pytest
 
 from cvap.calendario import giorni_settimana
-from cvap.modello import PARTI_TURNO, Persona, parti_turno
+from cvap.modello import PARTI_TURNO, Divieto, Persona, parti_turno
 from cvap.solver import StoricoPersona, genera
 from cvap.vincoli import valida_settimana
 
@@ -316,3 +316,37 @@ def test_ascoli_di_fila_rispetta_la_settimana_precedente():
     r = genera(GIORNI, ["Ascoli"], persone, contesto=contesto, tempo_max=10)
     assert not [a for a in r.assegnazioni
                 if a.persona_id == 1 and a.data == GIORNI[0] and a.postazione == "Ascoli" and a.fascia == "notte"]
+
+
+# --- Ascoli: un giorno e una notte, non due turni della stessa fascia (nel limite del possibile) ---
+
+def ascoli_per_fascia(r):
+    conta = {}
+    for a in r.assegnazioni:
+        if a.postazione == "Ascoli":
+            g, n = conta.get(a.persona_id, (0, 0))
+            conta[a.persona_id] = (g + 1, n) if a.fascia == "giorno" else (g, n + 1)
+    return conta
+
+
+def test_ascoli_giorno_e_notte_alternati_anche_se_le_altre_ore_spingono_verso_le_notti():
+    # chi non fa notti ad Acquasanta e Venarotta, per equilibrare le ore giorno/notte, farebbe solo
+    # notti ad Ascoli: Ascoli deve restare un giorno e una notte
+    persone = staff(12, 8)
+    niente_notti_fuori = (Divieto("Acquasanta", "notte"), Divieto("Venarotta", "notte"))
+    for i in range(4):
+        p = persone[i]
+        persone[i] = Persona(p.id, p.nome, p.tipo, p.qualifica, divieti=niente_notti_fuori)
+    r = genera(GIORNI, STAZIONI_B, persone, tempo_max=30)
+    assert r.scoperti == []
+    sbilanciati = {pid: gn for pid, gn in ascoli_per_fascia(r).items() if abs(gn[0] - gn[1]) > 1}
+    assert sbilanciati == {}
+
+
+def test_ascoli_giorno_e_notte_e_solo_una_preferenza():
+    # chi non può fare notti fa comunque i suoi turni di giorno ad Ascoli: nessun posto scoperto
+    persone = staff(7, 7)
+    persone[0] = Persona(1, "Autista 1", "dipendente", "autista", divieti=(Divieto(turno="notte"),))
+    r = genera(GIORNI, ["Ascoli"], persone, tempo_max=10)
+    assert r.scoperti == []
+    assert ascoli_per_fascia(r).get(1, (0, 0))[1] == 0
