@@ -5,6 +5,7 @@ dominio (`Persona`, `Postazione`, `Assegnazione` con date vere).
 """
 import json
 import os
+import secrets
 import sqlite3
 from datetime import date, timedelta
 
@@ -24,7 +25,15 @@ CREATE TABLE IF NOT EXISTS persone (
     qualifica TEXT NOT NULL,
     attivo INTEGER NOT NULL DEFAULT 1,
     autista_programmati INTEGER NOT NULL DEFAULT 0,  -- soccorritore che può guidare nei Programmati
-    max_ore_settimana INTEGER  -- tetto alle ore lavorate a settimana (NULL = nessun limite)
+    max_ore_settimana INTEGER,  -- tetto alle ore lavorate a settimana (NULL = nessun limite)
+    email TEXT  -- per l'invio dei turni (NULL = nessuna)
+);
+CREATE TABLE IF NOT EXISTS email_inviate (
+    inizio TEXT NOT NULL,       -- lunedì della settimana
+    persona_id INTEGER NOT NULL,
+    impronta TEXT NOT NULL,     -- impronta dei turni personali inviati (per reinviare solo le modifiche)
+    inviata_il TEXT NOT NULL,
+    PRIMARY KEY (inizio, persona_id)
 );
 CREATE TABLE IF NOT EXISTS postazioni (
     id INTEGER PRIMARY KEY,
@@ -224,6 +233,12 @@ def _migra(conn) -> None:
         except Exception:
             if "max_ore_settimana" not in _colonne(conn, "persone"):
                 raise
+    if "email" not in _colonne(conn, "persone"):
+        try:
+            conn.execute("ALTER TABLE persone ADD COLUMN email TEXT")
+        except Exception:
+            if "email" not in _colonne(conn, "persone"):
+                raise
     if "motivo" not in _colonne(conn, "ferie"):
         try:
             conn.execute("ALTER TABLE ferie ADD COLUMN motivo TEXT NOT NULL DEFAULT 'ferie'")
@@ -240,7 +255,7 @@ def _migra(conn) -> None:
 def _persona_dict(r: sqlite3.Row) -> dict:
     return {"id": r["id"], "nome": r["nome"], "tipo": r["tipo"], "qualifica": r["qualifica"],
             "autista_programmati": bool(r["autista_programmati"]), "attivo": bool(r["attivo"]),
-            "max_ore_settimana": r["max_ore_settimana"]}
+            "max_ore_settimana": r["max_ore_settimana"], "email": r["email"]}
 
 
 def a_persona(r: dict | sqlite3.Row, divieti: tuple[Divieto, ...] = ()) -> Persona:
@@ -259,17 +274,23 @@ def get_persona(conn: sqlite3.Connection, persona_id: int) -> dict | None:
 
 
 def crea_persona(conn: sqlite3.Connection, nome: str, tipo: str, qualifica: str,
-                 autista_programmati: bool = False) -> dict:
+                 autista_programmati: bool = False, email: str | None = None) -> dict:
     with conn:
-        cur = conn.execute("INSERT INTO persone(nome, tipo, qualifica, attivo, autista_programmati) "
-                           "VALUES (?, ?, ?, 1, ?)", (nome, tipo, qualifica, int(autista_programmati)))
+        cur = conn.execute("INSERT INTO persone(nome, tipo, qualifica, attivo, autista_programmati, email) "
+                           "VALUES (?, ?, ?, 1, ?, ?)", (nome, tipo, qualifica, int(autista_programmati), email))
     return get_persona(conn, cur.lastrowid)
 
 
+INVARIATA = object()  # valore di `email` che lascia com'è quella salvata
+
+
 def aggiorna_persona(conn: sqlite3.Connection, persona_id: int, nome: str, tipo: str,
-                     qualifica: str, attivo: bool, autista_programmati: bool | None = None) -> dict | None:
-    """`autista_programmati=None` lascia invariato il valore salvato."""
+                     qualifica: str, attivo: bool, autista_programmati: bool | None = None,
+                     email=INVARIATA) -> dict | None:
+    """`autista_programmati=None` e `email=INVARIATA` lasciano invariati i valori salvati."""
     with conn:
+        if email is not INVARIATA:
+            conn.execute("UPDATE persone SET email = ? WHERE id = ?", (email, persona_id))
         if autista_programmati is None:
             cur = conn.execute("UPDATE persone SET nome = ?, tipo = ?, qualifica = ?, attivo = ? WHERE id = ?",
                                (nome, tipo, qualifica, int(attivo), persona_id))
@@ -300,6 +321,7 @@ def elimina_persona(conn: sqlite3.Connection, persona_id: int) -> bool:
             conn.execute("DELETE FROM ferie WHERE persona_id = ?", (persona_id,))
             conn.execute("DELETE FROM indisponibilita_turni WHERE persona_id = ?", (persona_id,))
             conn.execute("DELETE FROM divieti WHERE persona_id = ?", (persona_id,))
+            conn.execute("DELETE FROM email_inviate WHERE persona_id = ?", (persona_id,))
             conn.execute("DELETE FROM persone WHERE id = ?", (persona_id,))
     return True
 
@@ -597,3 +619,38 @@ def imposta_fabbisogno(conn: sqlite3.Connection, voci: list[Fabbisogno]) -> None
                     "DO UPDATE SET quantita = excluded.quantita",
                     (*chiave, f.quantita),
                 )
+
+
+# --- email dei turni -------------------------------------------------------------------
+
+def impronte_inviate(conn: sqlite3.Connection, inizio: date) -> dict[int, str]:
+    """Impronta dei turni inviati a ogni persona per la settimana che inizia `inizio`."""
+    rows = conn.execute("SELECT persona_id, impronta FROM email_inviate WHERE inizio = ?",
+                        (inizio.isoformat(),)).fetchall()
+    return {r["persona_id"]: r["impronta"] for r in rows}
+
+
+def segna_inviata(conn: sqlite3.Connection, inizio: date, persona_id: int, impronta: str, quando: str) -> None:
+    with conn:
+        conn.execute("INSERT OR REPLACE INTO email_inviate(inizio, persona_id, impronta, inviata_il) "
+                     "VALUES (?, ?, ?, ?)", (inizio.isoformat(), persona_id, impronta, quando))
+
+
+def segreto_sessione(conn: sqlite3.Connection) -> str:
+    """Segreto casuale per firmare i cookie di accesso: creato al primo avvio e poi sempre lo stesso."""
+    with conn:
+        conn.execute("INSERT OR IGNORE INTO impostazioni(chiave, valore) VALUES ('segreto_sessione', ?)",
+                     (secrets.token_hex(32),))
+    return conn.execute("SELECT valore FROM impostazioni WHERE chiave = 'segreto_sessione'").fetchone()["valore"]
+
+
+def registra_prova_email(conn: sqlite3.Connection, adesso: float, massimo: int, finestra_s: int) -> bool:
+    """Registra un'email di prova se nell'ultima finestra ce ne sono meno di `massimo`; False se troppe."""
+    r = conn.execute("SELECT valore FROM impostazioni WHERE chiave = 'prove_email'").fetchone()
+    recenti = [t for t in (json.loads(r["valore"]) if r else []) if t > adesso - finestra_s]
+    if len(recenti) >= massimo:
+        return False
+    with conn:
+        conn.execute("INSERT INTO impostazioni(chiave, valore) VALUES ('prove_email', ?) "
+                     "ON CONFLICT(chiave) DO UPDATE SET valore = excluded.valore", (json.dumps(recenti + [adesso]),))
+    return True

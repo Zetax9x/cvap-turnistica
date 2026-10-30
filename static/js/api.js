@@ -42,6 +42,10 @@ async function richiesta(metodo, percorso, corpo) {
   if (testo) {
     try { body = JSON.parse(testo); } catch { body = null; }
   }
+  if (risposta.status === 401 && percorso !== "/accesso") {
+    // sessione scaduta o mai aperta: l'app mostra la schermata della password
+    window.dispatchEvent(new CustomEvent("cvap:accesso-richiesto"));
+  }
   if (!risposta.ok) throw new ApiError(dettaglio(body, risposta.status), risposta.status);
   return body;
 }
@@ -49,6 +53,15 @@ async function richiesta(metodo, percorso, corpo) {
 const enc = encodeURIComponent;
 
 export const api = {
+  sessione: () => richiesta("GET", "/sessione"),
+  accedi: (password) => richiesta("POST", "/accesso", { password }),
+  esci: () => richiesta("POST", "/uscita"),
+
+  statoEmail: (data) => richiesta("GET", `/settimane/${enc(data)}/email`),
+  inviaEmail: (data, soloModifiche) =>
+    richiesta("POST", `/settimane/${enc(data)}/email`, { solo_modifiche: !!soloModifiche }),
+  provaEmail: (data, indirizzo) => richiesta("POST", `/settimane/${enc(data)}/email/prova`, { indirizzo }),
+
   persone: () => richiesta("GET", "/persone"),
   creaPersona: (dati) => richiesta("POST", "/persone", dati),
   aggiornaPersona: (id, dati) => richiesta("PUT", `/persone/${enc(id)}`, dati),

@@ -94,6 +94,7 @@ function renderTabella(elenco) {
       el("th", { scope: "col" }, "Tipo"),
       el("th", { scope: "col" }, "Qualifica"),
       el("th", { scope: "col", title: DESCR_AUTISTA_PROG }, "Autista programmati"),
+      el("th", { scope: "col" }, "Email"),
       el("th", { scope: "col" }, "Stato"),
       el("th", { scope: "col", class: "azioni" }, "Azioni"))),
     tbody);
@@ -117,6 +118,8 @@ function renderFormNuova() {
   const tipo = selectTipo("nuova-tipo", "dipendente");
   const qual = selectQualifica("nuova-qualifica", "soccorritore");
   const autProg = checkAutistaProg("nuova-autista-prog", false);
+  const email = el("input", { id: "nuova-email", name: "email", type: "email", autocomplete: "off", maxlength: "254",
+    placeholder: "facoltativa" });
   const invia = el("button", { type: "submit", class: "btn btn-primary" }, "Aggiungi persona");
   return el("form", {
     class: "card form-inline", "aria-labelledby": "titolo-nuova",
@@ -128,6 +131,7 @@ function renderFormNuova() {
       try {
         const p = await api.creaPersona({
           nome: valore, tipo: tipo.value, qualifica: qual.value, autista_programmati: autProg.checked,
+          email: email.value.trim(),
         });
         toast(`${p && p.nome ? p.nome : valore} aggiunto.`, "ok");
         await ricarica();
@@ -144,6 +148,7 @@ function renderFormNuova() {
     el("div", { class: "campo campo-largo" }, el("label", { for: "nuova-nome" }, "Nome e cognome"), nome),
     el("div", { class: "campo" }, el("label", { for: "nuova-tipo" }, "Tipo"), tipo),
     el("div", { class: "campo" }, el("label", { for: "nuova-qualifica" }, "Qualifica"), qual),
+    el("div", { class: "campo campo-largo" }, el("label", { for: "nuova-email" }, "Email (per ricevere i turni)"), email),
     el("div", { class: "campo campo-check" },
       el("label", { class: "check", for: "nuova-autista-prog", title: DESCR_AUTISTA_PROG }, autProg, " Autista programmati")),
     el("div", { class: "campo campo-azione" }, invia)));
@@ -157,6 +162,7 @@ function rigaLettura(p) {
     el("td", {}, p.autista_programmati
       ? el("span", { class: "badge badge-programmati", title: DESCR_AUTISTA_PROG }, "Sì")
       : el("span", { class: "muted" }, "No")),
+    el("td", { class: "cella-email" }, p.email || el("span", { class: "muted" }, "—")),
     el("td", {}, p.attivo ? el("span", { class: "badge badge-attivo" }, "Attivo") : el("span", { class: "badge badge-inattivo" }, "Non attivo")),
     el("td", { class: "azioni" },
       el("button", {
@@ -178,6 +184,8 @@ function rigaModifica(p) {
   qual.setAttribute("aria-label", "Qualifica");
   const attivo = el("input", { id: `${pre}-attivo`, type: "checkbox", checked: !!p.attivo });
   const autProg = checkAutistaProg(`${pre}-autista-prog`, p.autista_programmati);
+  const email = el("input", { id: `${pre}-email`, type: "email", value: p.email || "", maxlength: "254",
+    "aria-label": "Email", placeholder: "email" });
 
   const salva = async () => {
     const valore = nome.value.trim();
@@ -185,7 +193,7 @@ function rigaModifica(p) {
     try {
       await api.aggiornaPersona(p.id, {
         nome: valore, tipo: tipo.value, qualifica: qual.value, attivo: attivo.checked,
-        autista_programmati: autProg.checked,
+        autista_programmati: autProg.checked, email: email.value.trim(),
       });
       stato.inModifica = null;
       toast("Modifiche salvate.", "ok");
@@ -205,6 +213,7 @@ function rigaModifica(p) {
     el("td", {}, tipo),
     el("td", {}, qual),
     el("td", {}, el("label", { class: "check", for: `${pre}-autista-prog`, title: DESCR_AUTISTA_PROG }, autProg, " Autista programmati")),
+    el("td", {}, email),
     el("td", {}, el("label", { class: "check", for: `${pre}-attivo` }, attivo, " Attivo")),
     el("td", { class: "azioni" },
       el("button", { type: "button", class: "btn btn-small btn-primary", onclick: salva }, "Salva"),

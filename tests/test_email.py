@@ -54,7 +54,7 @@ def turno(c, pid, data, postazione="Acquasanta", fascia="giorno", ruolo="autista
     return r.json()
 
 
-def testo(m):
+def contenuto(m):
     """Tutto il testo del messaggio (parte semplice e HTML)."""
     return "\n".join(p.get_content() for p in m.walk() if p.get_content_type() in ("text/plain", "text/html"))
 
@@ -112,7 +112,7 @@ def test_ognuno_riceve_i_suoi_turni_e_il_tabellone(client, postino):
     per = {m["To"]: m for m in postino.inviati}
     assert set(per) == {"mario@example.org", "luca@example.org"}
     assert "19/10" in per["mario@example.org"]["Subject"]
-    t = testo(per["mario@example.org"])
+    t = contenuto(per["mario@example.org"])
     assert "I tuoi turni" in t and "Venarotta" in t and "Notte" in t
     assert "Luca" in t  # nel tabellone completo c'è anche il turno di Luca
     assert "calendar" not in per["mario@example.org"].get_content_type()
@@ -126,7 +126,7 @@ def test_chi_non_ha_turni_riceve_comunque_il_tabellone(client, postino):
     client.post(f"/api/settimane/{LUNEDI}/conferma")
     client.post(f"/api/settimane/{LUNEDI}/email", json={})
     [anna] = [m for m in postino.inviati if m["To"] == "anna@example.org"]
-    t = testo(anna)
+    t = contenuto(anna)
     assert "Nessun turno" in t and "Mario" in t
 
 
@@ -177,7 +177,7 @@ def test_email_di_prova_anche_in_bozza(client, postino):
     assert r.status_code == 200, r.text
     [m] = postino.inviati
     assert m["To"] == "coordinatore@example.org" and "prova" in m["Subject"].lower()
-    assert "Mario" in testo(m)
+    assert "Mario" in contenuto(m)
     # la prova non segna nessuno come avvisato
     assert client.get(f"/api/settimane/{LUNEDI}/email").json()["destinatari"][0]["stato"] == "da_inviare"
 
@@ -201,3 +201,23 @@ def test_l_html_e_sicuro_con_nomi_strani(client, postino):
     [m] = postino.inviati
     html = next(p.get_content() for p in m.walk() if p.get_content_type() == "text/html")
     assert "<b>Mario</b>" not in html and "&lt;b&gt;Mario&lt;/b&gt;" in html
+
+
+# --- correzioni dalla revisione di sicurezza ----------------------------------------------
+
+@pytest.mark.parametrize("indirizzo", ["a@x.org,b@y.org", "<a@x.org>", '"x"@y.org', "a@x.org;b@y.org", "a b@x.org"])
+def test_un_solo_indirizzo_semplice(client, indirizzo):
+    r = client.post("/api/persone", json={"nome": "X", "tipo": "dipendente", "qualifica": "autista", "email": indirizzo})
+    assert r.status_code == 422
+    r = client.post(f"/api/settimane/{LUNEDI}/email/prova", json={"indirizzo": indirizzo})
+    assert r.status_code == 422
+
+
+def test_le_prove_hanno_un_limite_orario(client, postino):
+    mario = crea(client, "Mario", "mario@example.org")
+    turno(client, mario["id"], "2026-10-20")
+    for _ in range(10):
+        assert client.post(f"/api/settimane/{LUNEDI}/email/prova", json={"indirizzo": "c@example.org"}).status_code == 200
+    r = client.post(f"/api/settimane/{LUNEDI}/email/prova", json={"indirizzo": "c@example.org"})
+    assert r.status_code == 429
+    assert len(postino.inviati) == 10

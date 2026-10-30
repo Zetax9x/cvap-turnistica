@@ -1,6 +1,7 @@
 // Vista "Settimana": disponibilità, griglia turni, generazione, conferma, violazioni, riepilogo.
 
 import { api } from "./api.js";
+import { apriInvio, apriProva } from "./email.js";
 import {
   el, clear, toast, toastErrore, chiediConferma, addDays, mondayOf, todayISO, ddmm, dataLunga,
   dataEstesa, indiceGiorno, GIORNI_BREVI, etichetta, formatOre, formatSaldo, orarioTurno,
@@ -223,6 +224,10 @@ function renderToolbar(s) {
         }),
         " s"),
       el("button", {
+        type: "button", class: "btn", disabled: dis || !haTurni(s), onclick: () => apriProva(stato.data),
+        title: "Ricevi l'email dei turni come la riceverà il personale",
+      }, "Invia una prova a me"),
+      el("button", {
         type: "button", class: "btn btn-danger", disabled: confermata || dis || !haGenerati, onclick: onRimuoviGenerati,
       }, "Rimuovi i turni generati")));
   return el("div", { class: "toolbar", role: "group", "aria-label": "Azioni settimana" },
@@ -230,7 +235,10 @@ function renderToolbar(s) {
       type: "button", class: "btn btn-primary btn-grande", disabled: confermata || dis, onclick: onGenera,
     }, haGenerati ? "Rigenera turni" : "Genera turni"),
     confermata
-      ? el("button", { type: "button", class: "btn btn-grande", disabled: dis, onclick: onRiapri }, "Riapri")
+      ? [el("button", {
+          type: "button", class: "btn btn-primary btn-grande", disabled: dis, onclick: () => apriInvio(stato.data),
+        }, "Invia i turni via email"),
+        el("button", { type: "button", class: "btn btn-grande", disabled: dis, onclick: onRiapri }, "Riapri")]
       : el("button", { type: "button", class: "btn btn-success btn-grande", disabled: dis || s.stato === "nuova" && !s.assegnazioni.length, onclick: onConferma }, "Conferma settimana"),
     altre,
     el("span", { class: "toolbar-spacer" }),
