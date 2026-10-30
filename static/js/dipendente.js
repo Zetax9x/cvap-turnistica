@@ -72,14 +72,15 @@ function render() {
   const root = clear(stato.root);
   root.append(el("header", { class: "week-header" },
     el("div", { class: "week-title" },
-      el("h1", {}, persona ? persona.nome : "Turni dipendente",
-        el("span", { class: "week-range" }, ` ${ddmm(s.inizio)} – ${dataLunga(s.fine)}`)),
-      el("span", { class: `badge badge-stato badge-${s.stato}` }, etichetta("stato", s.stato))),
+      el("h1", {}, persona ? persona.nome : "Turni dipendente"),
+      el("div", { class: "week-meta" },
+        el("span", { class: "week-range muted" }, `${ddmm(s.inizio)} – ${dataLunga(s.fine)}`),
+        el("span", { class: `badge badge-stato badge-${s.stato}` }, etichetta("stato", s.stato)))),
     el("div", { class: "week-nav", role: "group", "aria-label": "Scelta dipendente e settimana" },
       el("label", { class: "sr-only", for: "dip-persona" }, "Dipendente"), select,
-      el("button", { type: "button", class: "btn", "aria-label": "Settimana precedente", onclick: () => vaiA(stato.personaId, addDays(stato.data, -7)) }, "‹ Prec."),
+      el("button", { type: "button", class: "btn btn-freccia", "aria-label": "Settimana precedente", title: "Settimana precedente", onclick: () => vaiA(stato.personaId, addDays(stato.data, -7)) }, "‹"),
       el("button", { type: "button", class: "btn", onclick: () => vaiA(stato.personaId, todayISO()) }, "Oggi"),
-      el("button", { type: "button", class: "btn", "aria-label": "Settimana successiva", onclick: () => vaiA(stato.personaId, addDays(stato.data, 7)) }, "Succ. ›"),
+      el("button", { type: "button", class: "btn btn-freccia", "aria-label": "Settimana successiva", title: "Settimana successiva", onclick: () => vaiA(stato.personaId, addDays(stato.data, 7)) }, "›"),
       el("label", { class: "sr-only", for: "dip-data" }, "Vai alla settimana del giorno"), inputData,
       persona ? el("button", { type: "button", class: "btn btn-ghost", onclick: () => window.print() }, "Stampa") : null)));
 
@@ -94,10 +95,6 @@ function render() {
       s.stato === "nuova" ? "Turni non ancora generati per questa settimana." : "Settimana in bozza: i turni possono ancora cambiare."));
   }
   root.append(...renderTurni(s, persona), renderTotali(s, persona));
-}
-
-function descriviTurno(a) {
-  return `${orarioTurno(a.fascia, a.segmento)} · ${a.postazione} · ${etichetta("ruolo", a.ruolo)}`;
 }
 
 /** Per ogni giorno: turni della persona e contenuto da mostrare (turni, ferie, indisponibilità o riposo). */
@@ -117,7 +114,14 @@ function giorniPersona(s, persona) {
     const contenuto = () => {
       if (turni.length) {
         return el("ul", { class: "turni-persona" }, turni.map((a) => el("li", { class: `turno-${a.fascia}` },
-          el("span", { class: `chip chip-${a.origine}` }, el("span", { class: "chip-nome" }, descriviTurno(a))))));
+          el("span", { class: `chip chip-${a.origine}` }, el("span", { class: "chip-nome" },
+            el("span", { class: "turno-orario" },
+              el("span", { class: "fascia-icona", "aria-hidden": "true" }, a.fascia === "notte" ? "☾ " : "☀ "),
+              orarioTurno(a.fascia, a.segmento)),
+            el("span", { class: "turno-sep" }, " · "),
+            el("span", { class: "turno-postazione" }, a.postazione),
+            el("span", { class: "turno-sep" }, " · "),
+            el("span", { class: "turno-ruolo" }, etichetta("ruolo", a.ruolo)))))));
       }
       if (ferie.has(g)) return el("span", { class: "badge badge-ferie" }, "Ferie");
       return el("span", { class: "muted" }, indisp.has(g) ? `Indisponibile: ${etichettaParti(indisp.get(g)).toLowerCase()}` : "Riposo");

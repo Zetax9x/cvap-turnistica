@@ -87,7 +87,7 @@ function render() {
 
 function renderTabella(elenco) {
   const tbody = el("tbody", {}, elenco.map((p) => (stato.inModifica === p.id ? rigaModifica(p) : rigaLettura(p))));
-  return el("div", { class: "table-scroll" }, el("table", { class: "tabella tabella-persone" },
+  const tabella = el("table", { class: "tabella tabella-persone" },
     el("caption", { class: "sr-only" }, "Elenco del personale"),
     el("thead", {}, el("tr", {},
       el("th", { scope: "col" }, "Nome"),
@@ -96,7 +96,20 @@ function renderTabella(elenco) {
       el("th", { scope: "col", title: DESCR_AUTISTA_PROG }, "Autista programmati"),
       el("th", { scope: "col" }, "Stato"),
       el("th", { scope: "col", class: "azioni" }, "Azioni"))),
-    tbody));
+    tbody);
+  ruoliTabella(tabella);
+  return el("div", { class: "table-scroll" }, tabella);
+}
+
+/** Ruoli espliciti: sul telefono la tabella diventa un elenco di schede (display flex) e alcuni
+ *  browser (Safari) altrimenti perdono la struttura di tabella per i lettori di schermo. */
+function ruoliTabella(tabella) {
+  tabella.setAttribute("role", "table");
+  for (const gruppo of tabella.querySelectorAll("thead, tbody")) gruppo.setAttribute("role", "rowgroup");
+  for (const riga of tabella.querySelectorAll("tr")) riga.setAttribute("role", "row");
+  for (const th of tabella.querySelectorAll("thead th")) th.setAttribute("role", "columnheader");
+  for (const th of tabella.querySelectorAll("tbody th")) th.setAttribute("role", "rowheader");
+  for (const td of tabella.querySelectorAll("td")) td.setAttribute("role", "cell");
 }
 
 function renderFormNuova() {

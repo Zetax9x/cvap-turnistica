@@ -3,8 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light dark">
+  <meta name="color-scheme" content="light">
   <title>CVAP Turnistica</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/img/favicon-32.png">
+  <link rel="apple-touch-icon" href="/static/img/icona-180.png">
   <link rel="stylesheet" href="/static/style.css">
   <script type="module" src="/static/app.js"></script>
 </head>
@@ -12,15 +14,16 @@
   <a class="skip-link" href="#main">Vai al contenuto</a>
   <header class="app-header">
     <div class="brand">
-      <span class="brand-mark" aria-hidden="true">+</span>
-      <span class="brand-text"><strong>CVAP</strong> Turnistica</span>
+      <img class="brand-logo" src="/static/img/logo-croce-verde.png" width="118" height="52"
+           alt="Croce Verde Ascoli Piceno">
+      <span class="brand-text">Turnistica</span>
     </div>
     <nav class="nav" aria-label="Sezioni">
-      <a href="#settimana" data-view="settimana">Settimana</a>
-      <a href="#dipendente" data-view="dipendente">Turni dipendente</a>
-      <a href="#personale" data-view="personale">Personale</a>
-      <a href="#statistiche" data-view="statistiche">Statistiche</a>
-      <a href="#impostazioni" data-view="impostazioni">Impostazioni</a>
+      <a href="#settimana" data-view="settimana"><svg class="nav-icona" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3v3M17 3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></svg><span>Settimana</span></a>
+      <a href="#dipendente" data-view="dipendente"><svg class="nav-icona" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg><span><span class="nav-testo-lungo">Turni dipendente</span><span class="nav-testo-breve">Dipendente</span></span></a>
+      <a href="#personale" data-view="personale"><svg class="nav-icona" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c2.4.6 4 2.4 4 5.2"/></svg><span>Personale</span></a>
+      <a href="#statistiche" data-view="statistiche"><svg class="nav-icona" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Statistiche</span></a>
+      <a href="#impostazioni" data-view="impostazioni"><svg class="nav-icona" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span>Impostazioni</span></a>
     </nav>
   </header>
 
