@@ -41,7 +41,7 @@ export async function apriInvio(data) {
   }
   const d = finestra();
   testa(d, "Invia i turni via email",
-    "Ognuno riceve i propri turni e il tabellone completo della settimana.");
+    "Chi è di turno questa settimana (dipendente o volontario) riceve i propri turni e il tabellone completo.");
 
   if (!info.configurato) {
     d.append(el("div", { class: "banner banner-info" }, info.motivo || NON_CONFIGURATO));
@@ -56,7 +56,13 @@ export async function apriInvio(data) {
         el("span", { class: "muted email-indirizzo" }, x.email),
         el("span", { class: `badge ${STATI[x.stato].classe}` }, STATI[x.stato].testo))))));
   } else {
-    d.append(el("p", { class: "dialog-text" }, "Nessuno ha ancora un indirizzo email: aggiungilo in Personale."));
+    d.append(el("p", { class: "dialog-text" }, "Nessuno di chi è di turno ha un indirizzo email: aggiungilo in Personale."));
+  }
+  if ((info.responsabili || []).length) {
+    d.append(el("section", { class: "dialog-section" },
+      el("h3", {}, `Responsabili (${info.responsabili.length})`),
+      el("p", { class: "muted" }, "Ricevono anche turni della settimana e liberi: ",
+        info.responsabili.map((r) => r.nome ? `${r.nome} (${r.email})` : r.email).join(", "), ".")));
   }
   if (info.senza_email.length) {
     d.append(el("section", { class: "dialog-section" },
@@ -67,7 +73,9 @@ export async function apriInvio(data) {
   const azioni = el("div", { class: "dialog-actions" },
     el("button", { type: "button", class: "btn", onclick: () => d.close() }, "Annulla"));
   const puoInviare = info.configurato && info.stato_settimana === "confermata";
+  const nResp = (info.responsabili || []).length;
   const parziale = daMandare.length && daMandare.length < lista.length;
+  const conResp = (n) => (nResp ? `${n} + ${nResp} ${nResp === 1 ? "responsabile" : "responsabili"}` : String(n));
   if (parziale) {
     azioni.append(el("button", {
       type: "button", class: "btn btn-primary", disabled: !puoInviare,
@@ -75,9 +83,9 @@ export async function apriInvio(data) {
     }, `Invia solo modifiche e mancanti (${daMandare.length})`));
   }
   azioni.append(el("button", {
-    type: "button", class: parziale ? "btn" : "btn btn-primary", disabled: !puoInviare || !lista.length,
+    type: "button", class: parziale ? "btn" : "btn btn-primary", disabled: !puoInviare || !(lista.length + nResp),
     onclick: () => invia(d, data, false),
-  }, `Invia a tutti (${lista.length})`));
+  }, `Invia a tutti (${conResp(lista.length)})`));
   d.append(azioni);
   d.showModal();
 }

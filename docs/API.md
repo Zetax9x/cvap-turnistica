@@ -120,11 +120,20 @@ Con `APP_PASSWORD` impostata (`create_app(..., password=...)`) tutte le API tran
   `[{persona_id, nome, attivo, totale, giorni: [{totale, mattina, pomeriggio, notte} x7 (lunedì..domenica)]}]`:
   dipendenti attivi più i disattivati con indisponibilità nel periodo, in ordine di nome; `totale` = giorni con almeno una parte.
 
-- `GET /settimane/{data}/email` → `{configurato, stato_settimana, destinatari: [{persona_id, nome, email, stato}],
+- `GET /settimane/{data}/email` (destinatari = chi è di turno nella settimana, più chi l'aveva già ricevuta e ora non ha turni) →
+  `{configurato, stato_settimana, destinatari: [{persona_id, nome, email, stato}],
   senza_email: [nome]}`; `stato`: `da_inviare` | `inviata` | `cambiata` (turni diversi da quelli inviati, per impronta)
 - `POST /settimane/{data}/email` `{solo_modifiche?}` → `{inviate: [{persona_id, nome, email}], errori: [{…, errore}]}`;
   400 se la settimana non è confermata o l'invio non è configurato. Email: turni personali + tabellone (`cvap/email_turni.py`);
   a chi ha `stato = cambiata` l'oggetto inizia con "AGGIORNAMENTO". Le impronte inviate stanno in `email_inviate`.
+- Riepiloghi (Impostazioni): `GET /destinatari` → `[{id, email, nome, contenuti, responsabile}]` ·
+  `POST /destinatari` `{email, nome?, contenuti, responsabile?}` → 201 (400 se l'email c'è già, 422 se contenuti vuoti o
+  non validi) · `PUT /destinatari/{id}` (stesso corpo) · `DELETE /destinatari/{id}` → 204 · 404.
+  `contenuti` ⊆ `turni`, `liberi`, `indisponibilita`, `statistiche`, `statistiche_indisponibilita`.
+  `POST /destinatari/invia` `{data}` → `{inviate, errori}`: ognuno riceve un'email con le sole parti scelte
+  (`email_turni.componi_riepilogo`; "(bozza)" nell'oggetto se la settimana non è confermata).
+  Con `POST /settimane/{data}/email` i `responsabile` ricevono anche turni + liberi (con `solo_modifiche`: solo se
+  qualche turno è cambiato); `GET /settimane/{data}/email` li elenca in `responsabili`.
 - `POST /settimane/{data}/email/prova` `{indirizzo}` → `{inviata_a, esempio}`: l'email di una persona d'esempio, anche in bozza.
 
 `GET /` → `static/index.html`; `/static/*` → file statici.

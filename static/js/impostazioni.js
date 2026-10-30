@@ -1,6 +1,7 @@
 // Vista "Impostazioni": data di riferimento della settimana A, scarto ore e parametri dei dipendenti.
 
 import { api } from "./api.js";
+import { mostraRiepiloghi } from "./riepiloghi.js";
 import { el, clear, toast, toastErrore, mondayOf, todayISO, dataLunga, parseISO } from "./util.js";
 
 const SCARTO_PREDEFINITO = 12;
@@ -83,12 +84,16 @@ function render(imp) {
     anteprima),
   el("div", { class: "form-actions" }, invia));
 
+  const sezioneRiepiloghi = el("section", { class: "card card-larga", "aria-labelledby": "titolo-riepiloghi" },
+    el("p", { class: "muted" }, "Caricamento degli indirizzi…"));
+  mostraRiepiloghi(sezioneRiepiloghi);
   clear(root).append(
     el("header", { class: "view-header" }, el("h1", {}, "Impostazioni")),
     form,
     renderScarto(imp),
     renderMassimiOre(),
     renderDivieti(),
+    sezioneRiepiloghi,
     el("section", { class: "card info", "aria-labelledby": "titolo-info" },
       el("h2", { id: "titolo-info", class: "card-title" }, "Come funziona"),
       el("ul", {},

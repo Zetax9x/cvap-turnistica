@@ -98,6 +98,21 @@ class ProvaEmailIn(BaseModel):
     indirizzo: Annotated[str, BeforeValidator(_email)]
 
 
+Contenuto = Literal["turni", "liberi", "indisponibilita", "statistiche", "statistiche_indisponibilita"]
+
+
+class DestinatarioIn(BaseModel):
+    email: Annotated[str, BeforeValidator(_email)]
+    nome: Annotated[str, StringConstraints(strip_whitespace=True, max_length=100,
+                                           pattern=r"^[^\x00-\x1f\x7f]*$")] | None = None
+    contenuti: Annotated[list[Contenuto], Field(min_length=1, max_length=5)]
+    responsabile: bool = False  # riceve turni e liberi con "Invia i turni via email" della settimana
+
+
+class InvioRiepilogoIn(BaseModel):
+    data: DataValida  # un giorno qualsiasi della settimana
+
+
 class ParametriIn(BaseModel):
     max_ore_settimana: int | None = Field(ge=1, le=ORE_MAX_SETTIMANA)  # obbligatorio; null = solo il tetto di 72h
 
@@ -674,11 +689,12 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
 
     # --- email dei turni ---
     def destinatari(conn, s: dict) -> tuple[list[dict], list[str]]:
-        """Persone con email (dipendenti attivi, volontari attivi e chiunque abbia turni questa settimana)
-        e nomi di chi non ha l'email, con lo stato dell'invio."""
+        """Chi è di turno questa settimana (dipendente o volontario) e ha l'email, con lo stato dell'invio,
+        e i nomi di chi è di turno ma non ha l'email. Chi l'aveva già ricevuta e ora non ha più turni resta
+        nell'elenco, così riceve l'aggiornamento."""
         con_turni = {a["persona_id"] for a in s["assegnazioni"]}
-        persone = [p for p in db.lista_persone(conn) if p["attivo"] or p["id"] in con_turni]
         inviate = db.impronte_inviate(conn, date.fromisoformat(s["inizio"]))
+        persone = [p for p in db.lista_persone(conn) if p["id"] in con_turni or p["id"] in inviate]
         lista = []
         for p in persone:
             if not p["email"]:
@@ -687,7 +703,7 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
             stato = "da_inviare" if p["id"] not in inviate else ("inviata" if inviate[p["id"]] == impr else "cambiata")
             lista.append({"persona_id": p["id"], "nome": p["nome"], "email": p["email"], "stato": stato,
                           "_persona": p, "_impronta": impr})
-        senza = [p["nome"] for p in persone if not p["email"] and (p["tipo"] == "dipendente" or p["id"] in con_turni)]
+        senza = [p["nome"] for p in persone if not p["email"] and p["id"] in con_turni]
         return lista, senza
 
     def _pubblico(d: dict) -> dict:
@@ -700,7 +716,9 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
         return {"configurato": bool(postino.configurato),
                 "motivo": None if postino.configurato else _motivo_non_configurato(postino),
                 "stato_settimana": s["stato"],
-                "destinatari": [_pubblico(d) for d in lista], "senza_email": senza}
+                "destinatari": [_pubblico(d) for d in lista], "senza_email": senza,
+                "responsabili": [{"email": r["email"], "nome": r["nome"]}
+                                 for r in db.lista_destinatari(conn) if r["responsabile"]]}
 
     @app.post("/api/settimane/{data}/email")
     def invia_email(data: str, body: InvioEmailIn, conn: Conn):
@@ -714,6 +732,15 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
         if body.solo_modifiche:
             lista = [d for d in lista if d["stato"] != "inviata"]
         messaggi = [email_turni.componi(s, d["_persona"], aggiornamento=d["stato"] == "cambiata") for d in lista]
+        # i responsabili (Impostazioni) ricevono turni e liberi: sempre con l'invio completo,
+        # con le sole modifiche solo se qualche turno è davvero cambiato
+        responsabili = []
+        if not body.solo_modifiche or any(d["stato"] == "cambiata" for d in lista):
+            # chi è anche nel personale riceve già la sua email (con il tabellone): niente doppione
+            gia = {d["email"].lower() for d in lista}
+            responsabili = [r for r in db.lista_destinatari(conn) if r["responsabile"] and r["email"].lower() not in gia]
+        messaggi += [email_turni.componi_riepilogo(s, ["turni", "liberi"], r["email"], r["nome"],
+                                                   aggiornamento=body.solo_modifiche) for r in responsabili]
         esito = postino.invia(messaggi)
         quando = datetime.now().isoformat(timespec="seconds")
         inviate, errori = [], []
@@ -724,6 +751,65 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                 inviate.append({"persona_id": d["persona_id"], "nome": d["nome"], "email": d["email"]})
             else:
                 errori.append({"persona_id": d["persona_id"], "nome": d["nome"], "email": d["email"], "errore": errore})
+        for r in responsabili:
+            voce = {"persona_id": None, "nome": r["nome"] or r["email"], "email": r["email"]}
+            errore = esito.get(r["email"], "non inviata")
+            (inviate if errore is None else errori).append(voce if errore is None else {**voce, "errore": errore})
+        return {"inviate": inviate, "errori": errori}
+
+    # --- riepiloghi per gli indirizzi di Impostazioni ---
+    @app.get("/api/destinatari")
+    def lista_destinatari(conn: Conn):
+        return db.lista_destinatari(conn)
+
+    @app.post("/api/destinatari", status_code=201)
+    def crea_destinatario(body: DestinatarioIn, conn: Conn):
+        if db.destinatario_con_email(conn, body.email):
+            raise _errore(f"{body.email} è già nell'elenco")
+        try:
+            return db.crea_destinatario(conn, body.email, body.nome or None, list(dict.fromkeys(body.contenuti)),
+                                        body.responsabile)
+        except sqlite3.IntegrityError:  # aggiunto nel frattempo da un'altra richiesta
+            raise _errore(f"{body.email} è già nell'elenco") from None
+
+    @app.put("/api/destinatari/{dest_id}")
+    def aggiorna_destinatario(dest_id: IdPath, body: DestinatarioIn, conn: Conn):
+        if db.destinatario_con_email(conn, body.email, escluso=dest_id):
+            raise _errore(f"{body.email} è già nell'elenco")
+        try:
+            d = db.aggiorna_destinatario(conn, dest_id, body.email, body.nome or None,
+                                         list(dict.fromkeys(body.contenuti)), body.responsabile)
+        except sqlite3.IntegrityError:
+            raise _errore(f"{body.email} è già nell'elenco") from None
+        if d is None:
+            raise HTTPException(404, "Indirizzo non trovato")
+        return d
+
+    @app.delete("/api/destinatari/{dest_id}", status_code=204)
+    def elimina_destinatario(dest_id: IdPath, conn: Conn):
+        if not db.elimina_destinatario(conn, dest_id):
+            raise HTTPException(404, "Indirizzo non trovato")
+        return Response(status_code=204)
+
+    @app.post("/api/destinatari/invia")
+    def invia_riepiloghi(body: InvioRiepilogoIn, conn: Conn):
+        if not postino.configurato:
+            raise _errore(_motivo_non_configurato(postino))
+        elenco = db.lista_destinatari(conn)
+        if not elenco:
+            raise _errore("Nessun indirizzo: aggiungine almeno uno")
+        s = payload_settimana(conn, lunedi(body.data))
+        serve = {c for d in elenco for c in d["contenuti"]}
+        stat = statistiche(conn) if "statistiche" in serve else None
+        stat_ind = statistiche_indisponibilita(conn) if "statistiche_indisponibilita" in serve else None
+        messaggi = [email_turni.componi_riepilogo(s, d["contenuti"], d["email"], d["nome"],
+                                                  statistiche=stat, statistiche_indisp=stat_ind) for d in elenco]
+        esito = postino.invia(messaggi)
+        inviate, errori = [], []
+        for d in elenco:
+            errore = esito.get(d["email"], "non inviata")
+            voce = {"id": d["id"], "nome": d["nome"] or d["email"], "email": d["email"]}
+            (inviate if errore is None else errori).append(voce if errore is None else {**voce, "errore": errore})
         return {"inviate": inviate, "errori": errori}
 
     @app.post("/api/settimane/{data}/email/prova")

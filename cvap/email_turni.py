@@ -239,3 +239,174 @@ def componi(s: dict, persona: dict, indirizzo: str | None = None, *, aggiornamen
     m.set_content(_testo(s, persona["nome"], persona["id"], intestazione + (f"\n{nota}" if nota else "")))
     m.add_alternative(_html(s, persona["nome"], persona["id"], intestazione, nota), subtype="html")
     return m
+
+
+# --- riepiloghi per gli indirizzi di Impostazioni ----------------------------------------------
+
+CONTENUTI = ("turni", "liberi", "indisponibilita", "statistiche", "statistiche_indisponibilita")
+TITOLI = {
+    "turni": "Turni della settimana",
+    "liberi": "Dipendenti liberi",
+    "indisponibilita": "Indisponibilità della settimana",
+    "statistiche": "Statistiche dei turni",
+    "statistiche_indisponibilita": "Statistiche delle indisponibilità",
+}
+PARTI = {"mattina": "mattina", "pomeriggio": "pomeriggio", "notte": "notte"}
+AVVISI = {"smonto_notte": "smonto notte", "notte": "notte"}
+_TH = "border:1px solid #9aa3af;padding:5px 6px;background:#e9eef6;font-size:12px;"
+_TC = "border:1px solid #c3cbd6;padding:5px 6px;font-size:12px;vertical-align:top;"
+
+
+def _nomi(s: dict) -> dict[int, str]:
+    nomi = {r["persona_id"]: r["nome"] for r in s.get("riepilogo", [])}
+    for g in s.get("liberi", []):
+        for chiave in ("liberi", "indisponibili", "ferie"):
+            for x in g[chiave]:
+                nomi.setdefault(x["persona_id"], x["nome"])
+    return nomi
+
+
+def _testa_giorni(s: dict, prima: str) -> str:
+    return f'<tr><th style="{_TH}">{prima}</th>' + "".join(
+        f'<th style="{_TH}{"background:#fbeccb;" if date.fromisoformat(g).weekday() >= 5 else ""}">'
+        f'{GIORNI_BREVI[date.fromisoformat(g).weekday()]} {_dm(g)}</th>' for g in s["giorni"]) + "</tr>"
+
+
+def _voce(nome: str, nota: str = "", colore: str = "#4d5868") -> str:
+    extra = f' <i style="color:{colore};">({_e(nota)})</i>' if nota else ""
+    return f"<div><b>{_e(nome)}</b>{extra}</div>"
+
+
+def _sezione_liberi(s: dict) -> tuple[str, str]:
+    righe_html, righe_txt = [], []
+    for chiave, titolo, bg in (("liberi", "Liberi", "#e3f2e6"), ("indisponibili", "Indisponibili", "#fdf0d5"),
+                               ("ferie", "Ferie / malattia", "#e3eafa")):
+        celle = []
+        for g in s.get("liberi", []):
+            voci = []
+            for x in g[chiave]:
+                note = [", ".join(PARTI[p] for p in x.get("parti", []))] if x.get("parti") else []
+                note += [AVVISI.get(a, a) for a in x.get("avvisi", [])]
+                if x.get("motivo"):
+                    note.append("malattia" if x["motivo"] == "malattia" else "ferie")
+                voci.append((x["nome"], ", ".join(n for n in note if n)))
+            celle.append("".join(_voce(n, nota) for n, nota in voci) or "—")
+            righe_txt.append(f"  {titolo} {_dm(g['data'])}: " + ("; ".join(f"{n} ({nota})" if nota else n
+                                                                         for n, nota in voci) or "—"))
+        righe_html.append(f'<tr><th style="{_TH}background:{bg};">{titolo}</th>'
+                          + "".join(f'<td style="{_TC}">{c}</td>' for c in celle) + "</tr>")
+    html_ = (f'<table cellspacing="0" style="border-collapse:collapse;width:100%;">{_testa_giorni(s, "")}'
+             f'{"".join(righe_html)}</table>'
+             '<p style="font-size:11px;color:#4d5868;margin:4px 0 0;">Smonto notte = ha fatto la notte il giorno '
+             'prima (finisce alle 8) · notte = fa la notte quella sera.</p>')
+    return html_, "\n".join(righe_txt)
+
+
+def _sezione_indisponibilita(s: dict) -> tuple[str, str]:
+    nomi = _nomi(s)
+    per_giorno: dict[str, dict[int, list[str]]] = {g: {} for g in s["giorni"]}
+    for x in s.get("indisponibilita", []):
+        per_giorno.setdefault(x["data"], {}).setdefault(x["persona_id"], []).append(PARTI.get(x["parte"], x["parte"]))
+    assenze = {g: [] for g in s["giorni"]}
+    for x in s.get("ferie", []):
+        assenze.setdefault(x["data"], []).append((x["persona_id"], "Malattia" if x.get("motivo") == "malattia" else "Ferie"))
+    celle, txt = [], []
+    for g in s["giorni"]:
+        voci = [(nomi.get(pid, f"#{pid}"), ", ".join(parti)) for pid, parti in sorted(
+            per_giorno.get(g, {}).items(), key=lambda kv: nomi.get(kv[0], "").lower())]
+        ass = [(nomi.get(pid, f"#{pid}"), motivo) for pid, motivo in sorted(assenze.get(g, []),
+                                                                             key=lambda t: nomi.get(t[0], "").lower())]
+        cella = "".join(_voce(n, p, "#7a4a00") for n, p in voci)
+        cella += "".join(_voce(n, m, "#6e1d5a" if m == "Malattia" else "#24408a") for n, m in ass)
+        celle.append(cella or "—")
+        txt.append(f"  {GIORNI_BREVI[date.fromisoformat(g).weekday()]} {_dm(g)}: "
+                   + ("; ".join([f"{n} ({p})" for n, p in voci] + [f"{n} ({m})" for n, m in ass]) or "—"))
+    celle_html = "".join(f'<td style="{_TC}">{c}</td>' for c in celle)
+    html_ = (f'<table cellspacing="0" style="border-collapse:collapse;width:100%;">{_testa_giorni(s, "")}'
+             f'<tr><th style="{_TH}">Non disponibili</th>{celle_html}</tr></table>')
+    return html_, "\n".join(txt)
+
+
+def _sezione_statistiche(righe: list[dict]) -> tuple[str, str]:
+    colonne = ["Persona", "Tipo", "Settimane", "Ore totali", "Saldo ore", "Ore giorno / notte", "Turni weekend",
+               "Standby", "Programmati"]
+    corpo, txt = [], []
+    for r in righe:
+        saldo = r.get("saldo_ore", 0)
+        saldo_t = f"{saldo:+.1f}".replace(".", ",") if r["tipo"] == "dipendente" else "—"
+        valori = [r["nome"], "Dipendente" if r["tipo"] == "dipendente" else "Volontario", r["settimane"],
+                  r["ore_totali"], saldo_t, f"{r['ore_giorno']} / {r['ore_notte']}", sum(r["weekend"].values()),
+                  r["standby"], r["programmati"]]
+        corpo.append("<tr>" + "".join(f'<td style="{_TC}{"text-align:right;" if i >= 2 else ""}">'
+                                      f'{"<b>" if i == 0 else ""}{_e(v)}{"</b>" if i == 0 else ""}</td>'
+                                      for i, v in enumerate(valori)) + "</tr>")
+        txt.append("  " + " · ".join(str(v) for v in valori))
+    html_ = (f'<table cellspacing="0" style="border-collapse:collapse;width:100%;"><tr>'
+             + "".join(f'<th style="{_TH}">{c}</th>' for c in colonne) + f'</tr>{"".join(corpo)}</table>'
+             '<p style="font-size:11px;color:#4d5868;margin:4px 0 0;">Solo le settimane con turni generati. '
+             'Saldo ore: differenza rispetto alla media dei dipendenti.</p>')
+    return (html_ if righe else "<p>Nessuna settimana con turni generati.</p>"), "\n".join(txt)
+
+
+def _sezione_statistiche_indisp(righe: list[dict]) -> tuple[str, str]:
+    corpo, txt = [], []
+    for r in righe:
+        celle = [r["nome"]] + [g["totale"] or "·" for g in r["giorni"]] + [r["totale"]]
+        corpo.append("<tr>" + "".join(
+            f'<td style="{_TC}{"text-align:center;" if i else ""}'
+            f'{"background:#f6d7da;font-weight:bold;" if i and i <= 7 and isinstance(v, int) and v else ""}">'
+            f'{"<b>" if i == 0 else ""}{_e(v)}{"</b>" if i == 0 else ""}</td>' for i, v in enumerate(celle)) + "</tr>")
+        txt.append("  " + " · ".join(str(v) for v in celle))
+    html_ = (f'<table cellspacing="0" style="border-collapse:collapse;width:100%;"><tr><th style="{_TH}">Dipendente</th>'
+             + "".join(f'<th style="{_TH}">{g}</th>' for g in GIORNI_BREVI) + f'<th style="{_TH}">Totale</th></tr>'
+             f'{"".join(corpo)}</table>'
+             '<p style="font-size:11px;color:#4d5868;margin:4px 0 0;">Quante volte ognuno è stato indisponibile in '
+             'ciascun giorno della settimana, su tutto lo storico.</p>')
+    return html_, "\n".join(txt)
+
+
+def componi_riepilogo(s: dict, contenuti: list[str], indirizzo: str, nome: str | None = None, *,
+                      statistiche: list[dict] | None = None, statistiche_indisp: list[dict] | None = None,
+                      aggiornamento: bool = False) -> EmailMessage:
+    """Email con le sole sezioni scelte (`contenuti`, nell'ordine di CONTENUTI)."""
+    periodo = f"dal {_dm(s['inizio'])} al {_dmy(s['fine'])}"
+    bozza = s.get("stato") != "confermata"
+    oggetto = ("AGGIORNAMENTO " if aggiornamento else "") + f"Riepilogo turni {periodo}" + (" (bozza)" if bozza else "")
+    sezioni_html, sezioni_txt = [], []
+    for c in CONTENUTI:
+        if c not in contenuti:
+            continue
+        if c == "turni":
+            h, t = _html_tabellone(s, None), "(vedi la versione HTML per il tabellone)"
+        elif c == "liberi":
+            h, t = _sezione_liberi(s)
+        elif c == "indisponibilita":
+            h, t = _sezione_indisponibilita(s)
+        elif c == "statistiche":
+            h, t = _sezione_statistiche(statistiche or [])
+        else:
+            h, t = _sezione_statistiche_indisp(statistiche_indisp or [])
+        sezioni_html.append(f'<h2 style="font-size:18px;margin:22px 0 6px;">{TITOLI[c]}</h2>{h}')
+        sezioni_txt.append(f"{TITOLI[c].upper()}\n{t}")
+    nota = ""
+    if aggiornamento:
+        nota = "Aggiornamento: i turni di questa settimana sono cambiati."
+    elif bozza:
+        nota = "Settimana non ancora confermata: i turni possono cambiare."
+    saluto = f"Ciao <b>{_e(nome)}</b>, ecco" if nome else "Ecco"
+    corpo = f"""<!doctype html><html lang="it"><body style="margin:0;padding:0;background:#eef1f5;">
+<div style="max-width:960px;margin:0 auto;padding:16px;font-family:Arial,Helvetica,sans-serif;color:#1b2330;">
+<div style="background:#ffffff;border-top:6px solid {VERDE};padding:16px 18px;">
+<p style="margin:0;color:{VERDE};font-weight:bold;font-size:14px;">Croce Verde Ascoli Piceno · Turnistica</p>
+<h1 style="font-size:22px;margin:6px 0 4px;">Riepilogo {_e(periodo)}</h1>
+{f'<p style="margin:6px 0;padding:8px 10px;background:#fff4cc;border-left:4px solid #d99a00;"><b>{_e(nota)}</b></p>' if nota else ''}
+<p style="font-size:15px;margin:12px 0;">{saluto} il riepilogo della settimana.</p>
+{"".join(sezioni_html)}
+<p style="margin:20px 0 0;font-size:12px;color:#4d5868;">Email inviata dal programma dei turni.</p>
+</div></div></body></html>"""
+    m = EmailMessage()
+    m["To"] = indirizzo
+    m["Subject"] = oggetto
+    m.set_content(f"Riepilogo {periodo}\n" + (f"{nota}\n" if nota else "") + "\n" + "\n\n".join(sezioni_txt) + "\n")
+    m.add_alternative(corpo, subtype="html")
+    return m

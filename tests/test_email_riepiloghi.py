@@ -145,3 +145,12 @@ def test_il_responsabile_riceve_l_aggiornamento_solo_se_qualcosa_cambia(client, 
     per = {m["To"]: m for m in postino.inviati}
     assert set(per) == {"mario@example.org", "capo@example.org"}
     assert "aggiornamento" in per["capo@example.org"]["Subject"].lower()
+
+
+def test_il_responsabile_riceve_anche_se_nessuno_del_personale_ha_l_email(client, postino):
+    mario = crea(client, "Mario")
+    turno(client, mario["id"], "2026-10-20")
+    aggiungi(client, "capo@example.org", ["turni"], responsabile=True)
+    client.post(f"/api/settimane/{LUNEDI}/conferma")
+    r = client.post(f"/api/settimane/{LUNEDI}/email", json={}).json()
+    assert [x["email"] for x in r["inviate"]] == ["capo@example.org"]
