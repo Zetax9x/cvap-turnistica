@@ -139,7 +139,7 @@ function renderScarto(imp) {
   el("div", { class: "campo" },
     el("label", { for: "scarto-max" }, "Differenza massima di ore tra dipendenti"),
     input,
-    el("p", { class: "hint" }, `Tra chi fa più ore e chi ne fa meno nella settimana (ferie: 6 h al giorno). `
+    el("p", { class: "hint" }, `Tra chi fa più ore e chi ne fa meno nella settimana (ferie e malattia: 6 h al giorno). `
       + `Chi ha un massimo di ore non entra nel confronto. Attualmente ${valore} h. Valori ammessi da ${SCARTO_MIN} a ${SCARTO_MAX}; predefinito ${SCARTO_PREDEFINITO}.`)),
   el("div", { class: "form-actions" }, invia));
 }
@@ -188,7 +188,7 @@ function renderMassimiOre() {
       }
     },
   },
-  el("p", { class: "hint" }, "Massimo di ore lavorate a settimana (le ore di ferie non contano). "
+  el("p", { class: "hint" }, "Massimo di ore lavorate a settimana (le ore di ferie e malattia non contano). "
     + "Nessuno può superare le 72 ore: lascia vuoto per il solo tetto di 72, o indica un massimo più basso."),
   el("div", { class: "table-scroll" }, el("table", { class: "tabella" },
     el("caption", { class: "sr-only" }, "Massimo di ore a settimana per dipendente"),

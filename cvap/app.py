@@ -1,4 +1,5 @@
 """API REST della turnistica (FastAPI). Contratto in docs/API.md."""
+import dataclasses
 import os
 import sqlite3
 import threading
@@ -21,7 +22,8 @@ from .modello import (INTERO_DI, PARTI_TURNO, POSTAZIONI_A_RICHIESTA, PROGRAMMAT
                       TURNI_VIETABILI, Assegnazione, Fabbisogno, Persona, si_sovrappongono, turni_ammessi)
 from .storico import (CATEGORIE_WEEKEND, SettimanaPassata, calcola_storico, categoria_weekend,
                       indisponibilita_per_giorno, solo_generate)
-from .vincoli import ORE_MAX_SETTIMANA, differenza_ore, giorni_disponibili, media_ore, ore_ferie, valida_settimana
+from .vincoli import (ORE_MAX_SETTIMANA, TESTO_FERIE, TESTO_MALATTIA, differenza_ore, giorni_disponibili,
+                      media_ore, ore_ferie, valida_settimana)
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 GIORNI_CONTESTO = 3
@@ -100,6 +102,7 @@ class FerieIn(BaseModel):
     persona_id: Id
     dal: DataValida
     al: DataValida
+    motivo: Literal["ferie", "malattia"] = "ferie"  # malattia = malattia o infortunio: stesso conteggio
 
 
 class TurnoIndisponibileIn(BaseModel):
@@ -166,6 +169,11 @@ def _info_settimana(conn, inizio: date) -> tuple[list[date], str, list[str]]:
     return giorni, tipo, postazioni_attive(tipo, db.postazioni(conn))
 
 
+def _in_malattia(v):
+    """La violazione "turno in un giorno di ferie", detta per un giorno di malattia."""
+    return dataclasses.replace(v, messaggio=v.messaggio.replace(f" {TESTO_FERIE} ", f" {TESTO_MALATTIA} ", 1))
+
+
 def _giorni_json(per_persona: dict[int, set[date]]) -> list[dict]:
     return [{"persona_id": pid, "data": d.isoformat()}
             for pid, giorni in sorted(per_persona.items()) for d in sorted(giorni)]
@@ -192,6 +200,7 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
     persone = {p["id"]: p for p in db.lista_persone(conn)}
     presenti = {a.persona_id for a in assegnazioni}
     ferie = db.ferie_periodo(conn, giorni[0], giorni[-1])
+    malattia = db.giorni_malattia(conn, giorni[0], giorni[-1])  # solo per distinguerla: conta come le ferie
     indisponibili = db.indisponibili_periodo(conn, giorni[0], giorni[-1])
 
     # volontari + dipendenti attivi + chiunque (anche disattivato) abbia turni questa settimana
@@ -203,6 +212,8 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
     violazioni = valida_settimana(giorni, attive, assegnazioni, rilevanti, contesto=contesto,
                                   ferie=ferie, indisponibili=indisponibili, fabbisogno=fabbisogno,
                                   scarto_ore_max=scarto_ore_max)
+    violazioni = [_in_malattia(v) if v.codice == "ferie" and (v.persona_id, v.data) in malattia else v
+                  for v in violazioni]
 
     dipendenti_attivi = [p for p in persone.values() if p["tipo"] == "dipendente" and p["attivo"]]
     ids_riepilogo = presenti | {p["id"] for p in dipendenti_attivi}
@@ -219,6 +230,9 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
             "ore_notte": sum(a.ore for a in turni if a.fascia == "notte"),
             "turni_weekend": sum(1 for a in turni if a.data.weekday() >= 5),
             "giorni_ferie": len(ferie.get(pid, ())),
+            "giorni_malattia": sum(1 for d in ferie.get(pid, ()) if (pid, d) in malattia),
+            "ore_malattia": (ore_ferie(giorni, {d for d in ferie.get(pid, ()) if (pid, d) in malattia})
+                             if p["tipo"] == "dipendente" else 0),
             "ore_ferie": ore_ferie(giorni, ferie.get(pid, set())) if p["tipo"] == "dipendente" else 0,
             "giorni_indisponibili": len({d for d, _ in indisponibili.get(pid, ())}),
             "max_ore_settimana": p["max_ore_settimana"] if p["tipo"] == "dipendente" else None,
@@ -237,6 +251,9 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
 
     liberi = liberi_settimana(giorni, {p["id"]: p["nome"] for p in dipendenti_attivi}, assegnazioni + contesto,
                               ferie, indisponibili)
+    for g in liberi:
+        for x in g["ferie"]:
+            x["motivo"] = "malattia" if (x["persona_id"], date.fromisoformat(g["data"])) in malattia else "ferie"
 
     riga = db.get_settimana(conn, giorni[0])
     return {
@@ -255,7 +272,8 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
             "persona_nome": persone[a.persona_id]["nome"] if a.persona_id in persone else f"#{a.persona_id}",
             "origine": a.origine, "ore": a.ore,
         } for aid, a in righe],
-        "ferie": _giorni_json(ferie),
+        "ferie": [{**x, "motivo": "malattia" if (x["persona_id"], date.fromisoformat(x["data"])) in malattia
+                   else "ferie"} for x in _giorni_json(ferie)],
         "indisponibilita": [{"persona_id": pid, "data": d.isoformat(), "parte": parte}
                             for pid, turni in sorted(indisponibili.items())
                             for d, parte in sorted(turni, key=lambda t: (t[0], PARTI_TURNO.index(t[1])))],
@@ -578,8 +596,8 @@ def create_app(db_path: str) -> FastAPI:
             raise _errore(f"Periodo di ferie troppo lungo (massimo {FERIE_GIORNI_MAX} giorni)")
         with scrittura():
             if db.ferie_sovrapposte(conn, body.persona_id, body.dal, body.al):
-                raise _errore(f"{p['nome']} ha già ferie in quel periodo")
-            return db.crea_ferie(conn, body.persona_id, body.dal, body.al)
+                raise _errore(f"{p['nome']} ha già ferie o malattia in quel periodo")
+            return db.crea_ferie(conn, body.persona_id, body.dal, body.al, body.motivo)
 
     @app.delete("/api/ferie/{ferie_id}", status_code=204)
     def elimina_ferie(ferie_id: IdPath, conn: Conn):

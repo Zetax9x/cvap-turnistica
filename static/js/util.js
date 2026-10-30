@@ -139,6 +139,8 @@ export function etichettaParti(parti) {
 // ---------- Etichette ----------
 
 export const ETICHETTE = {
+  motivo: { ferie: "Ferie", malattia: "Malattia" },
+  motivoLungo: { ferie: "Ferie", malattia: "Malattia o infortunio" },
   tipo: { dipendente: "Dipendente", volontario: "Volontario" },
   qualifica: { autista: "Autista", soccorritore: "Soccorritore" },
   ruolo: { autista: "Autista", soccorritore: "Soccorritore" },
@@ -163,6 +165,12 @@ export const ETICHETTE = {
     nessuna_soluzione: "Nessuna soluzione trovata",
   },
 };
+
+/** Etichetta colorata di un giorno di assenza: ferie (azzurra) o malattia/infortunio (viola). */
+export function badgeAssenza(motivo = "ferie") {
+  const m = motivo === "malattia" ? "malattia" : "ferie";
+  return el("span", { class: `badge badge-${m}`, title: ETICHETTE.motivoLungo[m] }, ETICHETTE.motivo[m]);
+}
 
 export function etichetta(gruppo, valore) {
   return (ETICHETTE[gruppo] && ETICHETTE[gruppo][valore]) || valore || "—";

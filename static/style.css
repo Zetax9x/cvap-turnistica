@@ -666,6 +666,7 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
 }
 .tabella-disponibilita td.disp-indisponibile select { font-weight: 700; border-color: var(--warn-border); }
 .badge-ferie { background: var(--info-bg); color: var(--man-text); border-color: var(--man-border); }
+.badge-malattia { background: #f1dcec; color: #6e1d5a; border-color: #a3407f; }
 .riepilogo-assenze { font-weight: normal; font-size: .85em; }
 .ferie-passate > summary { cursor: pointer; margin: .75rem 0 .5rem; }
 
@@ -895,6 +896,9 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
   .tabella-turni-orizzontale .turno-postazione { display: block; font-size: 13.5pt; font-weight: 800; margin: .5mm 0; overflow-wrap: normal; word-break: normal; }
   .tabella-turni-orizzontale .turno-ruolo { display: block; font-size: 11pt; font-weight: 500; }
   .tabella-turni-orizzontale .muted { color: #444; font-size: 12pt; font-style: italic; }
+  .tabella-turni-orizzontale .badge-malattia {
+    font-size: 12pt; background: #f6e3f1; color: #6e1d5a; border: 1px solid #6e1d5a;
+  }
   .tabella-turni-orizzontale .badge-ferie {
     font-size: 12pt; background: var(--st-ferie); color: var(--st-ferie-testo); border: 1px solid var(--st-ferie-testo);
   }
@@ -921,6 +925,8 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
   }
   .tabella-liberi .avviso-smonto_notte { color: #8a5300; }
   .tabella-liberi .avviso-notte { color: var(--st-notte-bordo); }
+  .tabella-liberi .badge-ferie { color: var(--st-ferie-testo); }
+  .tabella-liberi .badge-malattia { color: #6e1d5a; }
   .tabella-liberi .badge::before { content: " ("; }
   .tabella-liberi .badge::after { content: ")"; }
   .nota-stampa { font-size: 9.5pt; color: #000; }

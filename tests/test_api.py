@@ -412,6 +412,19 @@ def test_malattia_conta_come_le_ferie_ma_si_distingue(client):
     assert {x["persona_id"]: x["motivo"] for x in lunedi["ferie"]} == {p["id"]: "malattia", q["id"]: "ferie"}
 
 
+def test_malattia_a_cavallo_di_due_settimane_e_mista_alle_ferie(client):
+    p = crea(client, "Mario")
+    crea(client, "Luca")
+    # malattia da giovedì della settimana prima a martedì, poi ferie mercoledì
+    client.post("/api/ferie", json={"persona_id": p["id"], "dal": "2026-10-15", "al": "2026-10-20",
+                                    "motivo": "malattia"})
+    client.post("/api/ferie", json={"persona_id": p["id"], "dal": "2026-10-21", "al": "2026-10-21"})
+    s = client.get(f"/api/settimane/{LUNEDI_A}").json()
+    r = next(x for x in s["riepilogo"] if x["persona_id"] == p["id"])
+    assert r["giorni_ferie"] == 3 and r["giorni_malattia"] == 2
+    assert r["ore_ferie"] == 18 and r["ore_malattia"] == 12
+
+
 def test_turno_in_malattia_e_segnalato_come_malattia(client):
     p = crea(client, "Mario", qualifica="autista")
     client.post("/api/ferie", json={"persona_id": p["id"], "dal": "2026-10-20", "al": "2026-10-20",

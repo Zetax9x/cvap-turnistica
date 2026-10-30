@@ -130,4 +130,4 @@ def test_payload_settimana_contiene_i_liberi(tmp_path):
     lunedi = s["liberi"][0]
     # solo dipendenti attivi: niente volontari né disattivati
     assert lunedi["liberi"] == [{"persona_id": mario_id, "nome": "Mario", "avvisi": ["smonto_notte"]}]
-    assert lunedi["ferie"] == [{"persona_id": anna_id, "nome": "Anna"}]
+    assert lunedi["ferie"] == [{"persona_id": anna_id, "nome": "Anna", "motivo": "ferie"}]
