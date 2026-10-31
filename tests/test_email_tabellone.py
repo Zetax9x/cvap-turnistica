@@ -91,4 +91,4 @@ def test_anche_il_testo_semplice_ha_le_righe_dei_programmati():
     assert "Notte" not in prog
     assert "Mattina 7–14 Autista" in prog
     riga = next(x for x in prog.splitlines() if "Pomeriggio 14–20 Autista" in x)
-    assert "Anna" in riga and "1 di 2 scoperti" in riga
+    assert "Anna" in riga and "1 di 2 scoperto" in riga

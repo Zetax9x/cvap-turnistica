@@ -10,12 +10,12 @@ import json
 from datetime import date
 from email.message import EmailMessage
 
-from .modello import POSTAZIONI_A_RICHIESTA, orario
+from .modello import META, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, orario, segmento_intero
 
 GIORNI = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
 GIORNI_BREVI = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"]
 RUOLI = {"autista": "Autista", "soccorritore": "Soccorritore"}
-INTERI = {"intero", "standby"}  # segmenti che occupano tutta la fascia
+SEGMENTI_PROG = ("prog_mattina", "prog_pomeriggio")
 
 # colori come nelle stampe
 VERDE = "#009541"
@@ -77,23 +77,59 @@ def _postazioni(s: dict) -> list[str]:
     return list(s["postazioni"]) + speciali
 
 
-def _cella(s: dict, postazione: str, g: str, fascia: str, ruolo: str) -> tuple[list[dict], list[str]]:
-    """Chi c'è in quel posto (con l'orario se è solo una parte) e le parti scoperte."""
-    lista = [a for a in s["assegnazioni"] if a["postazione"] == postazione and a["data"] == g
-             and a["fascia"] == fascia and a["ruolo"] == ruolo]
-    persone = [{"nome": a["persona_nome"], "pid": a["persona_id"], "volontario": a["origine"] == "volontario",
-                "orario": None if a["segmento"] in INTERI else fascia_orario(fascia, a["segmento"]).split(" ", 1)[1]}
-               for a in sorted(lista, key=lambda a: orario(date.fromisoformat(g), fascia, a["segmento"])[0])]
-    scoperte = []
+def _righe(postazione: str) -> list[tuple[str, str, str, str]]:
+    """Righe del tabellone come nella griglia del sito: (fascia, segmento, ruolo, etichetta del turno).
+    I Programmati hanno mattina e pomeriggio (turni distinti, niente notte); le altre giorno e notte."""
+    if postazione == PROGRAMMATI:
+        return [("giorno", seg, ruolo, f"{'Mattina' if seg == 'prog_mattina' else 'Pomeriggio'} {_ore('giorno', seg)}")
+                for seg in SEGMENTI_PROG for ruolo in RUOLI]
+    return [(fascia, segmento_intero(postazione, fascia), ruolo,
+             fascia_orario(fascia, segmento_intero(postazione, fascia)))
+            for fascia in ("giorno", "notte") for ruolo in RUOLI]
+
+
+def _richiesti(s: dict, postazione: str, g: str, fascia: str, segmento: str, ruolo: str) -> int:
+    """Posti richiesti: 1 nelle postazioni normali, dal fabbisogno in quelle a richiesta."""
     if postazione not in POSTAZIONI_A_RICHIESTA:
+        return 1
+    return sum(int(f["quantita"]) for f in s.get("fabbisogno", [])
+               if f["data"] == g and f["postazione"] == postazione and f["fascia"] == fascia
+               and f["segmento"] == segmento and f["ruolo"] == ruolo)
+
+
+def _cella(s: dict, postazione: str, g: str, fascia: str, segmento: str, ruolo: str) -> tuple[list[dict], list[str]]:
+    """Chi c'è in quel posto (con l'orario se è solo una parte) e i testi "scoperto" come sul sito."""
+    lista = [a for a in s["assegnazioni"] if a["postazione"] == postazione and a["data"] == g
+             and a["fascia"] == fascia and a["ruolo"] == ruolo
+             and (postazione != PROGRAMMATI or a["segmento"] == segmento)]
+    persone = [{"nome": a["persona_nome"], "pid": a["persona_id"], "volontario": a["origine"] == "volontario",
+                "orario": None if a["segmento"] == segmento else _ore(fascia, a["segmento"])}
+               for a in sorted(lista, key=lambda a: orario(date.fromisoformat(g), fascia, a["segmento"])[0])]
+    richiesti = _richiesti(s, postazione, g, fascia, segmento, ruolo)
+    avvisi = []
+    if postazione == PROGRAMMATI:
+        mancano = max(0, richiesti - len(lista))
+        if mancano:
+            avvisi.append("scoperto" if richiesti == 1 else
+                          f"{mancano} di {richiesti} {'scoperto' if mancano == 1 else 'scoperti'}")
+        eccesso = max(0, len(lista) - richiesti)
+    elif not richiesti:
+        eccesso = 1 if lista else 0
+    else:
+        eccesso = 0
         segmenti = {a["segmento"] for a in lista}
         if not segmenti:
-            scoperte.append("scoperto")
-        elif fascia == "giorno" and "intero" not in segmenti:
-            for meta in ("mattina", "pomeriggio"):
-                if meta not in segmenti:
-                    scoperte.append(f"scoperto {fascia_orario('giorno', meta).split(' ', 1)[1]}")
-    return persone, scoperte
+            avvisi.append("scoperto")
+        elif fascia == "giorno" and segmento not in segmenti:
+            avvisi += [f"{_ore('giorno', meta)} scoperto" for meta in META[segmento] if meta not in segmenti]
+    if eccesso:
+        avvisi.append(f"{eccesso} oltre il richiesto" if richiesti else "non richiesto")
+    return persone, avvisi
+
+
+def _ore(fascia: str, segmento: str) -> str:
+    """Solo l'orario, es. "14–20"."""
+    return fascia_orario(fascia, segmento).split(" ", 1)[1]
 
 
 # --- testo semplice ---------------------------------------------------------------------------
@@ -115,14 +151,13 @@ def _testo(s: dict, nome: str, pid: int, intestazione: str) -> str:
     righe += ["", "TABELLONE DELLA SETTIMANA"]
     for postazione in _postazioni(s):
         righe += ["", postazione.upper()]
-        for fascia in ("giorno", "notte"):
-            for ruolo in ("autista", "soccorritore"):
-                celle = []
-                for g in s["giorni"]:
-                    persone, scoperte = _cella(s, postazione, g, fascia, ruolo)
-                    voci = [p["nome"] + (f" {p['orario']}" if p["orario"] else "") for p in persone] + scoperte
-                    celle.append(f"{GIORNI_BREVI[date.fromisoformat(g).weekday()]} {', '.join(voci) or '—'}")
-                righe.append(f"  {'Giorno' if fascia == 'giorno' else 'Notte'} {RUOLI[ruolo]}: " + " | ".join(celle))
+        for fascia, segmento, ruolo, turno in _righe(postazione):
+            celle = []
+            for g in s["giorni"]:
+                persone, scoperte = _cella(s, postazione, g, fascia, segmento, ruolo)
+                voci = [p["nome"] + (f" {p['orario']}" if p["orario"] else "") for p in persone] + scoperte
+                celle.append(f"{GIORNI_BREVI[date.fromisoformat(g).weekday()]} {', '.join(voci) or '—'}")
+            righe.append(f"  {turno} {RUOLI[ruolo]}: " + " | ".join(celle))
     return "\n".join(righe) + "\n"
 
 
@@ -168,32 +203,31 @@ def _html_tabellone(s: dict, pid: int | None) -> str:
             f'<th style="{_TD}background:{"#fbeccb" if date.fromisoformat(g).weekday() >= 5 else "#e9eef6"};">'
             f'{GIORNI_BREVI[date.fromisoformat(g).weekday()]}<br>{_dm(g)}</th>' for g in s["giorni"])
         righe = []
-        for fascia in ("giorno", "notte"):
-            for ruolo in ("autista", "soccorritore"):
-                bg = GIORNO_BG if fascia == "giorno" else NOTTE_BG
-                bordo = GIORNO_BORDO if fascia == "giorno" else NOTTE_BORDO
-                sopra = "border-top:3px solid #000;" if fascia == "notte" and ruolo == "autista" else ""
-                etichetta = (f'{"☀" if fascia == "giorno" else "☾"} '
-                             f'{_e(fascia_orario(fascia, "standby" if postazione == "Standby" else "intero"))}'
-                             f'<br><b>{RUOLI[ruolo]}</b>')
-                celle = [f'<td style="{_TD}{sopra}background:{bg};border-left:4px solid {bordo};text-align:left;'
-                         f'white-space:nowrap;font-size:12px;">{etichetta}</td>']
-                for g in s["giorni"]:
-                    persone, scoperte = _cella(s, postazione, g, fascia, ruolo)
-                    voci = []
-                    for p in persone:
-                        stile = "font-weight:bold;"
-                        if p["volontario"]:
-                            stile += f"background:{VOL_BG};color:{VOL_TESTO};padding:1px 4px;border-radius:3px;"
-                        if p["pid"] == pid:
-                            stile += "text-decoration:underline;"
-                        orario_p = f' <span style="font-weight:normal;font-size:11px;">{_e(p["orario"])}</span>' \
-                            if p["orario"] else ""
-                        voci.append(f'<span style="{stile}">{_e(p["nome"])}</span>{orario_p}')
-                    voci += [f'<span style="color:#fff;background:{ROSSO};font-weight:bold;padding:1px 4px;'
-                             f'border-radius:3px;font-size:12px;">{_e(x)}</span>' for x in scoperte]
-                    celle.append(f'<td style="{_TD}{sopra}background:{bg};">{"<br>".join(voci) or "—"}</td>')
-                righe.append(f"<tr>{''.join(celle)}</tr>")
+        for i, (fascia, segmento, ruolo, turno) in enumerate(_righe(postazione)):
+            bg = GIORNO_BG if fascia == "giorno" else NOTTE_BG
+            bordo = GIORNO_BORDO if fascia == "giorno" else NOTTE_BORDO
+            # linea spessa all'inizio di ogni turno (tra giorno e notte, tra mattina e pomeriggio)
+            sopra = "border-top:3px solid #000;" if i and ruolo == "autista" else ""
+            etichetta = (f'{"☀" if fascia == "giorno" else "☾"} {_e(turno)}'
+                         f'<br><b>{RUOLI[ruolo]}</b>')
+            celle = [f'<td style="{_TD}{sopra}background:{bg};border-left:4px solid {bordo};text-align:left;'
+                     f'white-space:nowrap;font-size:12px;">{etichetta}</td>']
+            for g in s["giorni"]:
+                persone, scoperte = _cella(s, postazione, g, fascia, segmento, ruolo)
+                voci = []
+                for p in persone:
+                    stile = "font-weight:bold;"
+                    if p["volontario"]:
+                        stile += f"background:{VOL_BG};color:{VOL_TESTO};padding:1px 4px;border-radius:3px;"
+                    if p["pid"] == pid:
+                        stile += "text-decoration:underline;"
+                    orario_p = f' <span style="font-weight:normal;font-size:11px;">{_e(p["orario"])}</span>' \
+                        if p["orario"] else ""
+                    voci.append(f'<span style="{stile}">{_e(p["nome"])}</span>{orario_p}')
+                voci += [f'<span style="color:#fff;background:{ROSSO};font-weight:bold;padding:1px 4px;'
+                         f'border-radius:3px;font-size:12px;">{_e(x)}</span>' for x in scoperte]
+                celle.append(f'<td style="{_TD}{sopra}background:{bg};">{"<br>".join(voci) or "—"}</td>')
+            righe.append(f"<tr>{''.join(celle)}</tr>")
         blocchi.append(
             f'<h3 style="font-size:16px;margin:18px 0 6px;color:#1b2330;">'
             f'<span style="display:inline-block;width:10px;height:10px;background:{VERDE};margin-right:6px;"></span>'
