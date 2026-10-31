@@ -7,6 +7,7 @@ from .modello import PARTI_TURNO, POSTAZIONI_A_RICHIESTA, Assegnazione
 
 CATEGORIE_WEEKEND = ("sab_giorno", "sab_notte", "dom_giorno", "dom_notte")
 CATEGORIE_RICHIESTA = POSTAZIONI_A_RICHIESTA  # Standby e Programmati, distribuiti come i weekend
+SEDI_ALTERNATE = ("Acquasanta", "Venarotta")  # ognuno, nel tempo, tanti turni nell'una quanti nell'altra
 
 
 def categoria_weekend(a: Assegnazione) -> str | None:
@@ -22,10 +23,12 @@ class StoricoPersona:
     ore_giorno: int = 0
     ore_notte: int = 0
     richieste: dict[str, int] = field(default_factory=dict)  # turni Standby e Programmati
+    sedi: dict[str, int] = field(default_factory=dict)  # turni ad Acquasanta e a Venarotta (anche mezzi)
 
     def __post_init__(self):
         self.weekend = {k: self.weekend.get(k, 0) for k in CATEGORIE_WEEKEND}
         self.richieste = {k: self.richieste.get(k, 0) for k in CATEGORIE_RICHIESTA}
+        self.sedi = {k: self.sedi.get(k, 0) for k in SEDI_ALTERNATE}
 
 
 @dataclass
@@ -85,6 +88,8 @@ def calcola_storico(settimane: list[SettimanaPassata]) -> dict[int, StoricoPerso
                 st.weekend[cat] += 1
             if a.postazione in st.richieste:
                 st.richieste[a.postazione] += 1
+            if a.postazione in st.sedi:
+                st.sedi[a.postazione] += 1
         for pid, h in ore.items():
             # con ferie nella settimana le ore mancanti non si recuperano dopo
             if not s.giorni_ferie.get(pid):

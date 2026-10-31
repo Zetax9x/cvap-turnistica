@@ -13,6 +13,7 @@ const COLONNE = [
   { campo: "ore_totali", titolo: "Ore totali" },
   { campo: "saldo_ore", titolo: "Saldo ore" },
   { campo: "rapporto", titolo: "Giorno / Notte", valore: (r) => (tot(r) ? r.ore_giorno / tot(r) : -1) },
+  { campo: "sedi", titolo: "Acquasanta / Venarotta", valore: (r) => (totSedi(r) ? sede(r, "Acquasanta") / totSedi(r) : -1) },
   { campo: "sab_giorno", titolo: "Sab G", valore: (r) => wk(r, "sab_giorno") },
   { campo: "sab_notte", titolo: "Sab N", valore: (r) => wk(r, "sab_notte") },
   { campo: "dom_giorno", titolo: "Dom G", valore: (r) => wk(r, "dom_giorno") },
@@ -23,6 +24,8 @@ const COLONNE = [
 ];
 
 function tot(r) { return (r.ore_giorno || 0) + (r.ore_notte || 0); }
+function sede(r, k) { return (r.sedi && r.sedi[k]) || 0; }
+function totSedi(r) { return sede(r, "Acquasanta") + sede(r, "Venarotta"); }
 function wk(r, k) { return (r.weekend && r.weekend[k]) || 0; }
 function totWeekend(r) { return ["sab_giorno", "sab_notte", "dom_giorno", "dom_notte"].reduce((s, k) => s + wk(r, k), 0); }
 
@@ -152,6 +155,7 @@ function render() {
           "aria-label": `${pctG}% ore di giorno, ${100 - pctG}% di notte`,
           title: `Giorno ${pctG}% · Notte ${100 - pctG}%`,
         }, el("span", { class: "rapporto-giorno", style: `width:${pctG}%` })) : null),
+      el("td", { class: "num" }, `${sede(r, "Acquasanta")} / ${sede(r, "Venarotta")}`),
       ["sab_giorno", "sab_notte", "dom_giorno", "dom_notte"].map((k) => el("td", { class: "num" }, String(wk(r, k)))),
       el("td", { class: "num" }, String(totWeekend(r))),
       el("td", { class: "num" }, String(r.standby || 0)),
@@ -163,5 +167,7 @@ function render() {
     el("caption", { class: "sr-only" }, "Statistiche per persona. Fare clic sulle intestazioni per ordinare."),
     thead, tbody)));
   root.append(el("p", { class: "hint" }, "Weekend: numero di turni svolti il sabato e la domenica, di giorno (G) e di notte (N). " +
+    "Acquasanta / Venarotta: turni svolti in ciascuna delle due sedi (anche i mezzi turni); il generatore cerca di farne " +
+    "fare a ogni dipendente tanti nell'una quanti nell'altra. " +
     "Standby e Programmati: turni svolti in quelle postazioni; il generatore li distribuisce in modo equo come i weekend."));
 }

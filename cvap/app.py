@@ -25,7 +25,7 @@ from .calendario import giorni_settimana, lunedi, postazioni_attive, tipo_settim
 from .liberi import liberi_settimana
 from .modello import (INTERO_DI, PARTI_TURNO, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, SEGMENTI, STANDBY,
                       TURNI_VIETABILI, Assegnazione, Fabbisogno, Persona, si_sovrappongono, turni_ammessi)
-from .storico import (CATEGORIE_WEEKEND, SettimanaPassata, calcola_storico, categoria_weekend,
+from .storico import (CATEGORIE_WEEKEND, SEDI_ALTERNATE, SettimanaPassata, calcola_storico, categoria_weekend,
                       indisponibilita_per_giorno, solo_generate)
 from .vincoli import (ORE_MAX_SETTIMANA, TESTO_FERIE, TESTO_MALATTIA, differenza_ore, giorni_disponibili,
                       media_ore, ore_ferie, valida_settimana)
@@ -921,6 +921,7 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                 "saldo_ore": st.saldo_ore, "ore_giorno": st.ore_giorno, "ore_notte": st.ore_notte,
                 "weekend": dict(st.weekend),
                 "standby": st.richieste[STANDBY], "programmati": st.richieste[PROGRAMMATI],
+                "sedi": dict(st.sedi),
             })
 
         volontari: dict[int, dict] = {}
@@ -934,6 +935,7 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                     "persona_id": p["id"], "nome": p["nome"], "tipo": p["tipo"], "qualifica": p["qualifica"],
                     "settimane": 0, "ore_totali": 0, "saldo_ore": 0, "ore_giorno": 0, "ore_notte": 0,
                     "weekend": {k: 0 for k in CATEGORIE_WEEKEND}, "standby": 0, "programmati": 0,
+                    "sedi": {k: 0 for k in SEDI_ALTERNATE},
                 })
                 if a.persona_id not in visti:
                     visti.add(a.persona_id)
@@ -946,6 +948,8 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                 chiave = {STANDBY: "standby", PROGRAMMATI: "programmati"}.get(a.postazione)
                 if chiave:
                     v[chiave] += 1
+                if a.postazione in v["sedi"]:
+                    v["sedi"][a.postazione] += 1
         out += volontari.values()
         out.sort(key=lambda r: (r["tipo"] != "dipendente", r["nome"].lower(), r["persona_id"]))
         return out

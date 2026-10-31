@@ -328,14 +328,16 @@ def _sezione_indisponibilita(s: dict) -> tuple[str, str]:
 
 
 def _sezione_statistiche(righe: list[dict]) -> tuple[str, str]:
-    colonne = ["Persona", "Tipo", "Settimane", "Ore totali", "Saldo ore", "Ore giorno / notte", "Turni weekend",
-               "Standby", "Programmati"]
+    colonne = ["Persona", "Tipo", "Settimane", "Ore totali", "Saldo ore", "Ore giorno / notte",
+               "Acquasanta / Venarotta", "Turni weekend", "Standby", "Programmati"]
     corpo, txt = [], []
     for r in righe:
         saldo = r.get("saldo_ore", 0)
         saldo_t = f"{saldo:+.1f}".replace(".", ",") if r["tipo"] == "dipendente" else "—"
+        sedi = r.get("sedi", {})
         valori = [r["nome"], "Dipendente" if r["tipo"] == "dipendente" else "Volontario", r["settimane"],
-                  r["ore_totali"], saldo_t, f"{r['ore_giorno']} / {r['ore_notte']}", sum(r["weekend"].values()),
+                  r["ore_totali"], saldo_t, f"{r['ore_giorno']} / {r['ore_notte']}",
+                  f"{sedi.get('Acquasanta', 0)} / {sedi.get('Venarotta', 0)}", sum(r["weekend"].values()),
                   r["standby"], r["programmati"]]
         corpo.append("<tr>" + "".join(f'<td style="{_TC}{"text-align:right;" if i >= 2 else ""}">'
                                       f'{"<b>" if i == 0 else ""}{_e(v)}{"</b>" if i == 0 else ""}</td>'
