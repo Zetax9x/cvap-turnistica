@@ -571,6 +571,21 @@ def test_ferie_non_fanno_recuperare_ore_la_settimana_dopo(client):
     assert stats[ids[0]]["saldo_ore"] == 0
 
 
+def test_statistiche_ore_totali_comprendono_ferie_e_malattia(client):
+    ids = staff_14(client)
+    client.post("/api/ferie", json={"persona_id": ids[0], "dal": "2026-10-19", "al": "2026-10-20"})
+    client.post("/api/ferie", json={"persona_id": ids[0], "dal": "2026-10-21", "al": "2026-10-21",
+                                    "motivo": "malattia"})
+    assert client.post(f"/api/settimane/{LUNEDI_A}/genera", json={"tempo_max": 5}).status_code == 200
+    stats = {x["persona_id"]: x for x in client.get("/api/statistiche").json()}
+    st = stats[ids[0]]
+    assert st["ore_ferie"] == 12 and st["ore_malattia"] == 6
+    assert st["ore_lavorate"] == st["ore_giorno"] + st["ore_notte"]
+    assert st["ore_totali"] == st["ore_lavorate"] + 18
+    altro = stats[ids[1]]
+    assert altro["ore_ferie"] == altro["ore_malattia"] == 0 and altro["ore_totali"] == altro["ore_lavorate"]
+
+
 def test_statistiche_partono_dalla_prima_settimana_generata(client):
     # avvio del sistema: la domenica della settimana prima è inserita a mano, solo come contesto
     ids = staff_14(client)

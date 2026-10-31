@@ -139,3 +139,13 @@ def test_conta_i_turni_ad_acquasanta_e_venarotta():
     s = calcola_storico([SettimanaPassata(media_ore=0, dipendenti=[1, 2], assegnazioni=a)])
     assert s[1].sedi == {"Acquasanta": 2, "Venarotta": 1}
     assert s[2].sedi == {"Acquasanta": 0, "Venarotta": 1}
+
+
+def test_ore_di_ferie_e_malattia_contano_6_ore_al_giorno():
+    a = [ass(GIORNI[i], "Acquasanta", "giorno", "autista", 1) for i in (0, 2)]  # 24h lavorate
+    s = calcola_storico([SettimanaPassata(media_ore=0, dipendenti=[1, 2], assegnazioni=a,
+                                          giorni_ferie={1: 3, 2: 7}, giorni_malattia={1: 1})])
+    assert s[1].ore_lavorate == 24
+    assert s[1].ore_ferie == 12 and s[1].ore_malattia == 6  # 3 giorni di assenza, uno per malattia
+    assert s[1].ore_contate == 42
+    assert 2 not in s  # assente tutta la settimana: la settimana non conta

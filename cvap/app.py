@@ -8,6 +8,7 @@ import sqlite3
 import threading
 import time
 from contextlib import contextmanager
+from collections import Counter
 from collections.abc import Iterator
 from datetime import date, datetime, timedelta
 from email.utils import getaddresses
@@ -353,6 +354,7 @@ def _settimana_passata(conn, riga: dict) -> SettimanaPassata:
     giorni = giorni_settimana(inizio)
     dipendenti = list(riga["dipendenti"])
     ferie = db.ferie_periodo(conn, giorni[0], giorni[-1])
+    malattia = Counter(pid for pid, _ in db.giorni_malattia(conn, giorni[0], giorni[-1]))
     disponibili = {pid: giorni_disponibili(giorni, ferie.get(pid, set())) for pid in dipendenti}
     ore = {pid: 0 for pid, g in disponibili.items() if g}
     for a in assegnazioni:
@@ -362,6 +364,7 @@ def _settimana_passata(conn, riga: dict) -> SettimanaPassata:
     return SettimanaPassata(media_ore=media_ore(ore, crediti), dipendenti=dipendenti,
                             assegnazioni=assegnazioni,
                             giorni_ferie={pid: 7 - g for pid, g in disponibili.items() if g < 7},
+                            giorni_malattia={pid: malattia[pid] for pid in dipendenti if malattia[pid]},
                             max_ore={p["id"]: p["max_ore_settimana"] for p in db.lista_persone(conn)
                                      if p["id"] in ore and p["max_ore_settimana"]})
 
@@ -917,7 +920,8 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                 continue
             out.append({
                 "persona_id": pid, "nome": p["nome"], "tipo": p["tipo"], "qualifica": p["qualifica"],
-                "settimane": st.settimane, "ore_totali": st.ore_giorno + st.ore_notte,
+                "settimane": st.settimane, "ore_totali": st.ore_contate, "ore_lavorate": st.ore_lavorate,
+                "ore_ferie": st.ore_ferie, "ore_malattia": st.ore_malattia,
                 "saldo_ore": st.saldo_ore, "ore_giorno": st.ore_giorno, "ore_notte": st.ore_notte,
                 "weekend": dict(st.weekend),
                 "standby": st.richieste[STANDBY], "programmati": st.richieste[PROGRAMMATI],
@@ -933,7 +937,8 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                     continue
                 v = volontari.setdefault(a.persona_id, {
                     "persona_id": p["id"], "nome": p["nome"], "tipo": p["tipo"], "qualifica": p["qualifica"],
-                    "settimane": 0, "ore_totali": 0, "saldo_ore": 0, "ore_giorno": 0, "ore_notte": 0,
+                    "settimane": 0, "ore_totali": 0, "ore_lavorate": 0, "ore_ferie": 0, "ore_malattia": 0,
+                    "saldo_ore": 0, "ore_giorno": 0, "ore_notte": 0,
                     "weekend": {k: 0 for k in CATEGORIE_WEEKEND}, "standby": 0, "programmati": 0,
                     "sedi": {k: 0 for k in SEDI_ALTERNATE},
                 })
@@ -941,6 +946,7 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                     visti.add(a.persona_id)
                     v["settimane"] += 1
                 v["ore_totali"] += a.ore
+                v["ore_lavorate"] += a.ore
                 v["ore_giorno" if a.fascia == "giorno" else "ore_notte"] += a.ore
                 cat = categoria_weekend(a)
                 if cat:
