@@ -24,6 +24,7 @@ from . import accesso, db, email_turni
 from .posta import PostinoBloccato, PostinoSmtp
 from .calendario import giorni_settimana, lunedi, postazioni_attive, tipo_settimana
 from .liberi import liberi_settimana
+from .riepilogo import GIORNI_MAX as GIORNI_MAX_RIEPILOGO, riepilogo_persona
 from .modello import (EXTRA, INTERO_DI, PARTI_TURNO, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, SEGMENTI, STANDBY,
                       TURNI_VIETABILI, Assegnazione, Fabbisogno, Persona, leggi_extra, si_sovrappongono,
                       turno_ammesso)
@@ -1052,6 +1053,24 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
         return [{"persona_id": p["id"], "nome": p["nome"], "attivo": p["attivo"],
                  "totale": len({d for d, _ in richieste.get(p["id"], ())}),
                  "giorni": indisponibilita_per_giorno(richieste.get(p["id"], set()))} for p in dipendenti]
+
+    @app.get("/api/statistiche/persona/{persona_id}")
+    def statistiche_persona(persona_id: IdPath, conn: Conn, dal: DataValida, al: DataValida):
+        """Riepilogo per dipendente: turni giorno per giorno nel periodo [dal, al] (max un anno) e totali."""
+        if dal > al:
+            raise _errore("La data di inizio è dopo quella di fine")
+        if (al - dal).days >= GIORNI_MAX_RIEPILOGO:
+            raise _errore(f"Il periodo può essere al massimo di {GIORNI_MAX_RIEPILOGO} giorni")
+        p = db.get_persona(conn, persona_id)
+        if p is None:
+            raise HTTPException(404, "Persona non trovata")
+        turni = [a for _, a in db.assegnazioni_periodo(conn, dal, al) if a.persona_id == persona_id]
+        malattia = db.giorni_malattia(conn, dal, al)
+        assenze = {d: "malattia" if (persona_id, d) in malattia else "ferie"
+                   for d in db.ferie_periodo(conn, dal, al).get(persona_id, set())}
+        nomi_extra = {e["segmento"]: e["nome"] for e in db.extra_periodo(conn, dal, al)}
+        return riepilogo_persona(p, dal, al, turni, assenze,
+                                 db.indisponibili_periodo(conn, dal, al).get(persona_id, set()), nomi_extra)
 
     # --- statici ---
     app.mount("/static", StaticFiles(directory=STATIC_DIR, check_dir=False), name="static")

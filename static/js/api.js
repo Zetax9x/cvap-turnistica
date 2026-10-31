@@ -109,6 +109,8 @@ export const api = {
   eliminaFerie: (id) => richiesta("DELETE", `/ferie/${enc(id)}`),
 
   statistiche: () => richiesta("GET", "/statistiche"),
+  riepilogoPersona: (id, dal, al) =>
+    richiesta("GET", `/statistiche/persona/${enc(id)}?${new URLSearchParams({ dal, al })}`),
   statisticheIndisponibilita: (dal, al) => {
     const q = new URLSearchParams();
     if (dal) q.set("dal", dal);

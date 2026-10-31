@@ -222,3 +222,18 @@ richieste_extra(id INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT, nome TEXT, iniz
 - `DELETE /extra/{id}` → 204; toglie anche le persone assegnate alla richiesta. 404 se non esiste.
 - `POST /settimane/{data}/assegnazioni` accetta `postazione: "Assistenze ed Extra"` con il `segmento` della
   richiesta; 400 se la richiesta non c'è o i posti di quel ruolo sono già tutti presi.
+
+## Riepilogo per dipendente (Statistiche)
+
+`GET /statistiche/persona/{id}?dal=AAAA-MM-GG&al=AAAA-MM-GG` (entrambe obbligatorie, periodo massimo 366 giorni;
+400 se `dal` > `al` o periodo troppo lungo, 404 se la persona non esiste). Logica in `cvap/riepilogo.py`
+(`riepilogo_persona`). Conta tutti i turni del periodo, anche delle settimane compilate a mano.
+
+Risposta: `{persona_id, nome, tipo, qualifica, dal, al, giorni, riepilogo}`.
+- `giorni`: un elemento per ogni giorno del periodo, in ordine:
+  `{data, turni: [{postazione, orario, fascia, ruolo, ore, origine}], assenza: null|"ferie"|"malattia", indisponibile: [parti]}`.
+  `orario` come sul sito ("Giorno 8–20", "Mattina 7–14"); per le Assistenze ed Extra `postazione` è
+  "<nome richiesta> (Assistenze ed Extra)".
+- `riepilogo`: `turni, ore_lavorate, ore_giorno, ore_notte, turni_giorno, turni_notte, giorni_ferie, giorni_malattia,
+  ore_ferie_malattia` (6 h per giorno, solo dipendenti), `ore_totali, weekend {sab_giorno, sab_notte, dom_giorno,
+  dom_notte}, postazioni [{postazione, turni, ore}], giorni_indisponibili`.

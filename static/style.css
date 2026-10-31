@@ -1023,3 +1023,51 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
   .indisp-num { font-size: 11pt; }
   .indisp-parti { font-size: 7.5pt; opacity: 1; }
 }
+
+/* ---------- Statistiche: riepilogo per dipendente (verticale, un giorno per riga) ---------- */
+.filtri-riepilogo { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; margin-bottom: 1rem; }
+.filtri-riepilogo label { font-weight: 600; }
+.riepilogo-testa h2 { margin: .5rem 0 0; font-size: 1.4rem; }
+.riepilogo-testa p { margin: .1rem 0 .75rem; color: var(--muted); font-weight: 600; }
+.tabella-riepilogo { width: 100%; max-width: 760px; }
+.tabella-riepilogo .riep-data { white-space: nowrap; width: 9rem; font-weight: 400; }
+.tabella-riepilogo tr.weekend > * { background: var(--weekend); }
+.riep-turno {
+  display: flex; flex-wrap: wrap; gap: .15rem .6rem; align-items: baseline;
+  padding: .3rem .5rem; margin: .15rem 0; border-left: 4px solid var(--giorno); border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--giorno) 10%, var(--surface));
+}
+.riep-turno.turno-notte { border-left-color: var(--notte); background: color-mix(in srgb, var(--notte) 10%, var(--surface)); }
+.riep-orario { font-weight: 700; font-variant-numeric: tabular-nums; }
+.riep-postazione { font-weight: 750; }
+.riep-ruolo { color: var(--muted); }
+.riep-indisp { display: inline-block; margin: .15rem .4rem .15rem 0; font-size: .85rem; color: var(--warn); font-weight: 600; }
+.riep-totali { margin-top: 1.5rem; max-width: 760px; }
+.riep-totali h2 { font-size: 1.2rem; margin: 0 0 .6rem; }
+.riep-griglia { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: .6rem; margin: 0 0 1rem; }
+.riep-voce { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .55rem .7rem; background: var(--surface); }
+.riep-voce dt { font-size: .82rem; color: var(--muted); font-weight: 650; }
+.riep-voce dd { margin: .15rem 0 0; font-size: 1.3rem; font-weight: 800; }
+.riep-nota { display: block; font-size: .8rem; font-weight: 500; color: var(--muted); }
+.tabella-riep-postazioni { min-width: 320px; }
+.tabella-riep-postazioni caption { text-align: left; font-weight: 700; padding-bottom: .3rem; }
+
+@media print {
+  #view-statistiche .filtri-riepilogo { display: none !important; }
+  .riepilogo-testa h2 { font-size: 18pt; }
+  .riepilogo-testa p { color: #000; font-size: 11pt; }
+  .tabella-riepilogo { max-width: none; font-size: 10.5pt; border-collapse: collapse; }
+  .tabella-riepilogo th, .tabella-riepilogo td { border: 1px solid #555; padding: 1.2mm 2mm; }
+  .tabella-riepilogo tr { break-inside: avoid; }
+  .tabella-riepilogo thead th { background: #eef1f6; }
+  .tabella-riepilogo tr.weekend > * { background: #fbf3e0; }
+  .riep-turno { background: #fff4cc; border-left-color: #d9a400; padding: .8mm 1.5mm; }
+  .riep-turno.turno-notte { background: #e3e8fb; border-left-color: #4a5598; }
+  .riep-ruolo, .riep-nota, .riep-voce dt, .tabella-riepilogo .muted { color: #000; }
+  .riep-totali { max-width: none; break-inside: avoid; }
+  .riep-griglia { grid-template-columns: repeat(3, 1fr); gap: 2mm; }
+  .riep-voce { border-color: #555; padding: 1.5mm 2mm; }
+  .riep-voce dd { font-size: 13pt; }
+  .tabella-riep-postazioni { font-size: 10pt; border-collapse: collapse; }
+  .tabella-riep-postazioni th, .tabella-riep-postazioni td { border: 1px solid #555; padding: 1mm 2mm; }
+}
