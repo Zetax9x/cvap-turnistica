@@ -27,11 +27,14 @@ Obiettivi (minimizzati insieme, in ordine di peso):
   - equilibrio giorni/notti, nella settimana e nello storico
   - sabati e domeniche distribuiti in modo equo rispetto allo storico
   - turni Standby e Programmati distribuiti allo stesso modo, tra chi li può fare
+Dopo la soluzione, i dipendenti nello stesso turno ad Acquasanta e a Venarotta si possono scambiare
+senza cambiare nient'altro (stessi orari): `riequilibra_sedi` sceglie gli scambi che portano ognuno, storico
+compreso, verso tanti turni nell'una quanti nell'altra. Così l'equilibrio non pesa sulla ricerca principale.
 """
 import time
 from collections import Counter, defaultdict
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 from itertools import combinations
 
@@ -40,7 +43,7 @@ from ortools.sat.python import cp_model
 from .modello import (PROGRAMMATI, STANDBY, Assegnazione, Fabbisogno, Persona, Unita, in_conflitto,
                       parti_turno)
 from .slot import unita_da_coprire
-from .storico import CATEGORIE_RICHIESTA, CATEGORIE_WEEKEND, StoricoPersona, categoria_weekend
+from .storico import CATEGORIE_RICHIESTA, CATEGORIE_WEEKEND, SEDI_ALTERNATE, StoricoPersona, categoria_weekend
 from .vincoli import (ASCOLI, MAX_CONSECUTIVI, MAX_TURNI_ASCOLI, MAX_TURNI_ASCOLI_EXTREMIS, SCARTO_ORE_MAX,
                       ORE_MIN_SETTIMANA, differenza_ore, giorni_disponibili, massimo_ore, media_ore, minimo_ore,
                       ore_ferie,
@@ -154,6 +157,7 @@ def genera(
             assegnazioni.append(Assegnazione(u.data, u.postazione, u.fascia, u.segmento, u.ruolo, chi[0], "generato"))
         else:
             scoperti.append(u)
+    assegnazioni = riequilibra_sedi(assegnazioni, dipendenti, storico or {}, fissi)
 
     ore = _ore_fisse(dipendenti, fissi)
     for a in assegnazioni:
@@ -204,6 +208,68 @@ class _ContaSoluzioni(cp_model.CpSolverSolutionCallback):
     def on_solution_callback(self):
         self.soluzioni += 1
         self.tempo_migliore_s = self.WallTime()
+
+
+def riequilibra_sedi(assegnazioni: list[Assegnazione], dipendenti: Sequence[Persona],
+                     storico: dict[int, StoricoPersona], fissi: Sequence[Assegnazione] = (),
+                     tempo_max: float = 2.0) -> list[Assegnazione]:
+    """Scambia tra Acquasanta e Venarotta i dipendenti che fanno lo stesso turno (data, fascia, metà, ruolo)
+    nelle due sedi, per avvicinare ognuno a tanti turni nell'una quanti nell'altra, storico compreso.
+
+    Lo scambio non cambia orari né ore: riposi, ore, weekend, giorni/notti restano gli stessi. Si salta
+    se uno dei due ha il divieto per l'altra sede. Minimizza la somma di (storico + settimana)^2."""
+    primo, secondo = SEDI_ALTERNATE
+    per_id = {p.id: p for p in dipendenti}
+    gruppi: dict[tuple, dict[str, list[int]]] = defaultdict(lambda: {primo: [], secondo: []})
+    for i, a in enumerate(assegnazioni):
+        if a.postazione in (primo, secondo) and a.persona_id in per_id:
+            gruppi[(a.data, a.fascia, a.segmento, a.ruolo)][a.postazione].append(i)
+    coppie = []
+    for g in gruppi.values():
+        for i, j in zip(g[primo], g[secondo]):
+            a = assegnazioni[i]
+            pi, pj = per_id[a.persona_id], per_id[assegnazioni[j].persona_id]
+            if not pi.vieta(secondo, a.fascia, a.segmento) and not pj.vieta(primo, a.fascia, a.segmento):
+                coppie.append((i, j))
+    if not coppie:
+        return assegnazioni
+
+    # differenza attuale (primo - secondo) di ognuno, storico e turni fissati compresi
+    diff = Counter()
+    for p in dipendenti:
+        st = storico.get(p.id)
+        if st:
+            diff[p.id] += st.sedi[primo] - st.sedi[secondo]
+    for a in list(fissi) + assegnazioni:
+        if a.persona_id in per_id:
+            diff[a.persona_id] += {primo: 1, secondo: -1}.get(a.postazione, 0)
+
+    model = cp_model.CpModel()
+    scambi = [model.NewBoolVar("") for _ in coppie]
+    effetto = defaultdict(list)  # scambiando, chi era nel primo passa al secondo: -2, l'altro +2
+    for s, (i, j) in zip(scambi, coppie):
+        effetto[assegnazioni[i].persona_id].append(-2 * s)
+        effetto[assegnazioni[j].persona_id].append(2 * s)
+    costi = []
+    for pid, termini in effetto.items():
+        limite = abs(diff[pid]) + 2 * len(termini)
+        x = model.NewIntVar(-limite, limite, "")
+        model.Add(x == diff[pid] + sum(termini))
+        q = model.NewIntVar(0, limite * limite, "")
+        model.AddMultiplicationEquality(q, [x, x])
+        costi.append(q)
+    model.Minimize(sum(costi) * (len(scambi) + 1) + sum(scambi))  # a parità, meno scambi possibile
+    solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = tempo_max
+    solver.parameters.num_search_workers = 1
+    if solver.Solve(model) not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        return assegnazioni
+    out = list(assegnazioni)
+    for s, (i, j) in zip(scambi, coppie):
+        if solver.Value(s):
+            out[i] = replace(assegnazioni[i], persona_id=assegnazioni[j].persona_id)
+            out[j] = replace(assegnazioni[j], persona_id=assegnazioni[i].persona_id)
+    return out
 
 
 def _qualita(solver, conteggio, durata, tempo_max, workers, status) -> dict:

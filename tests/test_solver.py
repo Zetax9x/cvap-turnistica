@@ -160,6 +160,63 @@ def test_weekend_fissati_a_mano_contano_per_l_equita(dipendenti_14):
     assert not [a for a in r.assegnazioni if a.persona_id == 1 and a.data in WEEKEND]
 
 
+def _per_sede(r, pid):
+    return {sede: sum(1 for a in r.assegnazioni if a.persona_id == pid and a.postazione == sede)
+            for sede in STAZIONI_A}
+
+
+def test_equilibrio_acquasanta_venarotta_nella_settimana(risultato_base, dipendenti_14):
+    for p in dipendenti_14:
+        sedi = _per_sede(risultato_base, p.id)
+        assert abs(sedi["Acquasanta"] - sedi["Venarotta"]) <= 1, (p, sedi)
+
+
+def test_chi_ha_fatto_piu_acquasanta_in_passato_va_a_venarotta(dipendenti_14):
+    storico = {p.id: StoricoPersona(settimane=5, sedi={"Acquasanta": 10, "Venarotta": 10}) for p in dipendenti_14}
+    storico[1] = StoricoPersona(settimane=5, sedi={"Acquasanta": 16, "Venarotta": 4})
+    r = genera(GIORNI, STAZIONI_A, dipendenti_14, storico=storico, tempo_max=10)
+    sedi = _per_sede(r, 1)
+    assert sedi["Venarotta"] - sedi["Acquasanta"] >= 2, sedi
+
+
+def test_turni_fissati_a_mano_contano_per_l_equilibrio_delle_sedi(dipendenti_14):
+    # il dipendente 1 ha già due turni fissati ad Acquasanta: gli altri vanno a Venarotta
+    fissi = [
+        ass(GIORNI[0], "Acquasanta", "giorno", "autista", 1, origine="manuale"),
+        ass(GIORNI[2], "Acquasanta", "giorno", "autista", 1, origine="manuale"),
+    ]
+    r = genera(GIORNI, STAZIONI_A, dipendenti_14, fissi=fissi, tempo_max=10)
+    generati = [a for a in r.assegnazioni if a.persona_id == 1 and a.origine == "generato"]
+    assert generati and all(a.postazione == "Venarotta" for a in generati), generati
+
+
+def test_riequilibra_sedi_scambia_chi_fa_lo_stesso_turno():
+    from cvap.solver import riequilibra_sedi
+    persone = staff(2, 0)
+    storico = {1: StoricoPersona(settimane=3, sedi={"Acquasanta": 6, "Venarotta": 0})}
+    turni = [ass(GIORNI[0], "Acquasanta", "giorno", "autista", 1), ass(GIORNI[0], "Venarotta", "giorno", "autista", 2)]
+    out = riequilibra_sedi(turni, persone, storico)
+    assert {(a.postazione, a.persona_id) for a in out} == {("Venarotta", 1), ("Acquasanta", 2)}
+    assert [(a.data, a.fascia, a.segmento, a.ruolo) for a in out] == [(a.data, a.fascia, a.segmento, a.ruolo)
+                                                                      for a in turni]
+
+
+def test_riequilibra_sedi_rispetta_i_divieti():
+    from cvap.solver import riequilibra_sedi
+    persone = staff(2, 0)
+    persone[0] = Persona(1, "Autista 1", "dipendente", "autista", divieti=(Divieto("Venarotta"),))
+    storico = {1: StoricoPersona(settimane=3, sedi={"Acquasanta": 6, "Venarotta": 0})}
+    turni = [ass(GIORNI[0], "Acquasanta", "giorno", "autista", 1), ass(GIORNI[0], "Venarotta", "giorno", "autista", 2)]
+    assert riequilibra_sedi(turni, persone, storico) == turni
+
+
+def test_riequilibra_sedi_lascia_tutto_se_gia_in_pari():
+    from cvap.solver import riequilibra_sedi
+    persone = staff(2, 0)
+    turni = [ass(GIORNI[0], "Acquasanta", "giorno", "autista", 1), ass(GIORNI[0], "Venarotta", "giorno", "autista", 2)]
+    assert riequilibra_sedi(turni, persone, {}) == turni
+
+
 # --- ferie e indisponibilità ------------------------------------------------------
 
 def _bloccato(a, indisponibili):

@@ -154,3 +154,12 @@ def test_il_responsabile_riceve_anche_se_nessuno_del_personale_ha_l_email(client
     client.post(f"/api/settimane/{LUNEDI}/conferma")
     r = client.post(f"/api/settimane/{LUNEDI}/email", json={}).json()
     assert [x["email"] for x in r["inviate"]] == ["capo@example.org"]
+
+
+def test_le_statistiche_via_email_hanno_i_turni_per_sede():
+    from cvap.email_turni import _sezione_statistiche
+    riga = {"nome": "Mario", "tipo": "dipendente", "settimane": 2, "ore_totali": 96, "saldo_ore": 0,
+            "ore_giorno": 48, "ore_notte": 48, "weekend": {"sab_giorno": 1}, "standby": 0, "programmati": 0,
+            "sedi": {"Acquasanta": 3, "Venarotta": 5}}
+    html_, testo = _sezione_statistiche([riga])
+    assert "Acquasanta / Venarotta" in html_ and "3 / 5" in html_ and "3 / 5" in testo
