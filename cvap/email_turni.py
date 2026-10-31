@@ -10,7 +10,7 @@ import json
 from datetime import date
 from email.message import EmailMessage
 
-from .modello import META, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, orario, parti_turno, segmento_intero
+from .modello import EXTRA, META, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, orario, parti_turno, segmento_intero
 
 GIORNI = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
 GIORNI_BREVI = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"]
@@ -56,6 +56,22 @@ def _assenze(s: dict, pid: int) -> dict[str, str]:
     return {x["data"]: x.get("motivo", "ferie") for x in s.get("ferie", []) if x["persona_id"] == pid}
 
 
+def _nome_postazione(s: dict, a: dict) -> str:
+    """Il nome della postazione; per le Assistenze ed Extra anche il nome della richiesta."""
+    if a["postazione"] != EXTRA:
+        return a["postazione"]
+    nome = next((e["nome"] for e in s.get("extra", []) if e["segmento"] == a["segmento"]), None)
+    return f"{nome} ({EXTRA})" if nome else EXTRA
+
+
+def _richieste_extra(s: dict, g: str) -> list[dict]:
+    return sorted((e for e in s.get("extra", []) if e["data"] == g), key=lambda e: (e["inizio"], e["id"]))
+
+
+def _ruoli_extra(e: dict) -> list[str]:
+    return [r for r, n in (("autista", e["autisti"]), ("soccorritore", e["soccorritori"])) if n > 0]
+
+
 def turni_personali(s: dict, pid: int, etichetta=orario_turno) -> list[dict]:
     """Un elemento per giorno: {data, turni: [{fascia, orario, postazione, ruolo}], assenza: None|ferie|malattia}."""
     assenze = _assenze(s, pid)
@@ -66,7 +82,8 @@ def turni_personali(s: dict, pid: int, etichetta=orario_turno) -> list[dict]:
         giorni.append({
             "data": g,
             "turni": [{"fascia": a["fascia"], "orario": etichetta(a["fascia"], a["segmento"]),
-                       "postazione": a["postazione"], "ruolo": RUOLI.get(a["ruolo"], a["ruolo"])} for a in turni],
+                       "postazione": _nome_postazione(s, a), "ruolo": RUOLI.get(a["ruolo"], a["ruolo"])}
+                      for a in turni],
             "assenza": assenze.get(g),
         })
     return giorni
@@ -99,7 +116,11 @@ def _righe(postazione: str) -> list[tuple[str, str, str, str]]:
 
 
 def _richiesti(s: dict, postazione: str, g: str, fascia: str, segmento: str, ruolo: str) -> int:
-    """Posti richiesti: 1 nelle postazioni normali, dal fabbisogno in quelle a richiesta."""
+    """Posti richiesti: 1 nelle postazioni normali, dal fabbisogno in quelle a richiesta, dalla richiesta
+    nelle Assistenze ed Extra."""
+    if postazione == EXTRA:
+        return sum(e["autisti" if ruolo == "autista" else "soccorritori"] for e in s.get("extra", [])
+                   if e["data"] == g and e["segmento"] == segmento)
     if postazione not in POSTAZIONI_A_RICHIESTA:
         return 1
     return sum(int(f["quantita"]) for f in s.get("fabbisogno", [])
@@ -111,13 +132,13 @@ def _cella(s: dict, postazione: str, g: str, fascia: str, segmento: str, ruolo: 
     """Chi c'è in quel posto (con l'orario se è solo una parte) e i testi "scoperto" come sul sito."""
     lista = [a for a in s["assegnazioni"] if a["postazione"] == postazione and a["data"] == g
              and a["fascia"] == fascia and a["ruolo"] == ruolo
-             and (postazione != PROGRAMMATI or a["segmento"] == segmento)]
+             and (postazione not in (PROGRAMMATI, EXTRA) or a["segmento"] == segmento)]
     persone = [{"nome": a["persona_nome"], "pid": a["persona_id"], "volontario": a["origine"] == "volontario",
                 "orario": None if a["segmento"] == segmento else _ore(fascia, a["segmento"])}
                for a in sorted(lista, key=lambda a: orario(date.fromisoformat(g), fascia, a["segmento"])[0])]
     richiesti = _richiesti(s, postazione, g, fascia, segmento, ruolo)
     avvisi = []
-    if postazione == PROGRAMMATI:
+    if postazione in (PROGRAMMATI, EXTRA):  # più posti uguali nello stesso turno
         mancano = max(0, richiesti - len(lista))
         if mancano:
             avvisi.append("scoperto" if richiesti == 1 else
@@ -168,6 +189,16 @@ def _testo(s: dict, nome: str, pid: int, intestazione: str) -> str:
                 voci = [p["nome"] + (f" {p['orario']}" if p["orario"] else "") for p in persone] + scoperte
                 celle.append(f"{GIORNI_BREVI[date.fromisoformat(g).weekday()]} {', '.join(voci) or '—'}")
             righe.append(f"  {turno} {RUOLI[ruolo]}: " + " | ".join(celle))
+    if s.get("extra"):
+        righe += ["", EXTRA.upper()]
+        for g in s["giorni"]:
+            for e in _richieste_extra(s, g):
+                posti = []
+                for ruolo in _ruoli_extra(e):
+                    persone, scoperte = _cella(s, EXTRA, g, e["fascia"], e["segmento"], ruolo)
+                    posti.append(f"{RUOLI[ruolo]}: " + (", ".join([p["nome"] for p in persone] + scoperte) or "—"))
+                righe.append(f"  {GIORNI_BREVI[date.fromisoformat(g).weekday()]} {_dm(g)} {e['nome']} "
+                             f"{_ore(e['fascia'], e['segmento'])} · " + " · ".join(posti))
     return "\n".join(righe) + "\n"
 
 
@@ -206,6 +237,51 @@ def _html_personale(s: dict, pid: int) -> str:
             f'style="border-collapse:collapse;width:100%;max-width:640px;font-size:14px;">{"".join(righe)}</table>')
 
 
+def _html_voci(persone: list[dict], scoperte: list[str], pid: int | None) -> list[str]:
+    voci = []
+    for p in persone:
+        stile = "font-weight:bold;"
+        if p["volontario"]:
+            stile += f"background:{VOL_BG};color:{VOL_TESTO};padding:1px 4px;border-radius:3px;"
+        if p["pid"] == pid:
+            stile += "text-decoration:underline;"
+        orario_p = f' <span style="font-weight:normal;font-size:11px;">{_e(p["orario"])}</span>' \
+            if p["orario"] else ""
+        voci.append(f'<span style="{stile}">{_e(p["nome"])}</span>{orario_p}')
+    voci += [f'<span style="color:#fff;background:{ROSSO};font-weight:bold;padding:1px 4px;'
+             f'border-radius:3px;font-size:12px;">{_e(x)}</span>' for x in scoperte]
+    return voci
+
+
+def _titolo_blocco(nome: str) -> str:
+    return (f'<h3 style="font-size:16px;margin:18px 0 6px;color:#1b2330;">'
+            f'<span style="display:inline-block;width:10px;height:10px;background:{VERDE};margin-right:6px;"></span>'
+            f'{_e(nome)}</h3>')
+
+
+def _html_extra(s: dict, pid: int | None, testa: str) -> str:
+    """Assistenze ed Extra: una colonna per giorno, in ogni cella le richieste con orario e persone."""
+    celle = []
+    for g in s["giorni"]:
+        schede = []
+        for e in _richieste_extra(s, g):
+            bg, bordo = (GIORNO_BG, GIORNO_BORDO) if e["fascia"] == "giorno" else (NOTTE_BG, NOTTE_BORDO)
+            posti = "".join(
+                f'<div style="margin-top:3px;"><span style="font-size:11px;">{RUOLI[ruolo]}</span><br>'
+                f'{"<br>".join(_html_voci(*_cella(s, EXTRA, g, e["fascia"], e["segmento"], ruolo), pid)) or "—"}</div>'
+                for ruolo in _ruoli_extra(e))
+            schede.append(f'<div style="margin:2px 0 6px;padding:4px;background:{bg};border-left:4px solid {bordo};">'
+                          f'<b>{_e(e["nome"])}</b><br><span style="font-size:12px;">'
+                          f'{"☀" if e["fascia"] == "giorno" else "☾"} {_e(_ore(e["fascia"], e["segmento"]))}</span>'
+                          f'{posti}</div>')
+        celle.append(f'<td style="{_TD}vertical-align:top;">{"".join(schede) or "—"}</td>')
+    return (_titolo_blocco(EXTRA)
+            + f'<table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;">'
+              f'<tr><th style="{_TD}background:#e9eef6;">Richieste</th>{testa}</tr>'
+              f'<tr><td style="{_TD}background:#e9eef6;font-size:12px;">Assistenze<br>ed Extra</td>{"".join(celle)}</tr>'
+              f'</table>')
+
+
 def _html_tabellone(s: dict, pid: int | None) -> str:
     blocchi = []
     for postazione in _postazioni(s):
@@ -223,27 +299,18 @@ def _html_tabellone(s: dict, pid: int | None) -> str:
             celle = [f'<td style="{_TD}{sopra}background:{bg};border-left:4px solid {bordo};text-align:left;'
                      f'white-space:nowrap;font-size:12px;">{etichetta}</td>']
             for g in s["giorni"]:
-                persone, scoperte = _cella(s, postazione, g, fascia, segmento, ruolo)
-                voci = []
-                for p in persone:
-                    stile = "font-weight:bold;"
-                    if p["volontario"]:
-                        stile += f"background:{VOL_BG};color:{VOL_TESTO};padding:1px 4px;border-radius:3px;"
-                    if p["pid"] == pid:
-                        stile += "text-decoration:underline;"
-                    orario_p = f' <span style="font-weight:normal;font-size:11px;">{_e(p["orario"])}</span>' \
-                        if p["orario"] else ""
-                    voci.append(f'<span style="{stile}">{_e(p["nome"])}</span>{orario_p}')
-                voci += [f'<span style="color:#fff;background:{ROSSO};font-weight:bold;padding:1px 4px;'
-                         f'border-radius:3px;font-size:12px;">{_e(x)}</span>' for x in scoperte]
+                voci = _html_voci(*_cella(s, postazione, g, fascia, segmento, ruolo), pid)
                 celle.append(f'<td style="{_TD}{sopra}background:{bg};">{"<br>".join(voci) or "—"}</td>')
             righe.append(f"<tr>{''.join(celle)}</tr>")
         blocchi.append(
-            f'<h3 style="font-size:16px;margin:18px 0 6px;color:#1b2330;">'
-            f'<span style="display:inline-block;width:10px;height:10px;background:{VERDE};margin-right:6px;"></span>'
-            f'{_e(postazione)}</h3>'
-            f'<table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;">'
+            _titolo_blocco(postazione)
+            + f'<table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;">'
             f'<tr><th style="{_TD}background:#e9eef6;">Turno</th>{testa}</tr>{"".join(righe)}</table>')
+    if s.get("extra"):  # solo se nella settimana ci sono richieste
+        testa = "".join(
+            f'<th style="{_TD}background:{"#fbeccb" if date.fromisoformat(g).weekday() >= 5 else "#e9eef6"};">'
+            f'{GIORNI_BREVI[date.fromisoformat(g).weekday()]}<br>{_dm(g)}</th>' for g in s["giorni"])
+        blocchi.append(_html_extra(s, pid, testa))
     return "".join(blocchi)
 
 

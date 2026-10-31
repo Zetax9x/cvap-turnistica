@@ -10,7 +10,8 @@ import sqlite3
 from datetime import date, timedelta
 
 from .calendario import lunedi
-from .modello import Assegnazione, Divieto, Fabbisogno, Persona, Postazione
+from .modello import (EXTRA, Assegnazione, Divieto, Fabbisogno, Persona, Postazione, fascia_extra,
+                      segmento_extra)
 from .vincoli import ORE_MAX_SETTIMANA
 
 RIFERIMENTO_A_DEFAULT = "2026-10-19"
@@ -105,6 +106,16 @@ CREATE TABLE IF NOT EXISTS fabbisogno (  -- posti richiesti nelle postazioni a r
     quantita INTEGER NOT NULL,
     PRIMARY KEY (data, postazione, fascia, segmento, ruolo)
 );
+CREATE TABLE IF NOT EXISTS richieste_extra (  -- Assistenze ed Extra: richieste con nome e orario libero
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    data TEXT NOT NULL,
+    nome TEXT NOT NULL,
+    inizio INTEGER NOT NULL,  -- ora di inizio (0-23)
+    fine INTEGER NOT NULL,    -- ora di fine dall'inizio del giorno: oltre 24 se passa la mezzanotte
+    autisti INTEGER NOT NULL,
+    soccorritori INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_richieste_extra_data ON richieste_extra(data);
 """
 
 _POSTAZIONI_SEED = (("Acquasanta", 0, 1), ("Venarotta", 0, 2), ("Ascoli", 1, 3))
@@ -626,6 +637,70 @@ def imposta_fabbisogno(conn: sqlite3.Connection, voci: list[Fabbisogno]) -> None
                     "DO UPDATE SET quantita = excluded.quantita",
                     (*chiave, f.quantita),
                 )
+
+
+# --- Assistenze ed Extra ------------------------------------------------------------------
+
+def _a_extra(r) -> dict:
+    return {"id": r["id"], "data": r["data"], "nome": r["nome"], "inizio": r["inizio"], "fine": r["fine"],
+            "autisti": r["autisti"], "soccorritori": r["soccorritori"],
+            "fascia": fascia_extra(r["inizio"]), "segmento": segmento_extra(r["id"], r["inizio"], r["fine"])}
+
+
+def extra_periodo(conn: sqlite3.Connection, dal: date, al: date) -> list[dict]:
+    """Richieste di Assistenze ed Extra con data in [dal, al]; `fine` è in ore dall'inizio del giorno."""
+    rows = conn.execute("SELECT * FROM richieste_extra WHERE data >= ? AND data <= ? ORDER BY data, inizio, id",
+                        (dal.isoformat(), al.isoformat())).fetchall()
+    return [_a_extra(r) for r in rows]
+
+
+def get_extra(conn: sqlite3.Connection, richiesta_id: int) -> dict | None:
+    r = conn.execute("SELECT * FROM richieste_extra WHERE id = ?", (richiesta_id,)).fetchone()
+    return _a_extra(r) if r else None
+
+
+def fabbisogno_extra(richieste: list[dict]) -> list[Fabbisogno]:
+    """I posti delle richieste, come fabbisogno (un turno per richiesta, contato per segmento)."""
+    out = []
+    for e in richieste:
+        for ruolo, n in (("autista", e["autisti"]), ("soccorritore", e["soccorritori"])):
+            if n > 0:
+                out.append(Fabbisogno(date.fromisoformat(e["data"]), EXTRA, e["fascia"], e["segmento"], ruolo, n))
+    return out
+
+
+def crea_extra(conn: sqlite3.Connection, data: date, nome: str, inizio: int, fine: int,
+               autisti: int, soccorritori: int) -> int:
+    with conn:
+        cur = conn.execute("INSERT INTO richieste_extra(data, nome, inizio, fine, autisti, soccorritori) "
+                           "VALUES (?, ?, ?, ?, ?, ?)", (data.isoformat(), nome, inizio, fine, autisti, soccorritori))
+        return cur.lastrowid
+
+
+def _assegnazioni_extra_where() -> str:
+    # le assegnazioni di una richiesta hanno il segmento "extra_<id>_..." (LIKE no: "_" è un jolly)
+    return "postazione = ? AND substr(segmento, 1, length(?)) = ?"
+
+
+def aggiorna_extra(conn: sqlite3.Connection, richiesta_id: int, data: date, nome: str, inizio: int, fine: int,
+                   autisti: int, soccorritori: int) -> None:
+    """Modifica la richiesta; le persone già assegnate seguono il nuovo giorno e il nuovo orario."""
+    prefisso = f"extra_{richiesta_id}_"
+    with conn:
+        conn.execute("UPDATE richieste_extra SET data = ?, nome = ?, inizio = ?, fine = ?, autisti = ?, "
+                     "soccorritori = ? WHERE id = ?",
+                     (data.isoformat(), nome, inizio, fine, autisti, soccorritori, richiesta_id))
+        conn.execute(f"UPDATE assegnazioni SET data = ?, fascia = ?, segmento = ? WHERE {_assegnazioni_extra_where()}",
+                     (data.isoformat(), fascia_extra(inizio), segmento_extra(richiesta_id, inizio, fine),
+                      EXTRA, prefisso, prefisso))
+
+
+def elimina_extra(conn: sqlite3.Connection, richiesta_id: int) -> bool:
+    """Elimina la richiesta e le persone assegnate. False se non esiste."""
+    prefisso = f"extra_{richiesta_id}_"
+    with conn:
+        conn.execute(f"DELETE FROM assegnazioni WHERE {_assegnazioni_extra_where()}", (EXTRA, prefisso, prefisso))
+        return conn.execute("DELETE FROM richieste_extra WHERE id = ?", (richiesta_id,)).rowcount > 0
 
 
 # --- email dei turni -------------------------------------------------------------------

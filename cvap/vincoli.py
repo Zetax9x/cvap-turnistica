@@ -9,7 +9,7 @@ from datetime import date, timedelta
 from itertools import combinations
 
 from .modello import (ORE_RIPOSO_MIN, PARTI_TURNO, Assegnazione, Fabbisogno, Persona, orario, parti_turno,
-                      si_sovrappongono, turni_ammessi)
+                      per_segmento, si_sovrappongono, turno_ammesso)
 from .slot import unita_da_coprire
 
 MAX_CONSECUTIVI = 3       # oltre è vietato
@@ -127,21 +127,21 @@ def _eccessi(giorni, assegnazioni, postazioni, fabbisogno):
     richiesti = Counter()
     for f in fabbisogno:
         richiesti[(f.data, f.postazione, f.fascia, f.ruolo)] += f.quantita
-        if f.segmento.startswith("prog_"):
+        if per_segmento(f.segmento):
             richiesti[(f.data, f.postazione, f.fascia, f.segmento, f.ruolo)] += f.quantita
     presenti: dict[tuple, list[Assegnazione]] = defaultdict(list)
     for a in assegnazioni:
         if a.postazione in postazioni or a.data not in settimana:
             continue
         # Programmati: si conta per segmento; Standby: per posto (le due metà sono lo stesso posto)
-        chiave = ((a.data, a.postazione, a.fascia, a.segmento, a.ruolo) if a.segmento.startswith("prog_")
+        chiave = ((a.data, a.postazione, a.fascia, a.segmento, a.ruolo) if per_segmento(a.segmento)
                   else a.chiave)
         presenti[chiave].append(a)
     out = []
     for chiave, gruppo in presenti.items():
         a = gruppo[0]
         # metà di Standby coperte da persone diverse contano come un solo posto
-        n = len(gruppo) if a.segmento.startswith("prog_") else _posti_occupati(gruppo)
+        n = len(gruppo) if per_segmento(a.segmento) else _posti_occupati(gruppo)
         if n > richiesti[chiave]:
             out.append(Violazione("errore", "eccesso",
                                   f"{a.ruolo} {_descrivi(a)}: {n} assegnati, richiesti {richiesti[chiave]}",
@@ -166,7 +166,7 @@ def _qualifiche(assegnazioni, persone):
         elif not p.puo_ricoprire(a.ruolo, a.postazione):
             out.append(Violazione("errore", "qualifica",
                                   f"{p.nome} non è autista ({_descrivi(a)})", p.id, a.data))
-        if (a.fascia, a.segmento) not in turni_ammessi(a.postazione):
+        if not turno_ammesso(a.postazione, a.fascia, a.segmento):
             out.append(Violazione("errore", "segmento", f"Orario non valido per {a.postazione} ({_descrivi(a)})",
                                   a.persona_id, a.data))
     return out

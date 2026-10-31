@@ -58,7 +58,7 @@ def richiesta(d, rid, inizio, fine, autisti=0, soccorritori=0):
 
 
 def test_il_generatore_riempie_le_richieste_e_le_ore_contano():
-    persone = staff(12, 12)
+    persone = staff(8, 8)
     richieste = richiesta(MARTEDI, 1, 9, 13, autisti=2, soccorritori=2)
     r = genera(GIORNI, ["Acquasanta", "Venarotta"], persone, fabbisogno=richieste, tempo_max=20)
     extra = [a for a in r.assegnazioni if a.postazione == EXTRA]
