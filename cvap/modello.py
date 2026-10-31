@@ -23,6 +23,48 @@ STANDBY = "Standby"
 PROGRAMMATI = "Programmati"
 POSTAZIONI_A_RICHIESTA = (STANDBY, PROGRAMMATI)
 
+# Assistenze ed Extra (tutte le settimane): richieste con nome e orario libero a ore intere, con N autisti e
+# M soccorritori. Ogni richiesta ha il suo segmento "extra_<id>_<inizio>_<fine>" (ore dall'inizio del
+# giorno; la fine può superare 24 se passa la mezzanotte), così orario e ore si ricavano dal segmento.
+EXTRA = "Assistenze ed Extra"
+DURATA_EXTRA_MAX = 24
+
+
+def segmento_extra(richiesta_id: int, inizio: int, fine: int) -> str:
+    return f"extra_{richiesta_id}_{inizio}_{fine}"
+
+
+def leggi_extra(segmento: str) -> tuple[int, int, int] | None:
+    """(id, inizio, fine) di un segmento di Assistenze ed Extra valido, altrimenti None."""
+    parti = segmento.split("_")
+    if len(parti) != 4 or parti[0] != "extra" or not all(x.isdigit() for x in parti[1:]):
+        return None
+    rid, inizio, fine = (int(x) for x in parti[1:])
+    if not (0 <= inizio <= 23 and inizio < fine <= inizio + DURATA_EXTRA_MAX):
+        return None
+    return rid, inizio, fine
+
+
+def is_extra(segmento: str) -> bool:
+    return segmento.startswith("extra_")
+
+
+def per_segmento(segmento: str) -> bool:
+    """True se nel turno ci sono più posti uguali, contati per segmento (Programmati, Assistenze ed Extra)."""
+    return segmento.startswith("prog_") or is_extra(segmento)
+
+
+def fascia_extra(inizio: int) -> str:
+    """Una richiesta è "di giorno" se inizia tra le 7 e le 19, altrimenti "di notte"."""
+    return "giorno" if 7 <= inizio < 19 else "notte"
+
+
+def _parti_extra(inizio: int, fine: int) -> frozenset[str]:
+    def parte(h):
+        h %= 24
+        return "mattina" if 7 <= h < 14 else "pomeriggio" if 14 <= h < 20 else "notte"
+    return frozenset(parte(h) for h in range(inizio, fine))
+
 _ORARI = {
     ("giorno", "intero"): (8, 20),
     ("giorno", "mattina"): (8, 14),
@@ -53,6 +95,9 @@ _TURNI_NORMALI = {("giorno", "intero"), ("giorno", "mattina"), ("giorno", "pomer
 
 def parti_turno(fascia: str, segmento: str) -> frozenset[str]:
     """Parti della giornata (PARTI_TURNO) coperte da un turno."""
+    if is_extra(segmento):
+        _, inizio, fine = _dati_extra(fascia, segmento)
+        return _parti_extra(inizio, fine)
     if fascia == "notte":
         return frozenset({"notte"})
     if segmento in ("mattina", "standby_mattina", "prog_mattina"):
@@ -67,6 +112,14 @@ def turni_ammessi(postazione: str) -> set[tuple[str, str]]:
     return _TURNI_AMMESSI.get(postazione, _TURNI_NORMALI)
 
 
+def turno_ammesso(postazione: str, fascia: str, segmento: str) -> bool:
+    """True se (fascia, segmento) è un turno valido della postazione."""
+    if postazione == EXTRA:
+        dati = leggi_extra(segmento)
+        return dati is not None and fascia == fascia_extra(dati[1])
+    return (fascia, segmento) in turni_ammessi(postazione)
+
+
 def segmento_intero(postazione: str, fascia: str) -> str:
     """Segmento del turno intero di una fascia (per i Programmati non esiste: ogni metà è a sé)."""
     return "standby" if postazione == STANDBY else "intero"
@@ -77,11 +130,21 @@ def si_sovrappongono(seg_a: str, seg_b: str) -> bool:
     return seg_a == seg_b or INTERO_DI.get(seg_a) == seg_b or INTERO_DI.get(seg_b) == seg_a
 
 
+def _dati_extra(fascia: str, segmento: str) -> tuple[int, int, int]:
+    dati = leggi_extra(segmento)
+    if dati is None or fascia != fascia_extra(dati[1]):
+        raise ValueError(f"combinazione fascia/segmento non valida: {fascia}/{segmento}")
+    return dati
+
+
 def orario(d: date, fascia: str, segmento: str) -> tuple[int, int]:
-    try:
-        inizio, fine = _ORARI[(fascia, segmento)]
-    except KeyError:
-        raise ValueError(f"combinazione fascia/segmento non valida: {fascia}/{segmento}") from None
+    if is_extra(segmento):
+        _, inizio, fine = _dati_extra(fascia, segmento)
+    else:
+        try:
+            inizio, fine = _ORARI[(fascia, segmento)]
+        except KeyError:
+            raise ValueError(f"combinazione fascia/segmento non valida: {fascia}/{segmento}") from None
     base = d.toordinal() * 24
     return base + inizio, base + fine
 

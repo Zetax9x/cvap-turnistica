@@ -24,8 +24,9 @@ from . import accesso, db, email_turni
 from .posta import PostinoBloccato, PostinoSmtp
 from .calendario import giorni_settimana, lunedi, postazioni_attive, tipo_settimana
 from .liberi import liberi_settimana
-from .modello import (INTERO_DI, PARTI_TURNO, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, SEGMENTI, STANDBY,
-                      TURNI_VIETABILI, Assegnazione, Fabbisogno, Persona, si_sovrappongono, turni_ammessi)
+from .modello import (EXTRA, INTERO_DI, PARTI_TURNO, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, SEGMENTI, STANDBY,
+                      TURNI_VIETABILI, Assegnazione, Fabbisogno, Persona, leggi_extra, si_sovrappongono,
+                      turno_ammesso)
 from .storico import (CATEGORIE_WEEKEND, SEDI_ALTERNATE, SettimanaPassata, calcola_storico, categoria_weekend,
                       indisponibilita_per_giorno, solo_generate)
 from .vincoli import (ORE_MAX_SETTIMANA, TESTO_FERIE, TESTO_MALATTIA, differenza_ore, giorni_disponibili,
@@ -37,6 +38,7 @@ DATA_MIN, DATA_MAX = date(2000, 1, 1), date(2100, 12, 31)
 DataValida = Annotated[date, Field(ge=DATA_MIN, le=DATA_MAX)]
 FERIE_GIORNI_MAX = 366
 FABBISOGNO_VOCI_MAX = 200
+EXTRA_PER_SETTIMANA_MAX = 50  # richieste di Assistenze ed Extra: oltre, il generatore diventa troppo pesante
 QUANTITA_MAX = {STANDBY: 1, PROGRAMMATI: 20}
 # turni che si possono richiedere (le metà dello Standby sono solo per i volontari che lo spezzano)
 TURNI_RICHIEDIBILI = {
@@ -137,11 +139,21 @@ class ImpostazioniIn(BaseModel):
         return self
 
 
+def _segmento_valido(valore):
+    """I segmenti fissi, o quello di una richiesta di Assistenze ed Extra ("extra_<id>_<inizio>_<fine>")."""
+    if valore in SEGMENTI or (isinstance(valore, str) and len(valore) <= 40 and leggi_extra(valore)):
+        return valore
+    raise ValueError(f"segmento non valido: {valore!r}")
+
+
+Segmento = Annotated[str, BeforeValidator(_segmento_valido)]
+
+
 class AssegnazioneIn(BaseModel):
     data: DataValida
     postazione: Annotated[str, StringConstraints(min_length=1, max_length=100)]
     fascia: Literal["giorno", "notte"]
-    segmento: Literal[SEGMENTI]
+    segmento: Segmento
     ruolo: Literal["autista", "soccorritore"]
     persona_id: Id | None = None
     nome_volontario: Nome | None = None  # volontario non registrato: si cerca per nome o si crea
@@ -181,6 +193,28 @@ class VoceFabbisognoIn(BaseModel):
 
 class FabbisognoIn(BaseModel):
     voci: Annotated[list[VoceFabbisognoIn], Field(max_length=FABBISOGNO_VOCI_MAX)]
+
+
+class ExtraIn(BaseModel):
+    """Richiesta di Assistenze ed Extra: ore intere; se `fine` <= `inizio` finisce il giorno dopo."""
+    data: DataValida
+    nome: Nome
+    inizio: int = Field(ge=0, le=23)
+    fine: int = Field(ge=0, le=23)
+    autisti: int = Field(ge=0, le=20)
+    soccorritori: int = Field(ge=0, le=20)
+
+    @model_validator(mode="after")
+    def _coerente(self):
+        if self.inizio == self.fine:
+            raise ValueError("l'ora di fine dev'essere diversa da quella di inizio")
+        if self.autisti + self.soccorritori < 1:
+            raise ValueError("serve almeno una persona")
+        return self
+
+    @property
+    def fine_assoluta(self) -> int:
+        return self.fine if self.fine > self.inizio else self.fine + 24
 
 
 class GeneraIn(BaseModel):
@@ -245,11 +279,12 @@ def _a_richiesta(tipo: str) -> list[str]:
 
 
 def _fabbisogno_attivo(conn, giorni: list[date], tipo: str):
-    """Fabbisogno della settimana; nelle settimane B è vuoto anche se nel DB ne restano righe
-    (ad es. dopo un cambio della data di riferimento A)."""
+    """Fabbisogno della settimana: Standby e Programmati (nelle settimane B nessuno, anche se nel DB ne
+    restano righe, ad es. dopo un cambio della data di riferimento A) e Assistenze ed Extra (sempre)."""
+    extra = db.fabbisogno_extra(db.extra_periodo(conn, giorni[0], giorni[-1]))
     if not _a_richiesta(tipo):
-        return []
-    return db.fabbisogno_periodo(conn, giorni[0], giorni[-1])
+        return extra
+    return db.fabbisogno_periodo(conn, giorni[0], giorni[-1]) + extra
 
 
 def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
@@ -324,6 +359,7 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
         "giorni": [g.isoformat() for g in giorni],
         "postazioni": attive,
         "postazioni_a_richiesta": _a_richiesta(tipo),
+        "extra": [{**e, "fine": e["fine"] % 24} for e in db.extra_periodo(conn, giorni[0], giorni[-1])],
         "fabbisogno": [{"data": f.data.isoformat(), "postazione": f.postazione, "fascia": f.fascia,
                         "segmento": f.segmento, "ruolo": f.ruolo, "quantita": f.quantita} for f in fabbisogno],
         "assegnazioni": [{
@@ -389,16 +425,21 @@ def _volontario_per_nome(conn, nome: str, ruolo: str) -> int:
 
 def _verifica_posto_richiesto(conn, body: "AssegnazioneIn", stesso_posto: list[Assegnazione]) -> None:
     """Postazioni a richiesta: il turno dev'essere richiesto e avere ancora posti liberi."""
-    if body.postazione == PROGRAMMATI:
+    per_segmento = body.postazione in (PROGRAMMATI, EXTRA)  # più posti uguali, contati per segmento
+    if per_segmento:
         segmento_richiesto = body.segmento
     else:  # Standby: le metà occupano il posto del turno intero
         segmento_richiesto = INTERO_DI.get(body.segmento, body.segmento)
-    quantita = sum(f.quantita for f in db.fabbisogno_periodo(conn, body.data, body.data)
+    if body.postazione == EXTRA:
+        richiesti = db.fabbisogno_extra(db.extra_periodo(conn, body.data, body.data))
+    else:
+        richiesti = db.fabbisogno_periodo(conn, body.data, body.data)
+    quantita = sum(f.quantita for f in richiesti
                    if (f.postazione, f.fascia, f.segmento, f.ruolo)
                    == (body.postazione, body.fascia, segmento_richiesto, body.ruolo))
     if quantita <= 0:
         raise _errore(f"Turno non richiesto: indica prima il fabbisogno di {body.postazione} per quel turno")
-    if body.postazione == PROGRAMMATI:
+    if per_segmento:
         if sum(1 for a in stesso_posto if a.segmento == body.segmento) >= quantita:
             raise _errore(f"I posti richiesti per quel turno di {body.postazione} sono già tutti occupati")
     elif any(si_sovrappongono(a.segmento, body.segmento) for a in stesso_posto):
@@ -557,7 +598,7 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
         if p["tipo"] != "dipendente":
             raise _errore("I divieti si inseriscono solo per i dipendenti")
         if body.postazione is not None and body.postazione not in (
-                [x["nome"] for x in db.lista_postazioni(conn)] + list(POSTAZIONI_A_RICHIESTA)):
+                [x["nome"] for x in db.lista_postazioni(conn)] + list(POSTAZIONI_A_RICHIESTA) + [EXTRA]):
             raise _errore(f"Postazione sconosciuta: {body.postazione}")
         divieto = db.crea_divieto(conn, body.persona_id, body.postazione, body.turno)
         if divieto is None:
@@ -583,13 +624,13 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
             giorni, tipo, attive = _info_settimana(conn, inizio)
             if body.data not in giorni:
                 raise _errore("La data del turno non appartiene a questa settimana")
-            if body.postazione not in attive + _a_richiesta(tipo):
+            if body.postazione not in attive + _a_richiesta(tipo) + [EXTRA]:
                 raise _errore(f"La postazione {body.postazione} non è attiva nella settimana {tipo}")
-            if (body.fascia, body.segmento) not in turni_ammessi(body.postazione):
+            if not turno_ammesso(body.postazione, body.fascia, body.segmento):
                 raise _errore(f"Turno {body.fascia}/{body.segmento} non valido per {body.postazione}")
             stesso_posto = [a for _, a in db.assegnazioni_periodo(conn, body.data, body.data)
                             if (a.postazione, a.fascia, a.ruolo) == (body.postazione, body.fascia, body.ruolo)]
-            if body.postazione in POSTAZIONI_A_RICHIESTA:
+            if body.postazione in POSTAZIONI_A_RICHIESTA or body.postazione == EXTRA:
                 _verifica_posto_richiesto(conn, body, stesso_posto)
             elif any(si_sovrappongono(a.segmento, body.segmento) for a in stesso_posto):
                 raise _errore("Il posto è già occupato in quella fascia")
@@ -884,6 +925,44 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                 voci.append(Fabbisogno(v.data, v.postazione, v.fascia, v.segmento, v.ruolo, v.quantita))
             db.imposta_fabbisogno(conn, voci)
             return payload_settimana(conn, inizio)
+
+    # --- Assistenze ed Extra (tutte le settimane) ---
+    @app.post("/api/settimane/{data}/extra", status_code=201)
+    def crea_extra(data: str, body: ExtraIn, conn: Conn):
+        with scrittura():
+            inizio = lunedi(_data(data))
+            _verifica_modificabile(conn, inizio)
+            if lunedi(body.data) != inizio:
+                raise _errore("La data della richiesta non appartiene a questa settimana")
+            if len(db.extra_periodo(conn, inizio, inizio + timedelta(days=6))) >= EXTRA_PER_SETTIMANA_MAX:
+                raise _errore(f"Massimo {EXTRA_PER_SETTIMANA_MAX} richieste di Assistenze ed Extra a settimana")
+            db.crea_extra(conn, body.data, body.nome, body.inizio, body.fine_assoluta, body.autisti,
+                          body.soccorritori)
+            return payload_settimana(conn, inizio)
+
+    @app.put("/api/extra/{richiesta_id}")
+    def modifica_extra(richiesta_id: IdPath, body: ExtraIn, conn: Conn):
+        with scrittura():
+            e = db.get_extra(conn, richiesta_id)
+            if e is None:
+                raise HTTPException(404, "Richiesta non trovata")
+            inizio = lunedi(date.fromisoformat(e["data"]))
+            _verifica_modificabile(conn, inizio)
+            if lunedi(body.data) != inizio:
+                raise _errore("La richiesta si può spostare solo a un altro giorno della stessa settimana")
+            db.aggiorna_extra(conn, richiesta_id, body.data, body.nome, body.inizio, body.fine_assoluta,
+                              body.autisti, body.soccorritori)
+            return payload_settimana(conn, inizio)
+
+    @app.delete("/api/extra/{richiesta_id}", status_code=204)
+    def elimina_extra(richiesta_id: IdPath, conn: Conn):
+        with scrittura():
+            e = db.get_extra(conn, richiesta_id)
+            if e is None:
+                raise HTTPException(404, "Richiesta non trovata")
+            _verifica_modificabile(conn, lunedi(date.fromisoformat(e["data"])))
+            db.elimina_extra(conn, richiesta_id)
+            return Response(status_code=204)
 
     # --- indisponibilità ---
     @app.put("/api/settimane/{data}/indisponibilita")

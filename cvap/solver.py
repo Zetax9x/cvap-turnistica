@@ -40,7 +40,7 @@ from itertools import combinations
 
 from ortools.sat.python import cp_model
 
-from .modello import (PROGRAMMATI, STANDBY, Assegnazione, Fabbisogno, Persona, Unita, in_conflitto,
+from .modello import (EXTRA, PROGRAMMATI, STANDBY, Assegnazione, Fabbisogno, Persona, Unita, in_conflitto,
                       parti_turno)
 from .slot import unita_da_coprire
 from .storico import CATEGORIE_RICHIESTA, CATEGORIE_WEEKEND, SEDI_ALTERNATE, StoricoPersona, categoria_weekend
@@ -313,8 +313,8 @@ def _nota_minimo(giorni, assegnazioni, dipendenti, ferie) -> list[str]:
 
 
 def _priorita(u: Unita) -> int:
-    """0 = postazioni normali (coperte per prime), 1 = Standby, 2 = Programmati."""
-    return {STANDBY: 1, PROGRAMMATI: 2}.get(u.postazione, 0)
+    """0 = postazioni normali (coperte per prime), 1 = Standby, 2 = Programmati, 3 = Assistenze ed Extra."""
+    return {STANDBY: 1, PROGRAMMATI: 2, EXTRA: 3}.get(u.postazione, 0)
 
 
 def _ore_fisse(dipendenti, fissi) -> dict[int, int]:
@@ -441,9 +441,9 @@ class _Modello:
         quanti = defaultdict(int)
         for u in self.unita:
             quanti[_priorita(u)] += 1
-        peso = {2: P_SCOPERTO * self.scala}
-        peso[1] = peso[2] * (quanti[2] + 1)
-        peso[0] = peso[1] * (quanti[1] + 1)
+        peso = {3: P_SCOPERTO * self.scala}
+        for livello in (2, 1, 0):
+            peso[livello] = peso[livello + 1] * (quanti[livello + 1] + 1)
         for ui, u in enumerate(self.unita):
             scoperto = self.model.NewBoolVar(f"scoperto_{ui}")
             self.model.Add(sum(per_unita[ui]) + scoperto == 1)

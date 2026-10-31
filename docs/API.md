@@ -185,3 +185,40 @@ fabbisogno(data TEXT, postazione TEXT, fascia TEXT, segmento TEXT, ruolo TEXT, q
   400 se non c'è fabbisogno per quel turno ("Turno non richiesto"), se i posti richiesti sono già tutti presi
   (Programmati: contati per segmento) o se il segmento si sovrappone a uno già occupato (Standby, come le normali).
 - `POST /settimane/{data}/genera` passa il fabbisogno della settimana al generatore.
+
+## Assistenze ed Extra (tutte le settimane, A e B)
+
+Costante `EXTRA = "Assistenze ed Extra"` in `cvap/modello.py`. Ogni richiesta ha nome, giorno, orario libero a ore
+intere e quanti autisti e soccorritori servono. Non è nella tabella `postazioni`: i posti nascono dalle richieste.
+
+- Segmento di una richiesta: `extra_<id>_<inizio>_<fine>` (`segmento_extra`, `leggi_extra`): ore dall'inizio del
+  giorno, `fine` oltre 24 se passa la mezzanotte (es. 22–2 → `extra_7_22_26`), durata 1–24 h. `orario()` lo legge,
+  così ore, riposi (11 h) e conteggi funzionano come per gli altri turni.
+- Fascia (`fascia_extra`): `giorno` se inizia tra le 7 e le 19, altrimenti `notte` (vale per "max di fila",
+  giorno/notte, weekend, liberi). Parti della giornata per le indisponibilità: ore 7–14 mattina, 14–20 pomeriggio,
+  il resto notte (`parti_turno`).
+- Posti contati per segmento come i Programmati (`per_segmento`); `turno_ammesso(postazione, fascia, segmento)`.
+- Fabbisogno: `db.fabbisogno_extra(richieste)` le trasforma in `Fabbisogno`, unito a quello di Standby/Programmati
+  per payload, validatore e generatore.
+- Generatore: priorità di copertura più bassa (normali > Standby > Programmati > Assistenze ed Extra); le ore contano
+  come tutte le altre (minimo 36, massimo 72, differenza, statistiche).
+- Email e stampa: il tabellone compare solo se la settimana ha almeno una richiesta. Nei turni personali dell'email
+  la postazione è "<nome richiesta> (Assistenze ed Extra)".
+
+### Database
+```
+richieste_extra(id INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT, nome TEXT, inizio INTEGER, fine INTEGER,
+                autisti INTEGER, soccorritori INTEGER)   -- fine: ore dall'inizio del giorno (oltre 24 = giorno dopo)
+```
+
+### API
+- `GET /settimane/{data}` aggiunge `extra: [{id, data, nome, inizio, fine, autisti, soccorritori, fascia, segmento}]`
+  (qui `fine` è l'ora 0–23); `fabbisogno` comprende anche i posti delle richieste.
+- `POST /settimane/{data}/extra` `{data, nome, inizio, fine, autisti, soccorritori}` → 201, settimana aggiornata.
+  Ore 0–23; se `fine` <= `inizio` la richiesta finisce il giorno dopo. Persone 0–20 per ruolo, almeno una in tutto.
+  400 se la settimana è confermata o la data non è della settimana; 422 se i dati non sono validi.
+- `PUT /extra/{id}` (stesso corpo) → settimana aggiornata; le persone già assegnate seguono giorno e orario nuovi.
+  Il giorno deve restare nella stessa settimana.
+- `DELETE /extra/{id}` → 204; toglie anche le persone assegnate alla richiesta. 404 se non esiste.
+- `POST /settimane/{data}/assegnazioni` accetta `postazione: "Assistenze ed Extra"` con il `segmento` della
+  richiesta; 400 se la richiesta non c'è o i posti di quel ruolo sono già tutti presi.

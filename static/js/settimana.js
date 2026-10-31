@@ -6,6 +6,7 @@ import {
   el, clear, toast, toastErrore, chiediConferma, addDays, mondayOf, todayISO, ddmm, dataLunga,
   dataEstesa, indiceGiorno, GIORNI_BREVI, etichetta, formatOre, formatSaldo, orarioTurno,
   PARTI_TURNO, SCELTE_INDISPONIBILITA, partiTurno, valoreParti, etichettaParti, badgeAssenza,
+  EXTRA, leggiExtra,
 } from "./util.js";
 
 const FASCE = ["giorno", "notte"];
@@ -16,6 +17,7 @@ const PROGRAMMATI = "Programmati";
 const POSTAZIONI_A_RICHIESTA = [STANDBY, PROGRAMMATI];
 const SEGMENTI_PROG = ["prog_mattina", "prog_pomeriggio"];
 const MAX_PROGRAMMATI = 20;
+const MAX_EXTRA = 20;  // persone per ruolo in una richiesta di Assistenze ed Extra
 const SCARTO_PREDEFINITO = 12;  // se il server non indica `scarto_ore_max`
 const CHIAVE_SETTIMANA = "cvap.settimana";
 const CHIAVE_TEMPO = "cvap.tempoGenerazione";
@@ -38,6 +40,7 @@ const stato = {
 
 let dialogCella = null;
 let dialogLiberi = null;
+let dialogExtra = null;
 
 // Avvisi sui dipendenti liberi (campo `liberi` del payload)
 const AVVISI_LIBERI = {
@@ -147,6 +150,7 @@ function render() {
   for (const postazione of s.postazioni) griglie.append(renderGriglia(s, postazione));
   if (!s.postazioni.length) griglie.append(el("p", { class: "muted" }, "Nessuna postazione attiva in questa settimana."));
   for (const postazione of speciali) griglie.append(renderGriglia(s, postazione));
+  griglie.append(renderGrigliaExtra(s));
   frammento.append(griglie);
 
   frammento.append(el("div", { class: "pannelli" }, renderViolazioni(s), renderRiepilogo(s)));
@@ -305,7 +309,7 @@ function renderReport(r) {
  */
 
 function aRichiesta(postazione) {
-  return POSTAZIONI_A_RICHIESTA.includes(postazione);
+  return POSTAZIONI_A_RICHIESTA.includes(postazione) || postazione === EXTRA;
 }
 
 /** Segmento del turno intero della postazione (i Programmati non ne hanno: ogni metà è a sé). */
@@ -323,9 +327,14 @@ function segmentoCella(c) {
   return c.segmento || segmentoIntero(c.postazione);
 }
 
+/** Postazioni con più posti uguali nello stesso turno, contati per segmento. */
+function perSegmento(postazione) {
+  return postazione === PROGRAMMATI || postazione === EXTRA;
+}
+
 function chiaveCella(c) {
   const base = `${c.data}|${c.postazione}|${c.fascia}|${c.ruolo}`;
-  return c.postazione === PROGRAMMATI ? `${base}|${c.segmento}` : base;
+  return perSegmento(c.postazione) ? `${base}|${c.segmento}` : base;
 }
 
 function assegnazioniCella(s, c) {
@@ -371,7 +380,7 @@ function segmentiMancanti(c, lista) {
  */
 function coperturaCella(s, c, lista) {
   const richiesti = richiestiCella(s, c);
-  if (c.postazione === PROGRAMMATI) {
+  if (perSegmento(c.postazione)) {
     return {
       richiesti, mancanti: [],
       nMancanti: Math.max(0, richiesti - lista.length),
@@ -385,7 +394,7 @@ function coperturaCella(s, c, lista) {
 
 /** Testi "scoperto" da mostrare nella cella. */
 function testiScoperti(c, cop) {
-  if (c.postazione === PROGRAMMATI) {
+  if (perSegmento(c.postazione)) {
     if (!cop.nMancanti) return [];
     if (cop.richiesti === 1) return ["scoperto"];
     return [`${cop.nMancanti} di ${cop.richiesti} ${cop.nMancanti === 1 ? "scoperto" : "scoperti"}`];
@@ -478,10 +487,11 @@ function renderGriglia(s, postazione) {
 
 /** Il segmento va indicato sul chip solo se diverso dal turno della riga. */
 function mostraSegmento(a) {
-  return a.postazione !== PROGRAMMATI && a.segmento !== segmentoIntero(a.postazione);
+  return !perSegmento(a.postazione) && a.segmento !== segmentoIntero(a.postazione);
 }
 
-function renderCella(s, cella, scopertiReport, violazioni, confermata) {
+/** Cella di un posto; `tag` "div" per usarla fuori da una tabella (Assistenze ed Extra). */
+function renderCella(s, cella, scopertiReport, violazioni, confermata, tag = "td") {
   const { data, postazione } = cella;
   const lista = assegnazioniCella(s, cella)
     .sort((a, b) => ordineSegmento(a.segmento) - ordineSegmento(b.segmento));
@@ -496,7 +506,7 @@ function renderCella(s, cella, scopertiReport, violazioni, confermata) {
   // Postazione a richiesta, turno non richiesto e vuoto: niente da fare qui.
   if (!cop.richiesti && !lista.length) {
     classi.push("cella-non-richiesta");
-    return el("td", { class: classi.join(" ") },
+    return el(tag, { class: classi.join(" ") },
       el("span", { class: "non-richiesto", "aria-hidden": "true" }, "—"),
       el("span", { class: "sr-only" }, `${postazione}, ${GIORNI_BREVI[i]} ${ddmm(data)}, ${turno}: non richiesto`));
   }
@@ -534,7 +544,7 @@ function renderCella(s, cella, scopertiReport, violazioni, confermata) {
   if (scoperti.length) classi.push("cella-scoperta");
   if (evidenzia) classi.push("cella-evidenziata");
 
-  return el("td", { class: classi.join(" ") },
+  return el(tag, { class: classi.join(" ") },
     el("button", {
       type: "button", class: "cella-btn", "aria-label": etichettaCella,
       title: confermata ? "Settimana confermata (sola lettura)" : "Modifica assegnazioni",
@@ -598,6 +608,7 @@ function renderViolazioni(s) {
 
 /** Tipi di turno toccati da un turno (come `tipi_turno` del server). */
 function tipiTurno(fascia, segmento) {
+  if (leggiExtra(segmento)) return [...(fascia === "giorno" ? ["giorno"] : []), ...partiTurno(fascia, segmento)];
   if (fascia === "notte") return ["notte"];
   if (segmento === "intero" || segmento === "standby") return ["giorno", "mattina", "pomeriggio"];
   if (segmento.endsWith("mattina")) return ["giorno", "mattina"];
@@ -958,11 +969,12 @@ function descriviAssenze(r) {
   return [ferie ? `ferie ${ferie}g` : null, malattia ? `malattia ${malattia}g` : null].filter(Boolean).join(" + ");
 }
 
-function voceLibero(v, formato) {
+/** `senza`: avviso da non ripetere (è già il titolo della riga in cui compare la persona). */
+function voceLibero(v, formato, senza = null) {
   return el("li", {}, el("span", { class: "libero-nome" }, v.nome),
     v.parti ? el("span", { class: "muted" }, ` (${etichettaParti(new Set(v.parti)).toLowerCase()})`) : null,
     v.motivo ? [" ", badgeAssenza(v.motivo)] : null,
-    badgeAvvisi(v.avvisi, formato));
+    badgeAvvisi((v.avvisi || []).filter((a) => a !== senza), formato));
 }
 
 function apriLiberi(data) {
@@ -1007,10 +1019,15 @@ function renderDialogLiberi() {
 /** Riepilogo dei liberi di tutta la settimana: visibile solo nella stampa "Stampa liberi". */
 function renderStampaLiberi(s) {
   const giorni = s.giorni.map((g) => liberiDel(s, g));
-  const riga = (titolo, chiave) => el("tr", { class: `riga-${chiave}` },
+  // chi smonta dalla notte e la rifà la sera compare in entrambe le righe
+  const conAvviso = (avviso) => (g) => g.liberi.filter((v) => (v.avvisi || []).includes(avviso));
+  const riga = (titolo, classe, persone, senza = null) => el("tr", { class: `riga-${classe}` },
     el("th", { scope: "row" }, titolo),
-    giorni.map((g, i) => el("td", { class: i >= 5 ? "weekend" : null },
-      g[chiave].length ? el("ul", { class: "lista-liberi" }, g[chiave].map((v) => voceLibero(v, "breve"))) : "—")));
+    giorni.map((g, i) => {
+      const elenco = persone(g);
+      return el("td", { class: i >= 5 ? "weekend" : null },
+        elenco.length ? el("ul", { class: "lista-liberi" }, elenco.map((v) => voceLibero(v, "breve", senza))) : "—");
+    }));
   return el("section", { class: "stampa-liberi" },
     el("h2", {}, "Dipendenti liberi"),
     el("table", { class: "tabella tabella-liberi" },
@@ -1018,9 +1035,15 @@ function renderStampaLiberi(s) {
         el("th", { scope: "col" }, ""),
         s.giorni.map((g, i) => el("th", { scope: "col", class: i >= 5 ? "weekend" : null },
           `${GIORNI_BREVI[i]} ${ddmm(g)}`)))),
-      el("tbody", {}, riga("Liberi", "liberi"), riga("Indisponibili", "indisponibili"), riga("Ferie / malattia", "ferie"))),
+      el("tbody", {},
+        riga("Liberi tutto il giorno", "liberi", (g) => g.liberi.filter((v) => !(v.avvisi || []).length)),
+        riga("Smontano dalla notte", "smonto", conAvviso("smonto_notte"), "smonto_notte"),
+        riga("Fanno la notte", "notte", conAvviso("notte"), "notte"),
+        riga("Indisponibili", "indisponibili", (g) => g.indisponibili),
+        riga("Ferie / malattia", "ferie", (g) => g.ferie))),
     el("p", { class: "nota-stampa" },
-      "Smonto notte = ha fatto la notte il giorno prima (finisce alle 8) · Notte = fa la notte quella sera."));
+      "Smontano dalla notte = hanno fatto la notte il giorno prima (finiscono alle 8) · "
+      + "Fanno la notte = sono liberi di giorno e fanno la notte quella sera."));
 }
 
 // Se "afterprint" non arriva (alcuni browser) la classe resta: la stampa normale la toglie comunque.
@@ -1033,6 +1056,157 @@ function stampaLiberi() {
   document.body.classList.add("stampa-liberi-attiva");
   window.addEventListener("afterprint", () => document.body.classList.remove("stampa-liberi-attiva"), { once: true });
   window.print();
+}
+
+// ---------------------------------------------------------------- Assistenze ed Extra
+
+function richiestaExtra(s, segmento) {
+  return (s.extra || []).find((e) => e.segmento === segmento) || null;
+}
+
+function ruoliExtra(e) {
+  return RUOLI.filter((r) => (r === "autista" ? e.autisti : e.soccorritori) > 0);
+}
+
+function cellaExtra(e, ruolo) {
+  return { data: e.data, postazione: EXTRA, fascia: e.fascia, ruolo, segmento: e.segmento };
+}
+
+/** Tabellone delle Assistenze ed Extra (tutte le settimane): in ogni giorno le richieste, con i loro posti. */
+function renderGrigliaExtra(s) {
+  const confermata = s.stato === "confermata";
+  const scopertiReport = new Set(((s.report && s.report.scoperti) || []).map((u) => chiaveCella(u)));
+  const violazioni = indiceViolazioni(s);
+  const richieste = s.extra || [];
+  const thead = el("thead", {}, el("tr", {},
+    el("th", { scope: "col", class: "col-turno" }, "Richieste"),
+    s.giorni.map((g, i) => el("th", { scope: "col", class: i >= 5 ? "weekend" : null },
+      el("span", { class: "giorno-nome" }, GIORNI_BREVI[i]), " ", el("span", { class: "giorno-data" }, ddmm(g))))));
+  const celle = s.giorni.map((g, i) => {
+    const delGiorno = richieste.filter((e) => e.data === g)
+      .sort((a, b) => a.inizio - b.inizio || a.id - b.id);
+    const schede = delGiorno.map((e) => el("div", { class: `extra-scheda fascia-${e.fascia}` },
+      el("div", { class: "extra-testa" },
+        el("span", { class: "extra-nome" }, e.nome),
+        el("span", { class: "extra-orario" },
+          el("span", { "aria-hidden": "true" }, e.fascia === "notte" ? "☾ " : "☀ "), `${e.inizio}–${e.fine}`),
+        confermata ? null : el("button", {
+          type: "button", class: "btn btn-small extra-modifica no-print",
+          "aria-label": `Modifica la richiesta ${e.nome}`, title: "Modifica o elimina la richiesta",
+          onclick: () => apriExtra({ richiesta: e }),
+        }, "Modifica")),
+      ruoliExtra(e).map((ruolo) => el("div", { class: "extra-posto" },
+        el("span", { class: "ruolo-label" }, etichetta("ruolo", ruolo)),
+        renderCella(s, cellaExtra(e, ruolo), scopertiReport, violazioni, confermata, "div")))));
+    const aggiungi = confermata ? null : el("button", {
+      type: "button", class: "btn btn-small extra-aggiungi no-print",
+      "aria-label": `Aggiungi una richiesta ${GIORNI_BREVI[i]} ${ddmm(g)}`,
+      onclick: () => apriExtra({ data: g }),
+    }, "+ Richiesta");
+    return el("td", { class: `cella-extra${i >= 5 ? " weekend" : ""}` },
+      schede, aggiungi, !schede.length && confermata ? el("span", { class: "non-richiesto" }, "—") : null);
+  });
+  const tbody = el("tbody", {}, el("tr", {},
+    el("th", { scope: "row", class: "col-turno" }, el("span", { class: "ruolo-label" }, "Assistenze ed Extra")),
+    celle));
+  return el("section", {
+    class: `griglia-blocco griglia-speciale griglia-extra${richieste.length ? "" : " griglia-vuota"}`,
+    "aria-labelledby": "griglia-extra",
+  },
+  el("h2", { id: "griglia-extra", class: "griglia-titolo" }, EXTRA,
+    el("span", { class: "griglia-sottotitolo muted no-print" },
+      confermata ? "" : " · premi “+ Richiesta” nel giorno per aggiungerne una")),
+  el("div", { class: "griglia-scroll" }, el("table", { class: "griglia" }, thead, tbody)));
+}
+
+/** Pannello di una richiesta: nuova (`data`) o da modificare (`richiesta`). */
+function apriExtra({ data = null, richiesta = null }) {
+  if (!dialogExtra) {
+    dialogExtra = el("dialog", { class: "dialog dialog-extra", "aria-labelledby": "extra-titolo" });
+    document.body.appendChild(dialogExtra);
+  }
+  const s = stato.settimana;
+  const e = richiesta || { data, nome: "", inizio: 8, fine: 12, autisti: 1, soccorritori: 1 };
+  const d = clear(dialogExtra);
+  const ore = (id, valore) => el("select", { id, required: true },
+    Array.from({ length: 24 }, (_, h) => el("option", { value: String(h), selected: h === valore }, `${h}:00`)));
+  const numero = (id, valore) => el("input", {
+    id, type: "number", min: "0", max: String(MAX_EXTRA), step: "1", inputmode: "numeric", value: String(valore),
+  });
+  const nome = el("input", { id: "extra-nome", type: "text", maxlength: "100", required: true, value: e.nome,
+    autocomplete: "off", placeholder: "es. Partita allo stadio" });
+  const giorno = el("select", { id: "extra-data" },
+    s.giorni.map((g, i) => el("option", { value: g, selected: g === e.data }, `${GIORNI_BREVI[i]} ${ddmm(g)}`)));
+  const dalle = ore("extra-inizio", e.inizio);
+  const alle = ore("extra-fine", e.fine);
+  const autisti = numero("extra-autisti", e.autisti);
+  const soccorritori = numero("extra-soccorritori", e.soccorritori);
+  const campo = (id, testo, input, cls = "campo") => el("div", { class: cls }, el("label", { for: id }, testo), input);
+  const salva = el("button", { type: "submit", class: "btn btn-primary" }, richiesta ? "Salva" : "Aggiungi");
+
+  d.append(el("div", { class: "dialog-head" },
+    el("h2", { id: "extra-titolo", class: "dialog-title" },
+      richiesta ? `Modifica richiesta · ${EXTRA}` : `Nuova richiesta · ${EXTRA}`),
+    el("button", { type: "button", class: "dialog-x", "aria-label": "Chiudi", onclick: () => d.close() }, "×")));
+  d.append(el("form", {
+    class: "dialog-section",
+    onsubmit: async (ev) => {
+      ev.preventDefault();
+      const corpo = {
+        data: giorno.value, nome: nome.value.trim(), inizio: Number(dalle.value), fine: Number(alle.value),
+        autisti: Number(autisti.value) || 0, soccorritori: Number(soccorritori.value) || 0,
+      };
+      if (!corpo.nome) { nome.focus(); toast("Scrivi il nome della richiesta.", "avviso"); return; }
+      if (corpo.inizio === corpo.fine) { alle.focus(); toast("L’ora di fine dev’essere diversa da quella di inizio.", "avviso"); return; }
+      const fuori = [corpo.autisti, corpo.soccorritori].some((n) => !Number.isInteger(n) || n < 0 || n > MAX_EXTRA);
+      if (fuori) { autisti.focus(); toast(`Il numero di persone va da 0 a ${MAX_EXTRA}.`, "avviso"); return; }
+      if (corpo.autisti + corpo.soccorritori < 1) { autisti.focus(); toast("Serve almeno una persona.", "avviso"); return; }
+      salva.disabled = true;
+      try {
+        const nuova = richiesta ? await api.modificaExtra(richiesta.id, corpo) : await api.creaExtra(stato.data, corpo);
+        d.close();
+        aggiorna(nuova);
+        toast(richiesta ? "Richiesta modificata." : "Richiesta aggiunta.", "ok");
+      } catch (err) {
+        toastErrore(err);
+        salva.disabled = false;
+      }
+    },
+  },
+  el("div", { class: "campi" },
+    campo("extra-nome", "Nome della richiesta", nome, "campo campo-largo"),
+    campo("extra-data", "Giorno", giorno),
+    campo("extra-inizio", "Dalle", dalle),
+    campo("extra-fine", "Alle", alle),
+    campo("extra-autisti", "Autisti", autisti),
+    campo("extra-soccorritori", "Soccorritori", soccorritori)),
+  el("p", { class: "hint" }, "Se l’ora di fine è prima di quella di inizio, la richiesta finisce il giorno dopo (es. 22:00–2:00)."),
+  el("div", { class: "form-actions" },
+    salva,
+    richiesta ? el("button", {
+      type: "button", class: "btn btn-danger",
+      onclick: async (ev) => {
+        const btn = ev.currentTarget;  // dopo l'await currentTarget non c'è più
+        const occupati = s.assegnazioni.filter((a) => a.segmento === richiesta.segmento).length;
+        const testo = occupati === 1 ? "Verrà tolta anche la persona assegnata."
+          : occupati ? `Verranno tolte anche le ${occupati} persone assegnate.` : "La richiesta verrà eliminata.";
+        const ok = await chiediConferma(testo, { titolo: `Eliminare “${richiesta.nome}”?`, ok: "Elimina", pericolo: true });
+        if (!ok) return;
+        btn.disabled = true;
+        try {
+          await api.eliminaExtra(richiesta.id);
+          d.close();
+          await ricarica();
+          toast("Richiesta eliminata.", "ok");
+        } catch (err) {
+          toastErrore(err);
+          btn.disabled = false;
+        }
+      },
+    }, "Elimina") : null,
+    el("button", { type: "button", class: "btn", onclick: () => d.close() }, "Annulla"))));
+  if (!d.open) d.showModal();
+  nome.focus();
 }
 
 // ---------------------------------------------------------------- dialog cella
@@ -1057,12 +1231,13 @@ function renderDialog() {
   const lista = assegnazioniCella(s, c)
     .sort((a, b) => ordineSegmento(a.segmento) - ordineSegmento(b.segmento));
   const cop = coperturaCella(s, c, lista);
-  const prog = c.postazione === PROGRAMMATI;
+  const prog = perSegmento(c.postazione);  // più posti nello stesso turno
+  const richiesta = c.postazione === EXTRA ? richiestaExtra(s, c.segmento) : null;
   const d = clear(dialogCella);
 
   d.append(el("div", { class: "dialog-head" },
     el("h2", { id: "cella-titolo", class: "dialog-title" },
-      `${c.postazione} · ${dataEstesa(c.data)}`),
+      `${richiesta ? `${richiesta.nome} (${EXTRA})` : c.postazione} · ${dataEstesa(c.data)}`),
     el("p", { class: "muted" }, `${orarioTurno(c.fascia, segmentoCella(c))} · ${etichetta("ruolo", c.ruolo)}`,
       prog ? ` · ${cop.richiesti} ${cop.richiesti === 1 ? "richiesto" : "richiesti"}` : ""),
     el("button", { type: "button", class: "dialog-x", "aria-label": "Chiudi", onclick: () => d.close() }, "×")));
@@ -1123,7 +1298,7 @@ function renderFormAggiunta(c, mancanti) {
   const inFerie = new Map((s.ferie || []).filter((x) => x.data === c.data).map((x) => [x.persona_id, x.motivo]));
   // indisponibile solo se la sua indisponibilità tocca le ore di questo turno
   const indisponibili = giorniPersona(s.indisponibilita, c.data, partiTurno(c.fascia, segmentoCella(c)));
-  const prog = c.postazione === PROGRAMMATI;
+  const prog = c.postazione === PROGRAMMATI;  // "autista programmati" vale solo qui
   // l'autista può fare anche il soccorritore; nei Programmati guida anche chi ha "autista programmati"
   const puoRicoprire = (p) => c.ruolo === "soccorritore" || p.qualifica === "autista"
     || (prog && !!p.autista_programmati);
@@ -1178,7 +1353,7 @@ function renderFormAggiunta(c, mancanti) {
   const campi = [interruttore, campoVol, campoDip];
   // Segmento: il turno di giorno (normali e Standby) si può spezzare; notte e Programmati no.
   let segSelect = null;
-  if (c.fascia === "giorno" && !prog) {
+  if (c.fascia === "giorno" && !perSegmento(c.postazione)) {
     const intero = segmentoIntero(c.postazione);
     const predefinito = mancanti.length === 1 ? mancanti[0] : intero;
     segSelect = el("select", { id: "cella-segmento", name: "segmento" },
@@ -1336,6 +1511,10 @@ function contaScoperti(s) {
   for (const postazione of postazioni) for (const riga of righeGriglia(postazione)) for (const g of s.giorni) {
     const c = { data: g, postazione, fascia: riga.fascia, ruolo: riga.ruolo };
     if (riga.segmento) c.segmento = riga.segmento;
+    n += coperturaCella(s, c, assegnazioniCella(s, c)).nMancanti;
+  }
+  for (const e of s.extra || []) for (const ruolo of ruoliExtra(e)) {
+    const c = cellaExtra(e, ruolo);
     n += coperturaCella(s, c, assegnazioniCella(s, c)).nMancanti;
   }
   return n;

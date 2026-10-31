@@ -120,3 +120,40 @@ def test_l_impronta_non_cambia_con_le_nuove_etichette():
                             "ruolo": "Autista"}]
     atteso = hashlib.sha256(json.dumps(vecchio, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     assert impronta(s, 1) == atteso
+
+
+# --- Assistenze ed Extra ------------------------------------------------------------------------
+
+def con_extra(assegnazioni=()):
+    s = settimana(assegnazioni)
+    s["extra"] = [{"id": 5, "data": GIORNI[1], "nome": "Partita stadio", "inizio": 15, "fine": 19,
+                   "autisti": 1, "soccorritori": 2, "fascia": "giorno", "segmento": "extra_5_15_19"}]
+    return s
+
+
+def test_senza_richieste_niente_tabellone_extra():
+    s = settimana()
+    s["extra"] = []
+    assert "Assistenze ed Extra" not in _html_tabellone(s, None)
+    assert "ASSISTENZE ED EXTRA" not in _testo(s, "P1", 1, "Turni")
+
+
+def test_tabellone_extra_con_nome_orario_persone_e_scoperti():
+    s = con_extra([a("Assistenze ed Extra", "giorno", "extra_5_15_19", data=GIORNI[1], nome="Anna"),
+                   a("Assistenze ed Extra", "giorno", "extra_5_15_19", "soccorritore", data=GIORNI[1], nome="Bruno")])
+    html = _html_tabellone(s, None)
+    blocco_extra = html[html.index("Assistenze ed Extra</h3>"):]
+    testo = re.sub(r"<[^>]+>", " ", blocco_extra)
+    assert "Partita stadio" in testo and "15–19" in testo
+    assert "Anna" in testo and "Bruno" in testo and "1 di 2 scoperto" in testo
+    t = _testo(s, "Anna", 1, "Turni")
+    sezione = t[t.index("ASSISTENZE ED EXTRA"):]
+    assert "Mar" in sezione and "Partita stadio 15–19" in sezione and "Anna" in sezione
+    assert "1 di 2 scoperto" in sezione
+
+
+def test_nei_turni_personali_c_e_il_nome_della_richiesta():
+    from cvap.email_turni import turni_personali
+    s = con_extra([a("Assistenze ed Extra", "giorno", "extra_5_15_19", data=GIORNI[1], nome="Anna")])
+    [t] = [t for g in turni_personali(s, 1) for t in g["turni"]]
+    assert t["postazione"] == "Partita stadio (Assistenze ed Extra)" and t["orario"] == "Pomeriggio 15–19"
