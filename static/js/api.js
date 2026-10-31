@@ -99,6 +99,11 @@ export const api = {
 
   impostaFabbisogno: (data, voci) => richiesta("PUT", `/settimane/${enc(data)}/fabbisogno`, { voci }),
 
+  // Assistenze ed Extra: {data, nome, inizio, fine, autisti, soccorritori} (ore 0-23; fine <= inizio = giorno dopo)
+  creaExtra: (data, dati) => richiesta("POST", `/settimane/${enc(data)}/extra`, dati),
+  modificaExtra: (id, dati) => richiesta("PUT", `/extra/${enc(id)}`, dati),
+  eliminaExtra: (id) => richiesta("DELETE", `/extra/${enc(id)}`),
+
   ferie: () => richiesta("GET", "/ferie"),
   creaFerie: (dati) => richiesta("POST", "/ferie", dati),
   eliminaFerie: (id) => richiesta("DELETE", `/ferie/${enc(id)}`),

@@ -352,6 +352,41 @@ input[type="checkbox"] { min-height: 0; width: 1.1rem; height: 1.1rem; accent-co
 }
 .scoperto-text { color: var(--err); font-weight: 600; margin: .3rem 0; }
 
+/* ---------- Assistenze ed Extra: in ogni giorno le richieste, ognuna con i suoi posti ---------- */
+
+.cella-extra { padding: 6px; }
+.extra-scheda {
+  border: 1px solid var(--border); border-left: 4px solid var(--giorno); border-radius: var(--radius-sm);
+  background: var(--surface); margin-bottom: 6px; overflow: hidden;
+}
+.extra-scheda.fascia-notte { border-left-color: var(--notte); }
+.extra-testa { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; padding: 4px 6px; background: var(--surface-2); }
+.extra-nome { font-weight: 750; overflow-wrap: anywhere; }
+.extra-orario { font-size: .85rem; font-variant-numeric: tabular-nums; color: var(--muted); font-weight: 650; }
+.extra-modifica { margin-left: auto; min-height: 26px; padding: 0 .5rem; font-size: .8rem; }
+.extra-posto { border-top: 1px solid var(--border); }
+.extra-posto > .ruolo-label { font-size: .75rem; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); padding: 3px 6px 0; }
+.extra-posto .cella { height: auto; }  /* fuori dalla tabella: niente altezza minima della griglia */
+.extra-posto .cella-btn { min-height: 36px; }
+.extra-aggiungi { width: 100%; justify-content: center; }
+
+@media print {
+  .no-print { display: none !important; }
+  .scoperto { animation: none !important; }
+  /* senza richieste il tabellone non si stampa */
+  .griglia-extra.griglia-vuota { display: none !important; }
+  #view-settimana .griglia-extra .cella-extra { background: #fff !important; }
+  #view-settimana .griglia-extra .extra-scheda { border-color: #555; break-inside: avoid; }
+  #view-settimana .griglia-extra .extra-scheda.fascia-giorno .extra-testa { background: #ffe9a8; }
+  #view-settimana .griglia-extra .extra-scheda.fascia-notte .extra-testa { background: #d3dbf7; }
+  #view-settimana .griglia-extra .extra-nome { font-size: 12pt; color: #000; }
+  #view-settimana .griglia-extra .extra-orario { font-size: 11pt; color: #000; }
+  #view-settimana .griglia-extra .extra-posto > .ruolo-label { font-size: 9pt; color: #000; }
+  #view-settimana .griglia-extra .extra-posto .cella { height: auto; }
+  #view-settimana .griglia-extra .extra-posto .cella-btn { min-height: 0; }
+  #view-settimana .griglia-extra .chip { font-size: 12pt; }
+}
+
 /* ---------- Pannelli (violazioni, riepilogo) ---------- */
 
 .pannelli {

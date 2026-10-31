@@ -107,8 +107,29 @@ export function formatSaldo(n) {
 
 export const PARTI_TURNO = ["mattina", "pomeriggio", "notte"];
 
+// ---------- Assistenze ed Extra: segmento "extra_<id>_<inizio>_<fine>" (fine oltre 24 = giorno dopo) ----------
+
+export const EXTRA = "Assistenze ed Extra";
+
+/** {id, inizio, fine} di un segmento di Assistenze ed Extra, altrimenti null. */
+export function leggiExtra(segmento) {
+  const m = /^extra_(\d+)_(\d+)_(\d+)$/.exec(segmento || "");
+  return m ? { id: Number(m[1]), inizio: Number(m[2]), fine: Number(m[3]) } : null;
+}
+
+function parteDellOra(h) {
+  const o = h % 24;
+  return o >= 7 && o < 14 ? "mattina" : o >= 14 && o < 20 ? "pomeriggio" : "notte";
+}
+
 /** Parti della giornata coperte da un turno (come `parti_turno` del server). */
 export function partiTurno(fascia, segmento) {
+  const extra = leggiExtra(segmento);
+  if (extra) {
+    const parti = new Set();
+    for (let h = extra.inizio; h < extra.fine; h++) parti.add(parteDellOra(h));
+    return PARTI_TURNO.filter((p) => parti.has(p));
+  }
   if (fascia === "notte") return ["notte"];
   if (["mattina", "standby_mattina", "prog_mattina"].includes(segmento)) return ["mattina"];
   if (["pomeriggio", "standby_pomeriggio", "prog_pomeriggio"].includes(segmento)) return ["pomeriggio"];
@@ -173,6 +194,10 @@ export function badgeAssenza(motivo = "ferie") {
 }
 
 export function etichetta(gruppo, valore) {
+  if ((gruppo === "segmento" || gruppo === "segmentoLungo") && leggiExtra(valore)) {
+    const x = leggiExtra(valore);
+    return `${x.inizio}–${x.fine % 24}`;
+  }
   return (ETICHETTE[gruppo] && ETICHETTE[gruppo][valore]) || valore || "—";
 }
 
@@ -192,6 +217,13 @@ const ORARI = {
 
 /** Orario leggibile di un turno, es. "Giorno 8–20", "Notte 19–7", "Mattina 7–14". */
 export function orarioTurno(fascia, segmento) {
+  const extra = leggiExtra(segmento);
+  if (extra) {
+    const parti = partiTurno(fascia, segmento);
+    const nome = fascia === "notte" ? "Notte" : parti.length === 1 && parti[0] === "mattina" ? "Mattina"
+      : parti.length === 1 && parti[0] === "pomeriggio" ? "Pomeriggio" : "Giorno";
+    return `${nome} ${extra.inizio}–${extra.fine % 24}`;
+  }
   const o = ORARI[`${fascia}|${segmento || "intero"}`];
   if (!o) return `${etichetta("fasciaBreve", fascia)}${segmento && segmento !== "intero" ? ` ${segmento}` : ""}`;
   return `${o[0]} ${o[1]}–${o[2] % 24}`;
@@ -199,6 +231,8 @@ export function orarioTurno(fascia, segmento) {
 
 /** Ora di inizio di un turno (per ordinare i turni di una giornata). */
 export function oraInizio(fascia, segmento) {
+  const extra = leggiExtra(segmento);
+  if (extra) return extra.inizio;
   const o = ORARI[`${fascia}|${segmento || "intero"}`];
   return o ? o[1] : (fascia === "notte" ? 20 : 8);
 }
