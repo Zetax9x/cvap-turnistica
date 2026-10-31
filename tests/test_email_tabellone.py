@@ -92,3 +92,31 @@ def test_anche_il_testo_semplice_ha_le_righe_dei_programmati():
     assert "Mattina 7–14 Autista" in prog
     riga = next(x for x in prog.splitlines() if "Pomeriggio 14–20 Autista" in x)
     assert "Anna" in riga and "1 di 2 scoperto" in riga
+
+
+# --- "I tuoi turni" con le stesse etichette del sito --------------------------------------------
+
+def test_i_turni_personali_hanno_le_etichette_del_sito():
+    from cvap.email_turni import turni_personali
+    s = settimana([a("Programmati", "giorno", "prog_mattina", data=GIORNI[0]),
+                   a("Acquasanta", "giorno", "pomeriggio", data=GIORNI[1]),
+                   a("Standby", "notte", "standby", data=GIORNI[2]),
+                   a("Acquasanta", "giorno", "intero", data=GIORNI[3])])
+    orari = {pid: [t["orario"] for g in turni_personali(s, pid) for t in g["turni"]] for pid in (1, 2, 3, 4)}
+    assert orari == {1: ["Mattina 7–14"], 2: ["Pomeriggio 14–20"], 3: ["Notte 19–7"], 4: ["Giorno 8–20"]}
+    testo = _testo(s, "P1", 1, "Turni")
+    assert "Mattina 7–14 · Programmati · Autista" in testo
+
+
+def test_l_impronta_non_cambia_con_le_nuove_etichette():
+    """Le email già inviate non devono risultare cambiate: l'impronta resta quella del vecchio formato."""
+    import hashlib
+    import json
+
+    from cvap.email_turni import impronta
+    s = settimana([a("Programmati", "giorno", "prog_mattina")])
+    vecchio = [{"data": g, "turni": [], "assenza": None} for g in GIORNI]
+    vecchio[0]["turni"] = [{"fascia": "giorno", "orario": "Giorno 7–14", "postazione": "Programmati",
+                            "ruolo": "Autista"}]
+    atteso = hashlib.sha256(json.dumps(vecchio, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    assert impronta(s, 1) == atteso
