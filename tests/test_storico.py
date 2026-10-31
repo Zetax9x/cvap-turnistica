@@ -126,3 +126,16 @@ def test_settimana_con_turni_misti_conta_come_generata():
 def test_nessuna_settimana_nessuno_storico():
     assert dalla_prima_generata([]) == []
     assert calcola_storico([]) == {}
+
+
+def test_conta_i_turni_ad_acquasanta_e_venarotta():
+    a = [
+        ass(GIORNI[0], "Acquasanta", "giorno", "autista", 1),
+        ass(GIORNI[2], "Acquasanta", "notte", "autista", 1),
+        ass(GIORNI[4], "Venarotta", "giorno", "autista", 1),
+        ass(GIORNI[6], "Ascoli", "giorno", "autista", 1),  # Ascoli non entra nel confronto tra le due sedi
+        ass(GIORNI[1], "Venarotta", "giorno", "autista", 2, segmento="mattina"),  # anche mezzo turno conta
+    ]
+    s = calcola_storico([SettimanaPassata(media_ore=0, dipendenti=[1, 2], assegnazioni=a)])
+    assert s[1].sedi == {"Acquasanta": 2, "Venarotta": 1}
+    assert s[2].sedi == {"Acquasanta": 0, "Venarotta": 1}

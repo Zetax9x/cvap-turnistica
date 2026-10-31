@@ -73,6 +73,7 @@ def test_ognuno_riceve_solo_quello_che_ha_scelto(client, postino):
     assert "Indisponibilità della settimana" in seg and "Luca" in seg and "mattina" in seg.lower()
     assert "Malattia" in seg
     assert "Statistiche dei turni" in seg and "Statistiche delle indisponibilità" in seg
+    assert "Acquasanta / Venarotta" in seg
     assert "Turni della settimana" not in seg and "Dipendenti liberi" not in seg
 
 
