@@ -847,16 +847,18 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
   #view-settimana .week-tipo, #view-settimana .badge-stato, #view-settimana .week-postazioni, #view-settimana .legenda { display: none !important; }
   #view-settimana .week-header h1 { font-size: 16pt; }
   #view-settimana .week-range { color: #000; font-weight: 700; font-size: inherit; }
+  /* una tabella (postazione) per pagina */
+  #view-settimana .griglia-blocco + .griglia-blocco { break-before: page; page-break-before: always; }
 
-  /* colori tenui che separano: giorno giallo, notte azzurro, weekend crema; volontari verdi, scoperti rossi */
-  #view-settimana .griglia thead th { background: #e9eef6 !important; }
-  #view-settimana .griglia thead th.weekend { background: #fbeccb !important; }
+  /* colori tenui che separano: giorno giallo, notte azzurro, weekend solo in intestazione; volontari scritti in verde, scoperti rossi */
+  #view-settimana .griglia thead th { background: #aac6f2 !important; }
+  #view-settimana .griglia thead th.weekend { background: #c79cc2 !important; }
   #view-settimana .griglia tr.fascia-giorno .col-turno { background: #ffe9a8 !important; border-left: 4px solid #d99a00; }
   #view-settimana .griglia tr.fascia-notte .col-turno { background: #d3dbf7 !important; border-left: 4px solid #3f4ba8; }
   #view-settimana .griglia tr.fascia-giorno td { background: #fff8de !important; }
   #view-settimana .griglia tr.fascia-notte td { background: #eef1fc !important; }
-  #view-settimana .griglia tr.fascia-giorno td.weekend { background: #fdf0c8 !important; }
-  #view-settimana .griglia tr.fascia-notte td.weekend { background: #e2e7f8 !important; }
+  #view-settimana .griglia tr.fascia-giorno td.weekend { background: #fff8de !important; }
+  #view-settimana .griglia tr.fascia-notte td.weekend { background: #eef1fc !important; }
   #view-settimana .cella-non-richiesta, #view-settimana .cella-non-richiesta.weekend { background: #f3f3f3 !important; }
   #view-settimana .griglia th, #view-settimana .griglia td { border-color: #555; }
   #view-settimana .griglia-titolo { border-left: 0; padding-left: 0; }
@@ -868,21 +870,24 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
   #view-settimana .cella-evidenziata { box-shadow: none; }
 
   /* scritte grandi: nomi al centro e in grassetto, postazione e turno ben visibili */
-  #view-settimana .griglia-titolo { font-size: 15pt; font-weight: 800; margin-bottom: 2mm; }
+  #view-settimana .griglia-titolo { font-size: 18pt; font-weight: 800; margin-bottom: 2mm; }
   #view-settimana .griglia thead th { font-size: 11pt; color: #000; }
   #view-settimana .giorno-data { color: #000; }
-  #view-settimana .griglia .col-turno { width: 36mm; vertical-align: middle; }
+  /* colonna del turno a filo del testo (diversa per ogni tabella), giorni tutti larghi uguali */
+  #view-settimana .griglia { table-layout: auto; }
+  #view-settimana .griglia .col-turno { width: 1%; white-space: nowrap; padding: 1mm 2mm; vertical-align: middle; text-align: center; }
+  #view-settimana .griglia thead th:not(.col-turno) { width: 14%; }
   #view-settimana .fascia-icona { display: inline; font-size: 13pt; margin-right: 1mm; }
   #view-settimana .fascia-giorno .fascia-icona { color: #b07400 !important; }
   #view-settimana .fascia-notte .fascia-icona { color: #3f4ba8 !important; }
-  #view-settimana .griglia .fascia-label { white-space: nowrap; font-size: 9.5pt; font-weight: 800; color: #000; letter-spacing: 0; }
-  #view-settimana .griglia .ruolo-label { font-size: 10.5pt; font-weight: 800; overflow-wrap: anywhere; }
-  #view-settimana .griglia .cella { vertical-align: middle; }
-  #view-settimana .cella-btn { align-items: center; justify-content: center; text-align: center; gap: 1mm; }
-  #view-settimana .chip { justify-content: center; text-align: center; font-size: 12pt; padding: .5mm 1mm; border-radius: 3px; }
-  #view-settimana .chip-volontario { border-width: 1.5px; }
+  #view-settimana .griglia .fascia-label { justify-content: center; white-space: nowrap; font-size: 10.5pt; font-weight: 800; color: #000; letter-spacing: 0; }
+  #view-settimana .griglia .ruolo-label { font-size: 13pt; font-weight: 800; overflow-wrap: normal; margin-top: .5mm; }
+  #view-settimana .griglia .cella { vertical-align: middle; height: 22mm; }  /* nelle tabelle height fa da altezza minima */
+  #view-settimana .cella-btn { min-height: 22mm; align-items: center; justify-content: center; text-align: center; gap: 1mm; }
+  #view-settimana .chip { align-items: baseline; justify-content: center; text-align: center; font-size: 14pt; padding: .5mm 1mm; border-radius: 3px; }
+  #view-settimana .chip-volontario { border: 0; background: none; color: #007a35; }
   #view-settimana .chip-nome { font-weight: 800; }
-  #view-settimana .chip-seg { font-size: 9pt; opacity: 1; }
+  #view-settimana .chip-seg { font-size: 10.5pt; opacity: 1; }
   #view-settimana .scoperto { align-self: center; font-size: 10pt; border-width: 1.5px; }
   #view-settimana .eccesso { align-self: center; font-size: 9pt; }
   #view-settimana .griglia-titolo::before { display: inline-block; width: 4mm; height: 4mm; background: #009541; }
