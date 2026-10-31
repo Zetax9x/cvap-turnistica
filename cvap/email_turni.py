@@ -327,6 +327,14 @@ def _sezione_indisponibilita(s: dict) -> tuple[str, str]:
     return html_, "\n".join(txt)
 
 
+def _ore_totali(r: dict) -> str:
+    """Ore contate, con il dettaglio se ci sono ferie o malattia: "54 (36 lavorate + 12 ferie + 6 malattia)"."""
+    assenze = [f"{r[k]} {nome}" for k, nome in (("ore_ferie", "ferie"), ("ore_malattia", "malattia")) if r.get(k)]
+    if not assenze:
+        return str(r["ore_totali"])
+    return f"{r['ore_totali']} ({' + '.join([str(r.get('ore_lavorate', 0)) + ' lavorate'] + assenze)})"
+
+
 def _sezione_statistiche(righe: list[dict]) -> tuple[str, str]:
     colonne = ["Persona", "Tipo", "Settimane", "Ore totali", "Saldo ore", "Ore giorno / notte",
                "Acquasanta / Venarotta", "Turni weekend", "Standby", "Programmati"]
@@ -336,7 +344,7 @@ def _sezione_statistiche(righe: list[dict]) -> tuple[str, str]:
         saldo_t = f"{saldo:+.1f}".replace(".", ",") if r["tipo"] == "dipendente" else "—"
         sedi = r.get("sedi", {})
         valori = [r["nome"], "Dipendente" if r["tipo"] == "dipendente" else "Volontario", r["settimane"],
-                  r["ore_totali"], saldo_t, f"{r['ore_giorno']} / {r['ore_notte']}",
+                  _ore_totali(r), saldo_t, f"{r['ore_giorno']} / {r['ore_notte']}",
                   f"{sedi.get('Acquasanta', 0)} / {sedi.get('Venarotta', 0)}", sum(r["weekend"].values()),
                   r["standby"], r["programmati"]]
         corpo.append("<tr>" + "".join(f'<td style="{_TC}{"text-align:right;" if i >= 2 else ""}">'
@@ -346,6 +354,7 @@ def _sezione_statistiche(righe: list[dict]) -> tuple[str, str]:
     html_ = (f'<table cellspacing="0" style="border-collapse:collapse;width:100%;"><tr>'
              + "".join(f'<th style="{_TH}">{c}</th>' for c in colonne) + f'</tr>{"".join(corpo)}</table>'
              '<p style="font-size:11px;color:#4d5868;margin:4px 0 0;">Solo le settimane con turni generati. '
+             'Ore totali: ore lavorate più 6 h per ogni giorno di ferie o malattia. '
              'Saldo ore: differenza rispetto alla media dei dipendenti.</p>')
     return (html_ if righe else "<p>Nessuna settimana con turni generati.</p>"), "\n".join(txt)
 

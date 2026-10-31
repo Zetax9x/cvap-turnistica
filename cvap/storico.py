@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from .modello import PARTI_TURNO, POSTAZIONI_A_RICHIESTA, Assegnazione
+from .vincoli import ORE_FERIE_GIORNO
 
 CATEGORIE_WEEKEND = ("sab_giorno", "sab_notte", "dom_giorno", "dom_notte")
 CATEGORIE_RICHIESTA = POSTAZIONI_A_RICHIESTA  # Standby e Programmati, distribuiti come i weekend
@@ -24,6 +25,17 @@ class StoricoPersona:
     ore_notte: int = 0
     richieste: dict[str, int] = field(default_factory=dict)  # turni Standby e Programmati
     sedi: dict[str, int] = field(default_factory=dict)  # turni ad Acquasanta e a Venarotta (anche mezzi)
+    ore_ferie: int = 0     # ORE_FERIE_GIORNO per giorno di ferie (nelle settimane che contano)
+    ore_malattia: int = 0  # idem per malattia o infortunio
+
+    @property
+    def ore_lavorate(self) -> int:
+        return self.ore_giorno + self.ore_notte
+
+    @property
+    def ore_contate(self) -> int:
+        """Ore lavorate più quelle accreditate per ferie e malattia, come nel confronto tra dipendenti."""
+        return self.ore_lavorate + self.ore_ferie + self.ore_malattia
 
     def __post_init__(self):
         self.weekend = {k: self.weekend.get(k, 0) for k in CATEGORIE_WEEKEND}
@@ -36,7 +48,8 @@ class SettimanaPassata:
     media_ore: float  # media ore dei dipendenti, ferie comprese
     dipendenti: list[int]
     assegnazioni: list[Assegnazione]
-    giorni_ferie: dict[int, int] = field(default_factory=dict)  # id -> giorni di ferie nella settimana
+    giorni_ferie: dict[int, int] = field(default_factory=dict)  # id -> giorni di assenza (ferie o malattia)
+    giorni_malattia: dict[int, int] = field(default_factory=dict)  # id -> quanti di quei giorni per malattia
     max_ore: dict[int, int] = field(default_factory=dict)  # id -> massimo ore a settimana
 
 
@@ -73,7 +86,11 @@ def calcola_storico(settimane: list[SettimanaPassata]) -> dict[int, StoricoPerso
         presenti = {pid for pid in s.dipendenti if s.giorni_ferie.get(pid, 0) < 7}
         ore = {pid: 0 for pid in presenti}
         for pid in presenti:
-            storico.setdefault(pid, StoricoPersona()).settimane += 1
+            st = storico.setdefault(pid, StoricoPersona())
+            st.settimane += 1
+            malattia = s.giorni_malattia.get(pid, 0)
+            st.ore_malattia += ORE_FERIE_GIORNO * malattia
+            st.ore_ferie += ORE_FERIE_GIORNO * (s.giorni_ferie.get(pid, 0) - malattia)
         for a in s.assegnazioni:
             if a.persona_id not in presenti:
                 continue

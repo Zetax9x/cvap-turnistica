@@ -24,6 +24,14 @@ const COLONNE = [
 ];
 
 function tot(r) { return (r.ore_giorno || 0) + (r.ore_notte || 0); }
+/** Sotto le ore totali: quante lavorate e quante accreditate per ferie e malattia (solo se ce ne sono). */
+function dettaglioOre(r) {
+  const assenze = [["ore_ferie", "ferie"], ["ore_malattia", "malattia"]]
+    .filter(([k]) => r[k]).map(([k, nome]) => `${formatOre(r[k])} ${nome}`);
+  if (!assenze.length) return null;
+  return el("span", { class: "ore-dettaglio" }, [`${formatOre(r.ore_lavorate || 0)} lavorate`, ...assenze].join(" + "));
+}
+
 function sede(r, k) { return (r.sedi && r.sedi[k]) || 0; }
 function totSedi(r) { return sede(r, "Acquasanta") + sede(r, "Venarotta"); }
 function wk(r, k) { return (r.weekend && r.weekend[k]) || 0; }
@@ -146,7 +154,7 @@ function render() {
       el("th", { scope: "row" }, r.nome),
       el("td", {}, etichetta("tipo", r.tipo)),
       el("td", { class: "num" }, formatOre(r.settimane)),
-      el("td", { class: "num" }, formatOre(r.ore_totali)),
+      el("td", { class: "num" }, formatOre(r.ore_totali), dettaglioOre(r)),
       el("td", { class: `num saldo ${saldo > 0 ? "saldo-pos" : saldo < 0 ? "saldo-neg" : ""}` }, formatSaldo(saldo)),
       el("td", { class: "num cella-rapporto" },
         el("span", { class: "rapporto-testo" }, `${formatOre(r.ore_giorno)} / ${formatOre(r.ore_notte)}`),
@@ -166,6 +174,9 @@ function render() {
   root.append(el("div", { class: "table-scroll" }, el("table", { class: "tabella tabella-stat" },
     el("caption", { class: "sr-only" }, "Statistiche per persona. Fare clic sulle intestazioni per ordinare."),
     thead, tbody)));
+  root.append(el("p", { class: "hint" }, "Ore totali: ore lavorate più 6 h per ogni giorno di ferie o malattia, " +
+    "come nel confronto delle ore tra dipendenti; sotto, il dettaglio quando ci sono assenze. " +
+    "Le settimane interamente di ferie o malattia non contano."));
   root.append(el("p", { class: "hint" }, "Weekend: numero di turni svolti il sabato e la domenica, di giorno (G) e di notte (N). " +
     "Acquasanta / Venarotta: turni svolti in ciascuna delle due sedi (anche i mezzi turni); il generatore cerca di farne " +
     "fare a ogni dipendente tanti nell'una quanti nell'altra. " +

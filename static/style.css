@@ -425,6 +425,7 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
 
 .cella-rapporto { min-width: 9rem; }
 .rapporto-testo { display: block; }
+.ore-dettaglio { display: block; font-size: .78rem; color: var(--muted); white-space: nowrap; }
 .rapporto-bar {
   display: block; height: 6px; margin-top: 3px; border-radius: 3px; overflow: hidden;
   background: #39456b; /* notte */
