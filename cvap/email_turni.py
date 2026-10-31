@@ -10,7 +10,7 @@ import json
 from datetime import date
 from email.message import EmailMessage
 
-from .modello import META, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, orario, segmento_intero
+from .modello import META, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, orario, parti_turno, segmento_intero
 
 GIORNI = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
 GIORNI_BREVI = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"]
@@ -44,11 +44,19 @@ def fascia_orario(fascia: str, segmento: str) -> str:
     return f"{'Giorno' if fascia == 'giorno' else 'Notte'} {inizio % 24}–{fine % 24}"
 
 
+def orario_turno(fascia: str, segmento: str) -> str:
+    """Etichetta del turno come sul sito (`orarioTurno`): "Giorno 8–20", "Mattina 7–14", "Notte 19–7"..."""
+    parti = parti_turno(fascia, segmento)
+    nome = ("Notte" if fascia == "notte" else "Mattina" if parti == {"mattina"}
+            else "Pomeriggio" if parti == {"pomeriggio"} else "Giorno")
+    return f"{nome} {fascia_orario(fascia, segmento).split(' ', 1)[1]}"
+
+
 def _assenze(s: dict, pid: int) -> dict[str, str]:
     return {x["data"]: x.get("motivo", "ferie") for x in s.get("ferie", []) if x["persona_id"] == pid}
 
 
-def turni_personali(s: dict, pid: int) -> list[dict]:
+def turni_personali(s: dict, pid: int, etichetta=orario_turno) -> list[dict]:
     """Un elemento per giorno: {data, turni: [{fascia, orario, postazione, ruolo}], assenza: None|ferie|malattia}."""
     assenze = _assenze(s, pid)
     giorni = []
@@ -57,7 +65,7 @@ def turni_personali(s: dict, pid: int) -> list[dict]:
                        key=lambda a: orario(date.fromisoformat(g), a["fascia"], a["segmento"])[0])
         giorni.append({
             "data": g,
-            "turni": [{"fascia": a["fascia"], "orario": fascia_orario(a["fascia"], a["segmento"]),
+            "turni": [{"fascia": a["fascia"], "orario": etichetta(a["fascia"], a["segmento"]),
                        "postazione": a["postazione"], "ruolo": RUOLI.get(a["ruolo"], a["ruolo"])} for a in turni],
             "assenza": assenze.get(g),
         })
@@ -65,8 +73,10 @@ def turni_personali(s: dict, pid: int) -> list[dict]:
 
 
 def impronta(s: dict, pid: int) -> str:
-    """Cambia solo se cambiano i turni (o le assenze) della persona in quella settimana."""
-    dati = json.dumps(turni_personali(s, pid), sort_keys=True, ensure_ascii=False)
+    """Cambia solo se cambiano i turni (o le assenze) della persona in quella settimana.
+    Usa le vecchie etichette ("Giorno 7–14"), così le impronte già salvate restano valide e
+    cambiare le etichette dell'email non fa reinviare l'aggiornamento a tutti."""
+    dati = json.dumps(turni_personali(s, pid, fascia_orario), sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(dati.encode()).hexdigest()
 
 
@@ -81,7 +91,7 @@ def _righe(postazione: str) -> list[tuple[str, str, str, str]]:
     """Righe del tabellone come nella griglia del sito: (fascia, segmento, ruolo, etichetta del turno).
     I Programmati hanno mattina e pomeriggio (turni distinti, niente notte); le altre giorno e notte."""
     if postazione == PROGRAMMATI:
-        return [("giorno", seg, ruolo, f"{'Mattina' if seg == 'prog_mattina' else 'Pomeriggio'} {_ore('giorno', seg)}")
+        return [("giorno", seg, ruolo, orario_turno("giorno", seg))
                 for seg in SEGMENTI_PROG for ruolo in RUOLI]
     return [(fascia, segmento_intero(postazione, fascia), ruolo,
              fascia_orario(fascia, segmento_intero(postazione, fascia)))
