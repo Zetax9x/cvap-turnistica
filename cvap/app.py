@@ -38,6 +38,7 @@ DATA_MIN, DATA_MAX = date(2000, 1, 1), date(2100, 12, 31)
 DataValida = Annotated[date, Field(ge=DATA_MIN, le=DATA_MAX)]
 FERIE_GIORNI_MAX = 366
 FABBISOGNO_VOCI_MAX = 200
+EXTRA_PER_SETTIMANA_MAX = 50  # richieste di Assistenze ed Extra: oltre, il generatore diventa troppo pesante
 QUANTITA_MAX = {STANDBY: 1, PROGRAMMATI: 20}
 # turni che si possono richiedere (le metà dello Standby sono solo per i volontari che lo spezzano)
 TURNI_RICHIEDIBILI = {
@@ -933,6 +934,8 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
             _verifica_modificabile(conn, inizio)
             if lunedi(body.data) != inizio:
                 raise _errore("La data della richiesta non appartiene a questa settimana")
+            if len(db.extra_periodo(conn, inizio, inizio + timedelta(days=6))) >= EXTRA_PER_SETTIMANA_MAX:
+                raise _errore(f"Massimo {EXTRA_PER_SETTIMANA_MAX} richieste di Assistenze ed Extra a settimana")
             db.crea_extra(conn, body.data, body.nome, body.inizio, body.fine_assoluta, body.autisti,
                           body.soccorritori)
             return payload_settimana(conn, inizio)

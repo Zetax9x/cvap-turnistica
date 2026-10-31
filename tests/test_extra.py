@@ -202,3 +202,12 @@ def test_generazione_con_richiesta_e_ore_nel_riepilogo(client):
     for a in extra:
         turni = [b for b in s["assegnazioni"] if b["persona_id"] == a["persona_id"]]
         assert ore[a["persona_id"]] == sum(b["ore"] for b in turni)
+
+
+def test_massimo_di_richieste_per_settimana(client, monkeypatch):
+    from cvap import app as modulo_app
+    monkeypatch.setattr(modulo_app, "EXTRA_PER_SETTIMANA_MAX", 2)
+    assert nuova(client, LUNEDI_B).status_code == 201
+    assert nuova(client, LUNEDI_B).status_code == 201
+    r = nuova(client, LUNEDI_B)
+    assert r.status_code == 400 and "massimo" in r.json()["detail"].lower()
