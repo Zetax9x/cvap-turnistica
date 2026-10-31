@@ -969,11 +969,12 @@ function descriviAssenze(r) {
   return [ferie ? `ferie ${ferie}g` : null, malattia ? `malattia ${malattia}g` : null].filter(Boolean).join(" + ");
 }
 
-function voceLibero(v, formato) {
+/** `senza`: avviso da non ripetere (è già il titolo della riga in cui compare la persona). */
+function voceLibero(v, formato, senza = null) {
   return el("li", {}, el("span", { class: "libero-nome" }, v.nome),
     v.parti ? el("span", { class: "muted" }, ` (${etichettaParti(new Set(v.parti)).toLowerCase()})`) : null,
     v.motivo ? [" ", badgeAssenza(v.motivo)] : null,
-    badgeAvvisi(v.avvisi, formato));
+    badgeAvvisi((v.avvisi || []).filter((a) => a !== senza), formato));
 }
 
 function apriLiberi(data) {
@@ -1018,10 +1019,15 @@ function renderDialogLiberi() {
 /** Riepilogo dei liberi di tutta la settimana: visibile solo nella stampa "Stampa liberi". */
 function renderStampaLiberi(s) {
   const giorni = s.giorni.map((g) => liberiDel(s, g));
-  const riga = (titolo, chiave) => el("tr", { class: `riga-${chiave}` },
+  // chi smonta dalla notte e la rifà la sera compare in entrambe le righe
+  const conAvviso = (avviso) => (g) => g.liberi.filter((v) => (v.avvisi || []).includes(avviso));
+  const riga = (titolo, classe, persone, senza = null) => el("tr", { class: `riga-${classe}` },
     el("th", { scope: "row" }, titolo),
-    giorni.map((g, i) => el("td", { class: i >= 5 ? "weekend" : null },
-      g[chiave].length ? el("ul", { class: "lista-liberi" }, g[chiave].map((v) => voceLibero(v, "breve"))) : "—")));
+    giorni.map((g, i) => {
+      const elenco = persone(g);
+      return el("td", { class: i >= 5 ? "weekend" : null },
+        elenco.length ? el("ul", { class: "lista-liberi" }, elenco.map((v) => voceLibero(v, "breve", senza))) : "—");
+    }));
   return el("section", { class: "stampa-liberi" },
     el("h2", {}, "Dipendenti liberi"),
     el("table", { class: "tabella tabella-liberi" },
@@ -1029,9 +1035,15 @@ function renderStampaLiberi(s) {
         el("th", { scope: "col" }, ""),
         s.giorni.map((g, i) => el("th", { scope: "col", class: i >= 5 ? "weekend" : null },
           `${GIORNI_BREVI[i]} ${ddmm(g)}`)))),
-      el("tbody", {}, riga("Liberi", "liberi"), riga("Indisponibili", "indisponibili"), riga("Ferie / malattia", "ferie"))),
+      el("tbody", {},
+        riga("Liberi tutto il giorno", "liberi", (g) => g.liberi.filter((v) => !(v.avvisi || []).length)),
+        riga("Smontano dalla notte", "smonto", conAvviso("smonto_notte"), "smonto_notte"),
+        riga("Fanno la notte", "notte", conAvviso("notte"), "notte"),
+        riga("Indisponibili", "indisponibili", (g) => g.indisponibili),
+        riga("Ferie / malattia", "ferie", (g) => g.ferie))),
     el("p", { class: "nota-stampa" },
-      "Smonto notte = ha fatto la notte il giorno prima (finisce alle 8) · Notte = fa la notte quella sera."));
+      "Smontano dalla notte = hanno fatto la notte il giorno prima (finiscono alle 8) · "
+      + "Fanno la notte = sono liberi di giorno e fanno la notte quella sera."));
 }
 
 // Se "afterprint" non arriva (alcuni browser) la classe resta: la stampa normale la toglie comunque.

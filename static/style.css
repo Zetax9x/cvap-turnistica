@@ -983,6 +983,8 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
   .tabella-liberi tbody th { width: 24mm; font-size: 11pt; }
   .tabella-liberi .riga-liberi th { background: var(--st-liberi); color: var(--st-liberi-testo); }
   .tabella-liberi .riga-indisponibili th { background: var(--st-indisp); color: var(--st-indisp-testo); }
+  .tabella-liberi .riga-smonto th { background: #fde9d6; color: #8a4500; }
+  .tabella-liberi .riga-notte th { background: var(--st-notte); color: var(--st-notte-bordo); }
   .tabella-liberi .riga-ferie th { background: var(--st-ferie); color: var(--st-ferie-testo); }
   .tabella-liberi .riga-indisponibili td, .tabella-liberi .riga-ferie td { color: #000; }
   .tabella-liberi .riga-indisponibili > *, .tabella-liberi .riga-ferie > * { border-top: 2px solid #000; }
