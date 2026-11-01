@@ -467,7 +467,8 @@ def _ascoli(r: dict) -> str:
 
 def festivi_testo(r: dict) -> str:
     """Turni festivi degli ultimi 5 anni, solo le festività lavorate: "Natale 2 (2025), Pasqua 1 (2023)"."""
-    voci = [f"{f['festivita']} {f['turni']} ({f['ultimo_anno']})"
+    voci = [f"{f['festivita']}{'' if f.get('attiva', True) else ' (non più nel calendario)'} {f['turni']} "
+            f"({f['ultimo_anno']})"
             for f in (r.get("festivi") or {}).get("per_festivita", []) if f.get("turni")]
     return ", ".join(voci) or "—"
 

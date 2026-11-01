@@ -101,7 +101,7 @@ Con `APP_PASSWORD` impostata (`create_app(..., password=...)`) tutte le API tran
   400 se: settimana confermata, data fuori settimana, postazione non attiva quella settimana, fascia/segmento non validi,
   persona non abilitata al ruolo, posto già occupato (segmento sovrapposto). Le altre regole (riposo, ore…) appaiono come `violazioni`.
 - `DELETE /assegnazioni/{id}` → 204 · 400 se settimana confermata
-- `POST /settimane/{data}/genera` `{tempo_max?: number}` → settimana aggiornata con `report = {stato, messaggio, scoperti: [{data, postazione, fascia, segmento, ruolo}], media_ore, durata_s, qualita, qualita_precedente}`. `qualita = {punteggio, limite_inferiore, gap_pct, soluzioni, tempo_migliore_s, durata_s, tempo_max, workers}` (punteggio = somma delle penalità, più basso è meglio; `gap_pct` = distanza dall'ottimo, 0 = ottimo dimostrato); `qualita_precedente` è la `qualita` della generazione precedente della stessa settimana (`null` se assente).
+- `POST /settimane/{data}/genera` `{tempo_max?: number}` → settimana aggiornata con `report = {stato, messaggio, scoperti: [{data, postazione, fascia, segmento, ruolo}], media_ore, durata_s, qualita, qualita_precedente, festivi}` (`festivi`: vedi "Festività nel generatore"). `qualita = {punteggio, limite_inferiore, gap_pct, soluzioni, tempo_migliore_s, durata_s, tempo_max, workers}` (punteggio = somma delle penalità, più basso è meglio; `gap_pct` = distanza dall'ottimo, 0 = ottimo dimostrato); `qualita_precedente` è la `qualita` della generazione precedente della stessa settimana (`null` se assente).
   Cancella le assegnazioni `generato` della settimana, poi chiama `solver.genera` con: dipendenti attivi, `fissi` = volontario+manuale,
   `contesto` = assegnazioni dei 3 giorni prima e dopo la settimana, `storico` = `calcola_storico` su tutte le settimane precedenti presenti in `settimane`.
   Salva le nuove assegnazioni, `stato='bozza'`, `dipendenti` = id dei dipendenti attivi. 400 se confermata.
@@ -260,7 +260,8 @@ festivita(id INTEGER PRIMARY KEY AUTOINCREMENT, chiave TEXT UNIQUE,  -- chiave s
           nome TEXT, regola TEXT,  -- 'fissa' | 'pasqua' | 'data'
           giorno INTEGER, mese INTEGER, offset_pasqua INTEGER, data TEXT,
           conta_giorno INTEGER DEFAULT 1, conta_notte INTEGER DEFAULT 1, conta_notte_prima INTEGER DEFAULT 0,
-          peso INTEGER DEFAULT 1, attiva INTEGER DEFAULT 0)
+          peso INTEGER DEFAULT 1, attiva INTEGER DEFAULT 0,
+          stata_attiva INTEGER DEFAULT 0)  -- 1 se è mai stata attiva (si aggiorna da sola; migrazione: = attiva)
 ```
 Le 15 predefinite (Capodanno … San Silvestro, con Pasqua, Lunedì dell'Angelo e Sant'Emidio 5/8) sono inserite
 all'avvio, non attive (`INSERT OR IGNORE` sulla `chiave`).
@@ -363,10 +364,37 @@ debito; non c'è un conteggio unico di tutte le festività.
   per ogni turno festivo oltre il primo della stessa persona nella settimana. Il costo è costante per (persona,
   festività): termini lineari. Tutto resta molto sotto copertura, ore e regole di Ascoli. Un festivo di domenica
   conta anche nella rotazione dei weekend.
-- `GET /statistiche`, campo `festivi` (solo dipendenti; volontari `{turni: 0, per_festivita: []}`): per ogni festività
-  attiva (in ordine di id) `{festivita: nome, turni, ultimo_anno | null}` negli ultimi 5 anni fino alla fine dell'ultima
-  settimana salvata (o a domani), anni importati + programma; `turni` = totale. Colonna "Festivi" nella pagina, nella
-  stampa e nel riepilogo via email ("Natale 2 (2025), Pasqua 1 (2023)", solo le festività lavorate).
+- **Settimane del programma**: dalla prima generata, solo quelle con almeno un turno (una settimana salvata ma vuota
+  non dà esposizione). Dipendenti della settimana: quelli della riga di `settimane`; per una settimana compilata a
+  mano senza riga, i dipendenti che vi hanno turni.
+- **Notte della sera prima di un lunedì festivo**: è un turno della domenica, quindi della settimana precedente. Se
+  quella settimana è nel programma la notte conta come lavorata; generando la settimana del lunedì festivo, chi l'ha
+  fatta (dai turni del contesto, solo dipendenti) la ha come turno già fissato di quella festività
+  (`FestiviSettimana.fuori_settimana`): entra nel debito e nel limite di un festivo a testa.
+  Caso limite non coperto: festività nel lunedì della **prima settimana generata** con la notte della sera prima che
+  cade ancora nello storico importato. Lo storico ha solo "giorno"/"notte" per festività e anno, senza distinguere la
+  notte della sera prima da quella del giorno: quella notte non si può riconoscere e non entra nei già fissati
+  (conta solo come turno dell'anno nello storico importato, se c'è).
+- `GET /statistiche`, campo `festivi` (solo dipendenti; volontari `{turni: 0, per_festivita: []}`):
+  `{turni, per_festivita: [{festivita: nome, attiva, turni, ultimo_anno | null}]}` negli ultimi 5 anni fino alla fine
+  dell'ultima settimana salvata o dell'ultimo turno (almeno domani), anni importati + programma. Ci sono tutte le
+  festività attive (in ordine di id) e poi quelle **non più nel calendario** (`attiva: false`: mai più usate dal
+  generatore, ma i turni restano nel totale) in cui la persona ha lavorato; tra le non attive contano solo quelle
+  state attive almeno una volta (`stata_attiva`) o presenti nello storico importato, così le predefinite mai usate non
+  compaiono. Attive e non attive si contano separatamente.
+  Colonna "Festivi" nella pagina, nella stampa e nel riepilogo via email ("Natale 2 (2025), Pasqua 1 (2023)", solo le
+  festività lavorate; "Natale (non più nel calendario) 1 (2025)"); per i volontari "–".
+- `GET /statistiche/festivi` → `{fuori_tabella: [{festivita, attiva, turni}]}`: turni festivi (stesso periodo) di chi
+  non compare nella tabella delle statistiche, ad esempio ex dipendenti presenti solo nello storico importato; solo le
+  festività con turni. La pagina lo mostra in una nota sotto la tabella. È un endpoint a parte perché la risposta di
+  `GET /statistiche` è un elenco (cambiarla in un oggetto romperebbe pagina, email e quadro dell'equità).
+- Riepilogo per dipendente: i turni in festività non più nel calendario (state attive) hanno `festivita` =
+  "<nome> (non più nel calendario)".
+- Report della generazione (`POST /settimane/{data}/genera`), campo `festivi` (null se la settimana non ha turni
+  festivi): `{per_festivita: [{festivita, turni}], turni, anno_prima, persone_con_piu_festivi}`: turni festivi dei
+  dipendenti nella settimana (generati e fissati), quanti a chi aveva lavorato la stessa festività l'anno prima, quante
+  persone hanno più di un turno festivo (contando la notte della sera prima fatta la settimana precedente). La pagina
+  lo mostra in parole semplici nel riquadro dell'esito.
 
 ## Quadro dell'equità (Statistiche → Equità)
 

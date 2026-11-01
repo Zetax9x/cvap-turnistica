@@ -273,6 +273,22 @@ const FRASI_TECNICHE = [
   /\d+ posti non coperti: servono altri dipendenti o volontari\.\s*/,
 ];
 
+/** Le festività della settimana nel report, in parole semplici (null se la settimana non ne ha). */
+function testoFestivi(f) {
+  if (!f || !f.per_festivita || !f.per_festivita.length) return null;
+  const turni = (n) => (n === 1 ? "1 turno" : `${n} turni`);
+  const frasi = [`Festività: ${f.per_festivita.map((x) => `${x.festivita} ${turni(x.turni)}`).join(", ")} ai dipendenti.`];
+  if (f.anno_prima) {
+    frasi.push(`${f.anno_prima === 1 ? "1 turno è andato" : `${f.anno_prima} turni sono andati`} a chi aveva lavorato ` +
+      "la stessa festività l'anno scorso (non c'era di meglio nel rispetto delle regole).");
+  }
+  if (f.persone_con_piu_festivi) {
+    frasi.push(`${f.persone_con_piu_festivi === 1 ? "1 persona ha" : `${f.persone_con_piu_festivi} persone hanno`} ` +
+      "più di un turno festivo in questa settimana.");
+  }
+  return frasi.join(" ");
+}
+
 /** Esito della generazione in parole semplici: posti scoperti e problemi da sistemare, niente dati tecnici. */
 function renderReport(r) {
   const riuscita = ["ottimo", "ammissibile"].includes(r.stato);
@@ -290,6 +306,8 @@ function renderReport(r) {
     el("div", { class: "report-head" }, el("strong", {}, titolo)),
     note ? el("p", { class: "report-msg" }, note) : null,
   );
+  const festivi = riuscita ? testoFestivi(r.festivi) : null;
+  if (festivi) riquadro.append(el("p", { class: "report-msg report-festivi" }, festivi));
   if (scoperti.length) {
     riquadro.append(
       el("p", { class: "report-scoperti-titolo" }, "Servono altri dipendenti o volontari per:"),

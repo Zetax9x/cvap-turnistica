@@ -51,6 +51,12 @@ class FestiviSettimana:
     peso: dict[int, int] = field(default_factory=dict)                # id -> peso (1-3)
     anno: dict[int, int] = field(default_factory=dict)                # id -> anno della festività nella settimana
     conti: dict[int, dict[int, ContoFestivita]] = field(default_factory=dict)  # id -> persona -> conto
+    # turni delle festività della settimana fatti prima del lunedì (la notte della sera prima di un lunedì
+    # festivo è nella settimana precedente): id -> persona -> turni; contano come già fissati
+    fuori_settimana: dict[int, dict[int, int]] = field(default_factory=dict)
+
+
+Conti = dict[int, dict[int, ContoFestivita]]
 
 
 def inizio_periodo(riferimento: date) -> date:
@@ -73,7 +79,8 @@ def _conto(conti: dict, festivita_id: int, persona_id: int) -> ContoFestivita:
     return conti.setdefault(festivita_id, {}).setdefault(persona_id, ContoFestivita())
 
 
-def _conta_importati(conti, festivita, dal, al, importati, servizio, dipendenti_attivi):
+def _conta_importati(conti: Conti, festivita: list[Mapping], dal: date, al: date, importati: Iterable[Mapping],
+                     servizio: Mapping[int, set[int]], dipendenti_attivi: set[int]) -> None:
     per_anno: dict[int, list[Mapping]] = {}
     for r in importati:
         per_anno.setdefault(r["anno"], []).append(r)
@@ -81,16 +88,18 @@ def _conta_importati(conti, festivita, dal, al, importati, servizio, dipendenti_
         in_servizio = servizio.get(anno) or set(dipendenti_attivi) | {r["persona_id"] for r in righe}
         for f in festivita:
             d = data_nell_anno(f, anno)
-            delle_festa = [r for r in righe if r["festivita_id"] == f["id"]]
-            if d is None or not dal <= d < al or not delle_festa:
+            righe_festivita = [r for r in righe if r["festivita_id"] == f["id"]]
+            if d is None or not dal <= d < al or not righe_festivita:
                 continue
             for pid in in_servizio:
                 _conto(conti, f["id"], pid).esposizione += 1
-            for r in delle_festa:
+            for r in righe_festivita:
                 _conto(conti, f["id"], r["persona_id"]).lavorata(anno)
 
 
-def _conta_programma(conti, festivita, dal, al, settimane, malattia, dipendenti_attivi):
+def _conta_programma(conti: Conti, festivita: list[Mapping], dal: date, al: date,
+                     settimane: Iterable[SettimanaProgramma], malattia: set[tuple[int, date]] | frozenset,
+                     dipendenti_attivi: set[int]) -> None:
     per_id = {f["id"]: f for f in festivita}
     mappa = turni_festivi(festivita, dal - timedelta(days=1), al)
     settimane = list(settimane)
@@ -107,6 +116,8 @@ def _conta_programma(conti, festivita, dal, al, settimane, malattia, dipendenti_
                 lavorati.setdefault((fid, d), set()).add(a.persona_id)
                 _conto(conti, fid, a.persona_id).lavorata(d.year)
     for s in settimane:
+        if not s.assegnazioni:
+            continue  # settimana vuota o non ancora fatta: nessuna esposizione
         fine = s.inizio + timedelta(days=6)
         for d, f in occorrenze(festivita, max(dal, s.inizio), min(al - timedelta(days=1), fine)):
             giorni_turni = {g for g, _ in turni_di(f, d)}
@@ -157,15 +168,60 @@ def conta_festivita(festivita: Iterable[Mapping], riferimento: date, *, limite: 
     return conti
 
 
-def festivi_settimana(festivita: Iterable[Mapping], giorni: list[date],
-                      conti: Mapping[int, dict[int, ContoFestivita]]) -> FestiviSettimana:
-    """I turni festivi della settimana (festività attive), con peso, anno e conti di ogni festività."""
+def festivi_settimana(festivita: Iterable[Mapping], giorni: list[date], conti: Mapping[int, dict[int, ContoFestivita]],
+                      contesto: Iterable[Assegnazione] = (), dipendenti: Iterable[int] = ()) -> FestiviSettimana:
+    """I turni festivi della settimana (festività attive), con peso, anno e conti di ogni festività.
+
+    `contesto`: turni dei giorni prima della settimana; di questi, quelli dei `dipendenti` nella notte della sera
+    prima di una festività della settimana (lunedì festivo) vanno in `fuori_settimana`."""
     festivita = list(festivita)
     per_id = {f["id"]: f for f in festivita}
-    turni = turni_festivi(festivita, giorni[0], giorni[-1])
-    ids = set(turni.values())
-    anno = {}
-    for (g, fascia), fid in turni.items():
+    vigilia = giorni[0] - timedelta(days=1)
+    tutti = turni_festivi(festivita, vigilia, giorni[-1])
+    turni = {t: fid for t, fid in tutti.items() if t[0] >= giorni[0]}
+    prima = {t: fid for t, fid in tutti.items() if t[0] == vigilia and _occorrenza(per_id[fid], *t) >= giorni[0]}
+    ids = set(turni.values()) | set(prima.values())
+    anno: dict[int, int] = {}
+    for (g, fascia), fid in sorted(prima.items()) + sorted(turni.items()):
         anno.setdefault(fid, _occorrenza(per_id[fid], g, fascia).year)
+    dip = set(dipendenti)
+    fuori: dict[int, dict[int, int]] = {}
+    for a in contesto:
+        fid = prima.get((a.data, a.fascia))
+        if fid is not None and a.persona_id in dip:
+            chi = fuori.setdefault(fid, {})
+            chi[a.persona_id] = chi.get(a.persona_id, 0) + 1
     return FestiviSettimana(turni=turni, peso={fid: per_id[fid]["peso"] for fid in ids}, anno=anno,
-                            conti={fid: dict(conti.get(fid, {})) for fid in ids})
+                            conti={fid: dict(conti.get(fid, {})) for fid in ids}, fuori_settimana=fuori)
+
+
+def riepilogo_generazione(fs: FestiviSettimana, assegnazioni: Iterable[Assegnazione], dipendenti: Iterable[int],
+                          nomi: Mapping[int, str]) -> dict | None:
+    """Per il report della generazione, in parole semplici: turni festivi dei dipendenti nella settimana per
+    festività, quanti a chi l'aveva lavorata l'anno prima e quante persone hanno più di un turno festivo.
+    None se la settimana non ha turni festivi. `nomi`: id festività -> nome."""
+    if not fs.turni:
+        return None
+    dip = set(dipendenti)
+    per_festivita: dict[int, int] = {}
+    per_persona: dict[int, int] = {}
+    anno_prima = 0
+    for a in assegnazioni:
+        fid = fs.turni.get((a.data, a.fascia))
+        if fid is None or a.persona_id not in dip:
+            continue
+        per_festivita[fid] = per_festivita.get(fid, 0) + 1
+        per_persona[a.persona_id] = per_persona.get(a.persona_id, 0) + 1
+        conto = fs.conti[fid].get(a.persona_id)
+        if conto is not None and conto.ultimo_anno is not None and fs.anno[fid] - conto.ultimo_anno == 1:
+            anno_prima += 1
+    for chi in fs.fuori_settimana.values():
+        for pid, n in chi.items():
+            per_persona[pid] = per_persona.get(pid, 0) + n
+    primo_turno = {}
+    for t, fid in sorted(fs.turni.items()):
+        primo_turno.setdefault(fid, t)
+    ordine = sorted(primo_turno, key=primo_turno.get)
+    return {"per_festivita": [{"festivita": nomi[fid], "turni": per_festivita.get(fid, 0)} for fid in ordine],
+            "turni": sum(per_festivita.values()), "anno_prima": anno_prima,
+            "persone_con_piu_festivi": sum(1 for n in per_persona.values() if n > 1)}

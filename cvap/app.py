@@ -25,6 +25,7 @@ from .api_comune import DATA_MAX, DATA_MIN, DataValida, Id, IdPath, Nome, errore
 from .posta import PostinoBloccato, PostinoSmtp
 from .calendario import giorni_settimana, lunedi, postazioni_attive, tipo_settimana
 from .festivita import festivi_periodo
+from .rotazione_festivi import riepilogo_generazione
 from .liberi import liberi_settimana
 from .riepilogo import GIORNI_MAX as GIORNI_MAX_RIEPILOGO, riepilogo_persona
 from .modello import (EXTRA, INTERO_DI, PARTI_TURNO, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, SEGMENTI, STANDBY,
@@ -680,12 +681,14 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
             storico = calcola_storico([_settimana_passata(conn, r) for r in db.lista_settimane(conn, prima_di=inizio)])
             kwargs = {"tempo_max": body.tempo_max} if body and body.tempo_max else {}
 
+            contesto = _contesto(conn, giorni)
+            festivi = dati_festivi.festivi_per_generazione(conn, giorni, contesto)
             t0 = time.monotonic()
-            ris = solver.genera(giorni, attive, dipendenti, fissi=fissi, contesto=_contesto(conn, giorni),
+            ris = solver.genera(giorni, attive, dipendenti, fissi=fissi, contesto=contesto,
                                 storico=storico, ferie=db.ferie_periodo(conn, giorni[0], giorni[-1]),
                                 indisponibili=db.indisponibili_periodo(conn, giorni[0], giorni[-1]),
                                 fabbisogno=fabbisogno, scarto_ore_max=db.get_scarto_ore_max(conn),
-                                festivi=dati_festivi.festivi_per_generazione(conn, giorni), **kwargs)
+                                festivi=festivi, **kwargs)
             durata = round(time.monotonic() - t0, 2)
             if ris.stato in ("impossibile", "nessuna_soluzione"):
                 # niente da salvare: si tengono i turni generati in precedenza
@@ -699,6 +702,8 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                 "durata_s": durata,
                 "qualita": ris.qualita,
                 "qualita_precedente": qualita_precedente,
+                "festivi": riepilogo_generazione(festivi, fissi + ris.assegnazioni, [p.id for p in dipendenti],
+                                                 {f["id"]: f["nome"] for f in db_festivita.lista_festivita(conn)}),
             }
             nuove = [Assegnazione(a.data, a.postazione, a.fascia, a.segmento, a.ruolo, a.persona_id, "generato")
                      for a in ris.assegnazioni]
@@ -988,7 +993,7 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
         passate = solo_generate([_settimana_passata(conn, r) for r in righe])
         storico = calcola_storico(passate)
         persone = {p["id"]: p for p in db.lista_persone(conn)}
-        festivi = dati_festivi.festivi_statistiche(conn, [pid for pid in storico if pid in persone])
+        festivi, _ = dati_festivi.festivi_statistiche(conn, [pid for pid in storico if pid in persone])
 
         out = []
         for pid, st in storico.items():
@@ -1044,6 +1049,14 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
         out += volontari.values()
         out.sort(key=lambda r: (r["tipo"] != "dipendente", r["nome"].lower(), r["persona_id"]))
         return out
+
+    @app.get("/api/statistiche/festivi")
+    def statistiche_festivi(conn: Conn):
+        """Turni festivi di chi non è nella tabella delle statistiche (es. ex dipendenti dello storico importato)."""
+        persone = {p["id"] for p in db.lista_persone(conn)}
+        passate = solo_generate([_settimana_passata(conn, r) for r in db.lista_settimane(conn)])
+        in_tabella = [pid for pid in calcola_storico(passate) if pid in persone]
+        return {"fuori_tabella": dati_festivi.festivi_statistiche(conn, in_tabella)[1]}
 
     @app.get("/api/statistiche/indisponibilita")
     def statistiche_indisponibilita(conn: Conn, dal: DataValida | None = None, al: DataValida | None = None):

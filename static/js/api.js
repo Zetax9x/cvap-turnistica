@@ -122,6 +122,7 @@ export const api = {
   eliminaFerie: (id) => richiesta("DELETE", `/ferie/${enc(id)}`),
 
   statistiche: () => richiesta("GET", "/statistiche"),
+  statisticheFestivi: () => richiesta("GET", "/statistiche/festivi"),
   riepilogoPersona: (id, dal, al) =>
     richiesta("GET", `/statistiche/persona/${enc(id)}?${new URLSearchParams({ dal, al })}`),
   statisticheIndisponibilita: (dal, al) => {

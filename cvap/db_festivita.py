@@ -15,6 +15,7 @@ def _festivita_dict(r) -> dict:
     for k in _BOOLEANI:
         f[k] = bool(f[k])  # libsql restituisce interi
     f["predefinita"] = r["chiave"] is not None
+    f["stata_attiva"] = bool(r["stata_attiva"])
     return f
 
 
@@ -68,15 +69,16 @@ def festivita_doppione(conn: sqlite3.Connection, dati: dict, escluso: int | None
 
 def crea_festivita(conn: sqlite3.Connection, dati: dict) -> dict:
     with conn:
-        cur = conn.execute(f"INSERT INTO festivita({', '.join(CAMPI)}) VALUES ({', '.join('?' * len(CAMPI))})",
-                           _valori(dati))
+        cur = conn.execute(f"INSERT INTO festivita({', '.join(CAMPI)}, stata_attiva) "
+                           f"VALUES ({', '.join('?' * len(CAMPI))}, ?)", (*_valori(dati), int(dati["attiva"])))
     return get_festivita(conn, cur.lastrowid)
 
 
 def aggiorna_festivita(conn: sqlite3.Connection, festivita_id: int, dati: dict) -> dict | None:
     with conn:
-        cur = conn.execute(f"UPDATE festivita SET {', '.join(f'{k} = ?' for k in CAMPI)} WHERE id = ?",
-                           (*_valori(dati), festivita_id))
+        cur = conn.execute(f"UPDATE festivita SET {', '.join(f'{k} = ?' for k in CAMPI)}, "
+                           "stata_attiva = MAX(stata_attiva, ?) WHERE id = ?",
+                           (*_valori(dati), int(dati["attiva"]), festivita_id))
     return get_festivita(conn, festivita_id) if cur.rowcount else None
 
 

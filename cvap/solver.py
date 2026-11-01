@@ -163,7 +163,7 @@ def genera(
 
     ferie_di = {p.id: set(ferie.get(p.id, ())) for p in dipendenti}
     m = _Modello(giorni, unita, dipendenti, fissi, contesto, storico, crediti, ferie_di, indisponibili,
-                 scarto_ore_max, festivi or FestiviSettimana())
+                 scarto_ore_max, festivi)
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = tempo_max
     solver.parameters.num_search_workers = workers
@@ -367,14 +367,14 @@ class _Modello:
         return any((u.data, parte) in indisp for parte in parti_turno(u.fascia, u.segmento))
 
     def __init__(self, giorni, unita, dipendenti, fissi, contesto, storico, crediti, ferie, indisponibili,
-                 scarto_ore_max=SCARTO_ORE_MAX, festivi=FestiviSettimana()):
+                 scarto_ore_max=SCARTO_ORE_MAX, festivi=None):
         self.model = cp_model.CpModel()
         self.giorni = giorni
         self.unita = unita
         self.dipendenti = dipendenti
         self.storico = storico
         self.scarto_ore_max = scarto_ore_max
-        self.festivi = festivi
+        self.festivi = festivi or FestiviSettimana()
         self.crediti = crediti  # ore di ferie di ogni dipendente, contate come lavorate
         # scala intera dei termini dell'obiettivo: le ore si misurano in unità di 1/scala
         # (= numero di dipendenti)
@@ -700,25 +700,28 @@ class _Modello:
             return
         for fid in sorted(set(turni.values())):
             def conta(u, fid=fid):
-                return turni.get((u.data, u.fascia)) == fid
+                return (u.data, u.fascia) in turni and turni[u.data, u.fascia] == fid
             vars_di = {p.id: [v for u, v in self._vars_di(p.id, conta)] for p in self.dipendenti}
             idonei = [p.id for p in self.dipendenti if vars_di[p.id]]
             if not idonei:
                 continue
-            conti = self.festivi.conti.get(fid, {})
+            # un'incoerenza nei dati deve dare errore, non una rotazione nulla: indicizzazione diretta
+            conti = self.festivi.conti[fid]
             fissati = Counter(a.persona_id for a in self.fissi_settimana if conta(a))
-            peso, anno = self.festivi.peso.get(fid, 1), self.festivi.anno.get(fid)
+            fissati.update(self.festivi.fuori_settimana.get(fid, {}))  # notte della sera prima, settimana precedente
+            peso, anno = self.festivi.peso[fid], self.festivi.anno[fid]
             for pid, debito in debiti(conti, idonei, fissati).items():
                 costo = P_FESTIVITA * peso * (2 * debito + 1)
                 ultimo = conti.get(pid, ContoFestivita()).ultimo_anno
-                if anno is not None and ultimo is not None:
+                if ultimo is not None:
                     costo += P_STESSA_FESTIVITA * peso * {1: 1, 2: 0.5}.get(anno - ultimo, 0)
                 for v in vars_di[pid]:
                     self.obiettivo.append((round(costo * n), v))
         # al massimo un turno festivo a testa nella settimana (es. Natale e Santo Stefano)
         for p in self.dipendenti:
             vars_p = [v for u, v in self._vars_di(p.id, lambda u: (u.data, u.fascia) in turni)]
-            fissi = sum(1 for a in self.fissi_settimana if a.persona_id == p.id and (a.data, a.fascia) in turni)
+            fissi = sum(1 for a in self.fissi_settimana if a.persona_id == p.id and (a.data, a.fascia) in turni) \
+                + sum(chi.get(p.id, 0) for chi in self.festivi.fuori_settimana.values())
             if len(vars_p) + fissi >= 2 and vars_p:
                 extra = self.model.NewIntVar(0, len(vars_p) + fissi, "")
                 self.model.Add(sum(vars_p) + fissi - 1 <= extra)

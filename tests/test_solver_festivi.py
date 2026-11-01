@@ -5,6 +5,7 @@ intere i test sarebbero instabili. Ogni scenario è costruito in modo che, senza
 """
 from datetime import date, timedelta
 
+from cvap.modello import Assegnazione
 from cvap.rotazione_festivi import ContoFestivita, festivi_settimana
 from cvap.solver import StoricoPersona, genera
 
@@ -122,3 +123,19 @@ def test_festivo_di_domenica_conta_sia_nei_weekend_sia_nella_festivita():
 def test_senza_festivita_nella_settimana_nessun_effetto():
     r = genera(DA_MARTEDI[:2], SEDE, PERSONE, festivi=festivi_settimana([NATALE], DA_MARTEDI[:2], {}), tempo_max=10)
     assert r.scoperti == [] and r.stato == "ottimo"
+
+
+def test_la_notte_della_sera_prima_fatta_la_settimana_prima_conta_come_gia_fissata():
+    # lunedì festivo con la notte della sera prima: gli autisti 1 e 2 l'hanno fatta domenica (settimana prima);
+    # i turni del lunedì vanno agli altri autisti
+    lunedi = date(2026, 12, 28)
+    festa = fest(60, "Festa del lunedì", regola="data", data=lunedi.isoformat(), conta_notte_prima=True)
+    giorni = [lunedi + timedelta(days=i) for i in range(4)]
+    contesto = [Assegnazione(lunedi - timedelta(days=1), sede, "notte", "intero", "autista", pid, "generato")
+                for pid, sede in ((1, "Acquasanta"), (2, "Venarotta"))]
+    fs = festivi_settimana([festa], giorni, {60: conti(ContoFestivita(turni=1, esposizione=5))}, contesto,
+                           {p.id for p in PERSONE})
+    r = genera(giorni, SEDE, PERSONE, contesto=contesto, festivi=fs, tempo_max=10)
+    assert r.scoperti == []
+    autisti_lunedi = {a.persona_id for a in r.assegnazioni if a.data == lunedi and a.ruolo == "autista"}
+    assert autisti_lunedi & {1, 2} == set()

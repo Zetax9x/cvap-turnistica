@@ -127,7 +127,8 @@ CREATE TABLE IF NOT EXISTS festivita (  -- calendario delle festività a rotazio
     conta_notte INTEGER NOT NULL DEFAULT 1,
     conta_notte_prima INTEGER NOT NULL DEFAULT 0,
     peso INTEGER NOT NULL DEFAULT 1,  -- 1 normale, 2 importante, 3 molto importante
-    attiva INTEGER NOT NULL DEFAULT 0
+    attiva INTEGER NOT NULL DEFAULT 0,
+    stata_attiva INTEGER NOT NULL DEFAULT 0  -- 1 se è mai stata attiva: disattivata, resta nelle statistiche
 );
 CREATE TABLE IF NOT EXISTS storico_festivi (  -- anni passati: chi ha lavorato ogni festività (cvap/storico_festivi.py)
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -295,6 +296,13 @@ def _migra(conn) -> None:
         except Exception:
             if "motivo" not in _colonne(conn, "ferie"):
                 raise
+    if "stata_attiva" not in _colonne(conn, "festivita"):
+        try:
+            conn.execute("ALTER TABLE festivita ADD COLUMN stata_attiva INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            if "stata_attiva" not in _colonne(conn, "festivita"):
+                raise
+    conn.execute("UPDATE festivita SET stata_attiva = 1 WHERE attiva = 1 AND stata_attiva = 0")  # idempotente
     # prima il massimo personale arrivava a 168: oltre il tetto di 72 ore scende a 72 (idempotente)
     conn.execute("UPDATE persone SET max_ore_settimana = ? WHERE max_ore_settimana > ?",
                  (ORE_MAX_SETTIMANA, ORE_MAX_SETTIMANA))

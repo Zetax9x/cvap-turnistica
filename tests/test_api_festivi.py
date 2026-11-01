@@ -60,11 +60,11 @@ def test_statistiche_festivi_per_festivita_importati_e_programma(client):
 
     stat = client.get("/api/statistiche").json()
     m, lu = per_nome(stat, mario), per_nome(stat, luigi)
-    assert m["Natale"] == {"festivita": "Natale", "turni": 2, "ultimo_anno": 2026}
-    assert m["Ferragosto"] == {"festivita": "Ferragosto", "turni": 1, "ultimo_anno": 2025}
+    assert m["Natale"] == {"festivita": "Natale", "attiva": True, "turni": 2, "ultimo_anno": 2026}
+    assert m["Ferragosto"] == {"festivita": "Ferragosto", "attiva": True, "turni": 1, "ultimo_anno": 2025}
     # Natale 2021 è fuori dagli ultimi 5 anni (ultima settimana del programma: fine 2026)
-    assert lu["Natale"] == {"festivita": "Natale", "turni": 2, "ultimo_anno": 2026}
-    assert lu["Ferragosto"] == {"festivita": "Ferragosto", "turni": 0, "ultimo_anno": None}
+    assert lu["Natale"] == {"festivita": "Natale", "attiva": True, "turni": 2, "ultimo_anno": 2026}
+    assert lu["Ferragosto"] == {"festivita": "Ferragosto", "attiva": True, "turni": 0, "ultimo_anno": None}
     riga_mario = next(r for r in stat if r["persona_id"] == mario)
     assert riga_mario["festivi"]["turni"] == 3
 
@@ -163,3 +163,113 @@ def test_le_statistiche_via_email_hanno_i_festivi():
     assert "Festivi" in html_
     assert "Natale 2 (2025), Pasqua 1 (2023)" in html_ and "Natale 2 (2025), Pasqua 1 (2023)" in testo
     assert "Ferragosto" not in testo
+
+
+# --- correzioni dopo la revisione -------------------------------------------------------------------
+
+def assegna(client, d, fascia, pid, origine="manuale", postazione="Acquasanta"):
+    """Un turno salvato direttamente, senza toccare la tabella delle settimane."""
+    conn = db.apri(client.percorso_db)
+    try:
+        db.crea_assegnazione(conn, Assegnazione(d, postazione, fascia, "intero", "autista", pid, origine))
+    finally:
+        conn.close()
+
+
+def disattiva(client, nome):
+    f = next(f for f in client.get("/api/festivita").json() if f["nome"] == nome)
+    campi = ("nome", "regola", "giorno", "mese", "offset_pasqua", "data", "conta_giorno", "conta_notte",
+             "conta_notte_prima", "peso")
+    r = client.put(f"/api/festivita/{f['id']}", json={**{k: f[k] for k in campi}, "attiva": False})
+    assert r.status_code == 200, r.text
+
+
+def test_settimana_con_turni_ma_senza_riga_conta(client, cattura):
+    mario, luigi = crea(client, "Mario Rossi")["id"], crea(client, "Luigi Bianchi")["id"]
+    natale = attiva(client, "Natale")
+    settimana_generata(client, PRIMA, [mario, luigi], [(PRIMA, "giorno", mario), (PRIMA, "notte", luigi)])
+    assegna(client, NATALE, "giorno", mario)  # settimana di Natale compilata a mano, senza riga in `settimane`
+    assert per_nome(client.get("/api/statistiche").json(), mario)["Natale"]["turni"] == 1
+    assert client.post("/api/settimane/2027-12-20/genera", json={}).status_code == 200
+    c = cattura[-1]["festivi"].conti[natale]
+    # dipendenti di quella settimana: chi vi ha turni
+    assert (c[mario].turni, c[mario].esposizione) == (1, 1)
+    assert c[luigi].esposizione == 0
+
+
+def test_settimana_salvata_ma_vuota_non_espone(client, cattura):
+    mario = crea(client, "Mario Rossi")["id"]
+    natale = attiva(client, "Natale")
+    settimana_generata(client, PRIMA, [mario], [(PRIMA, "giorno", mario)])
+    settimana_generata(client, SETT_NATALE, [mario], [])
+    assert client.post("/api/settimane/2027-12-20/genera", json={}).status_code == 200
+    assert cattura[-1]["festivi"].conti[natale][mario].esposizione == 0
+
+
+def test_festivita_disattivata_resta_in_statistiche_e_riepilogo(client):
+    mario = crea(client, "Mario Rossi")["id"]
+    attiva(client, "Natale")
+    attiva(client, "Ferragosto")
+    settimana_generata(client, PRIMA, [mario], [(PRIMA, "giorno", mario)])
+    settimana_generata(client, SETT_NATALE, [mario], [(NATALE, "giorno", mario)])
+    disattiva(client, "Natale")
+    stat = client.get("/api/statistiche").json()
+    riga = next(r for r in stat if r["persona_id"] == mario)
+    assert riga["festivi"]["turni"] == 1
+    voci = {f["festivita"]: f for f in riga["festivi"]["per_festivita"]}
+    assert voci["Natale"] == {"festivita": "Natale", "attiva": False, "turni": 1, "ultimo_anno": 2026}
+    assert voci["Ferragosto"]["attiva"] is True and voci["Ferragosto"]["turni"] == 0
+    assert "Capodanno" not in voci  # non attiva e mai lavorata
+    x = client.get(f"/api/statistiche/persona/{mario}", params={"dal": "2026-12-21", "al": "2026-12-27"}).json()
+    assert x["riepilogo"]["festivi"] == [{"festivita": "Natale (non più nel calendario)", "turni": 1}]
+
+
+def test_lunedi_festivo_la_notte_prima_della_settimana_precedente_e_gia_fissata(client, cattura):
+    mario, luigi = crea(client, "Mario Rossi")["id"], crea(client, "Luigi Bianchi")["id"]
+    f = next(f for f in client.get("/api/festivita").json() if f["nome"] == "Capodanno")
+    campi = ("nome", "regola", "giorno", "mese", "offset_pasqua", "data", "conta_giorno", "conta_notte", "peso")
+    assert client.put(f"/api/festivita/{f['id']}", json={**{k: f[k] for k in campi}, "conta_notte_prima": True,
+                                                          "attiva": True}).status_code == 200
+    settimana_generata(client, PRIMA, [mario, luigi], [(PRIMA, "giorno", mario)])
+    # 1/1/2029 è lunedì: la notte del 31/12/2028 è nella settimana precedente, già salvata
+    settimana_generata(client, date(2028, 12, 25), [mario, luigi], [(date(2028, 12, 31), "notte", mario)])
+    assert client.post("/api/settimane/2029-01-01/genera", json={}).status_code == 200
+    fs = cattura[-1]["festivi"]
+    assert fs.fuori_settimana == {f["id"]: {mario: 1}}
+    assert fs.turni[(date(2029, 1, 1), "giorno")] == f["id"]
+    # nelle statistiche quella notte conta come lavorata per Capodanno 2029
+    assert per_nome(client.get("/api/statistiche").json(), mario)["Capodanno"] == {
+        "festivita": "Capodanno", "attiva": True, "turni": 1, "ultimo_anno": 2029}
+
+
+def test_turni_festivi_di_chi_non_e_in_tabella(client):
+    mario = crea(client, "Mario Rossi")["id"]
+    ex = crea(client, "Ex Dipendente")["id"]
+    natale = attiva(client, "Natale")
+    settimana_generata(client, PRIMA, [mario], [(PRIMA, "giorno", mario)])
+    assert salva(client, 2025, [turno(natale, ex), turno(natale, ex, "notte"), turno(natale, mario)],
+                 [mario, ex]).status_code == 200
+    r = client.get("/api/statistiche/festivi")
+    assert r.status_code == 200, r.text
+    assert r.json() == {"fuori_tabella": [{"festivita": "Natale", "attiva": True, "turni": 2}]}
+    assert ex not in {x["persona_id"] for x in client.get("/api/statistiche").json()}
+
+
+def test_report_della_generazione_con_le_festivita(client, cattura):
+    mario, luigi = crea(client, "Mario Rossi")["id"], crea(client, "Luigi Bianchi")["id"]
+    attiva(client, "Natale")
+    settimana_generata(client, PRIMA, [mario, luigi], [(PRIMA, "giorno", mario)])
+    assegna(client, NATALE, "giorno", mario)  # fissato a mano nella settimana da generare
+    r = client.post("/api/settimane/2026-12-21/genera", json={})
+    assert r.status_code == 200, r.text
+    assert r.json()["report"]["festivi"] == {"per_festivita": [{"festivita": "Natale", "turni": 1}], "turni": 1,
+                                             "anno_prima": 0, "persone_con_piu_festivi": 0}
+    r = client.post("/api/settimane/2026-11-02/genera", json={})
+    assert r.json()["report"]["festivi"] is None
+
+
+def test_le_statistiche_via_email_segnano_le_festivita_non_piu_nel_calendario():
+    from cvap.email_turni import festivi_testo
+    riga = {"festivi": {"turni": 1, "per_festivita": [
+        {"festivita": "Natale", "attiva": False, "turni": 1, "ultimo_anno": 2025}]}}
+    assert festivi_testo(riga) == "Natale (non più nel calendario) 1 (2025)"

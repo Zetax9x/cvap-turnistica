@@ -9,7 +9,7 @@ import pytest
 
 from cvap.modello import Assegnazione
 from cvap.rotazione_festivi import (ANNI_FESTIVI, ContoFestivita, SettimanaProgramma, conta_festivita, debiti,
-                                    festivi_settimana, inizio_periodo)
+                                    festivi_settimana, inizio_periodo, riepilogo_generazione)
 
 from .test_festivita import fest
 
@@ -204,3 +204,48 @@ def test_festivi_della_settimana():
     assert fs.peso == {13: 3, 14: 1}
     assert fs.anno == {13: 2026, 14: 2026}
     assert fs.conti[13][MARIO].ultimo_anno == 2025
+
+
+# --- correzioni dopo la revisione -------------------------------------------------------------------
+
+def test_settimana_salvata_senza_turni_non_espone():
+    # riga della settimana di Natale presente ma vuota (non ancora generata): nessuna esposizione
+    c = conta(settimane=[settimana(SETT_NATALE, {MARIO, LUIGI})])[NATALE["id"]]
+    assert c[MARIO].esposizione == 0 and c[LUIGI].esposizione == 0
+
+
+LUNEDI_FESTIVO = fest(60, "Festa del lunedì", regola="data", data="2026-12-28", conta_notte_prima=True)
+
+
+def test_notte_della_sera_prima_nella_settimana_precedente_conta_come_lavorata():
+    domenica = date(2026, 12, 27)
+    prima = settimana(SETT_NATALE, {MARIO, LUIGI}, [turno(domenica, MARIO, "notte")])
+    dopo = settimana(date(2026, 12, 28), {MARIO, LUIGI}, [turno(date(2026, 12, 28), LUIGI)])
+    c = conta([LUNEDI_FESTIVO], riferimento=date(2027, 1, 4), settimane=[prima, dopo])[60]
+    assert (c[MARIO].turni, c[MARIO].esposizione, c[MARIO].ultimo_anno) == (1, 1, 2026)
+    assert (c[LUIGI].turni, c[LUIGI].esposizione) == (1, 1)
+
+
+def test_festivi_settimana_con_la_notte_prima_nel_contesto():
+    giorni = [date(2026, 12, 28) + timedelta(days=i) for i in range(7)]
+    contesto = [turno(date(2026, 12, 27), MARIO, "notte"), turno(date(2026, 12, 27), VOL, "notte", "Venarotta"),
+                turno(date(2026, 12, 26), LUIGI, "notte")]
+    fs = festivi_settimana([LUNEDI_FESTIVO], giorni, {}, contesto, {MARIO, LUIGI})
+    assert (date(2026, 12, 27), "notte") not in fs.turni
+    assert fs.turni[(date(2026, 12, 28), "giorno")] == 60
+    assert fs.fuori_settimana == {60: {MARIO: 1}}
+    assert fs.anno == {60: 2026} and fs.peso == {60: 1} and fs.conti == {60: {}}
+
+
+def test_riepilogo_della_generazione():
+    giorni = [SETT_NATALE + timedelta(days=i) for i in range(7)]
+    vigilia = fest(12, "Vigilia di Natale", giorno=24, mese=12)
+    conti = {13: {MARIO: ContoFestivita(turni=1, esposizione=3, ultimo_anno=2025)}, 12: {}}
+    fs = festivi_settimana([vigilia, NATALE], giorni, conti)
+    turni = [turno(date(2026, 12, 25), MARIO), turno(date(2026, 12, 24), MARIO, "notte"),
+             turno(date(2026, 12, 25), LUIGI, "notte"), turno(date(2026, 12, 25), VOL, "notte", "Venarotta"),
+             turno(date(2026, 12, 23), ANNA)]
+    r = riepilogo_generazione(fs, turni, {MARIO, LUIGI, ANNA}, {12: "Vigilia di Natale", 13: "Natale"})
+    assert r == {"per_festivita": [{"festivita": "Vigilia di Natale", "turni": 1}, {"festivita": "Natale", "turni": 2}],
+                 "turni": 3, "anno_prima": 1, "persone_con_piu_festivi": 1}
+    assert riepilogo_generazione(festivi_settimana([NATALE], giorni[:2], {}), [], set(), {}) is None

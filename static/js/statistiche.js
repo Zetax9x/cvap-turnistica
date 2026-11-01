@@ -6,7 +6,7 @@ import * as indisponibilita from "./statistiche-indisponibilita.js";
 import * as perDipendente from "./statistiche-dipendente.js";
 import * as equita from "./statistiche-equita.js";
 
-const stato = { root: null, righe: [], ordine: { campo: "nome", dir: 1 }, filtroTipo: "tutti" };
+const stato = { root: null, righe: [], fuoriTabella: [], ordine: { campo: "nome", dir: 1 }, filtroTipo: "tutti" };
 
 const COLONNE = [
   { campo: "nome", titolo: "Persona", testo: true },
@@ -24,7 +24,7 @@ const COLONNE = [
   { campo: "standby", titolo: "Standby", valore: (r) => r.standby || 0 },
   { campo: "programmati", titolo: "Programmati", valore: (r) => r.programmati || 0 },
   { campo: "ascoli", titolo: "Ascoli (G / N)", valore: (r) => asc(r, "turni") },
-  { campo: "festivi", titolo: "Festivi", valore: (r) => (r.festivi && r.festivi.turni) || 0 },
+  { campo: "festivi", titolo: "Festivi", valore: (r) => (r.tipo === "dipendente" && r.festivi ? r.festivi.turni : -1) },
   { campo: "assistenze", titolo: "Assistenze", valore: (r) => r.assistenze || 0 },
 ];
 
@@ -37,12 +37,28 @@ function dettaglioOre(r) {
   return el("span", { class: "ore-dettaglio" }, [`${formatOre(r.ore_lavorate || 0)} lavorate`, ...assenze].join(" + "));
 }
 
-/** Le festività lavorate negli ultimi 5 anni, una per riga: "Natale 2 (ultima 2025)". */
+/** Nome della festività, con l'avviso se non è più nel calendario (non conta più per il generatore). */
+export function nomeFestivita(f) {
+  return f.attiva === false ? `${f.festivita} (non più nel calendario)` : f.festivita;
+}
+
+/** Le festività lavorate negli ultimi 5 anni, in elenco: "Natale 2 (ultima 2025)". Volontari e dati assenti: "–". */
 function festivi(r) {
-  const voci = ((r.festivi && r.festivi.per_festivita) || []).filter((f) => f.turni);
+  if (r.tipo !== "dipendente" || !r.festivi) return "–";
+  const voci = (r.festivi.per_festivita || []).filter((f) => f.turni);
   if (!voci.length) return "0";
   return el("span", { class: "festivi-elenco" }, String(r.festivi.turni),
-    voci.map((f) => el("span", { class: "festivi-voce" }, `${f.festivita} ${f.turni} (ultima ${f.ultimo_anno})`)));
+    el("ul", { class: "festivi-voci" }, voci.map((f) => el("li", { class: "festivi-voce" },
+      `${nomeFestivita(f)} ${f.turni} (ultima ${f.ultimo_anno})`))));
+}
+
+/** Sotto la tabella: i turni festivi di chi non è più in tabella (es. ex dipendenti dello storico importato). */
+function notaFuoriTabella(fuori) {
+  const voci = (fuori || []).filter((f) => f.turni);
+  if (!voci.length) return null;
+  const totale = voci.reduce((s, f) => s + f.turni, 0);
+  return el("p", { class: "hint" }, `Nello storico ci sono anche ${totale === 1 ? "1 turno festivo" : `${totale} turni festivi`} ` +
+    `di persone che non lavorano più o non compaiono in tabella: ${voci.map((f) => `${nomeFestivita(f)} ${f.turni}`).join(", ")}.`);
 }
 
 function sede(r, k) { return (r.sedi && r.sedi[k]) || 0; }
@@ -98,9 +114,10 @@ export async function mostra(root, parametro) {
   const numero = nuovoCaricamento();
   clear(root).append(renderSchede(""), el("p", { class: "muted loading" }, "Caricamento delle statistiche…"));
   try {
-    const righe = await api.statistiche();
+    const [righe, festiviExtra] = await Promise.all([api.statistiche(), api.statisticheFestivi().catch(() => null)]);
     if (superato(numero)) return;
     stato.righe = righe;
+    stato.fuoriTabella = (festiviExtra && festiviExtra.fuori_tabella) || [];
     render();
     focusTitolo(root);
   } catch (err) {
@@ -194,6 +211,8 @@ function render() {
   root.append(el("div", { class: "table-scroll" }, el("table", { class: "tabella tabella-stat" },
     el("caption", { class: "sr-only" }, "Statistiche per persona. Fare clic sulle intestazioni per ordinare."),
     thead, tbody)));
+  const nota = notaFuoriTabella(stato.fuoriTabella);
+  if (nota) root.append(nota);
   root.append(el("p", { class: "hint" }, "Ore totali: ore lavorate più 6 h per ogni giorno di ferie o malattia, " +
     "come nel confronto delle ore tra dipendenti; sotto, il dettaglio quando ci sono assenze. " +
     "Le settimane interamente di ferie o malattia non contano."));
@@ -208,5 +227,6 @@ function render() {
     "negli ultimi 5 anni, compresi gli anni passati inseriti nello Storico festività; sotto, il dettaglio per festività " +
     "con l'ultimo anno in cui è stata lavorata. Il generatore fa ruotare ogni festività per conto suo: chi l'ha lavorata " +
     "più volte o l'anno prima lascia il posto agli altri. Ferie e indisponibilità in una festività contano come riposo " +
-    "goduto: la volta dopo si ha la precedenza a lavorarla. I volontari non entrano nella rotazione."));
+    "goduto: la volta dopo si ha la precedenza a lavorarla. I volontari non entrano nella rotazione (–). " +
+    "Le festività tolte dal calendario restano nel totale, segnate come “non più nel calendario”."));
 }

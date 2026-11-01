@@ -10,29 +10,42 @@ from datetime import date, timedelta
 from . import db, db_festivita, db_storico_festivi
 from .calendario import lunedi
 from .festivita import turni_festivi
+from .modello import Assegnazione
 from .rotazione_festivi import (ContoFestivita, FestiviSettimana, SettimanaProgramma, conta_festivita,
                                 festivi_settimana, inizio_periodo)
 from .storico_festivi import limite_storico
 
 
+NON_PIU_NEL_CALENDARIO = "non più nel calendario"
+
+
 def _settimane_programma(conn, prima: date | None, dal: date, al: date) -> list[SettimanaProgramma]:
-    """Le settimane salvate dalla prima generata in poi che toccano [dal, al)."""
+    """Le settimane dalla prima generata in poi che toccano [dal, al) e hanno almeno un turno.
+
+    Dipendenti della settimana: quelli salvati nella riga di `settimane`; per le settimane compilate a mano senza
+    riga, i dipendenti che hanno turni quella settimana. Le settimane senza turni non danno esposizione."""
     if prima is None:
         return []
     inizio = max(prima, lunedi(dal))
-    righe = [r for r in db.lista_settimane(conn, prima_di=al) if date.fromisoformat(r["inizio"]) >= inizio]
-    if not righe:
-        return []
     turni = defaultdict(list)
     for _, a in db.assegnazioni_periodo(conn, inizio, al - timedelta(days=1)):
         turni[lunedi(a.data)].append(a)
-    return [SettimanaProgramma(date.fromisoformat(r["inizio"]), frozenset(r["dipendenti"]),
-                               tuple(turni.get(date.fromisoformat(r["inizio"]), ()))) for r in righe]
+    if not turni:
+        return []
+    righe = {date.fromisoformat(r["inizio"]): r for r in db.lista_settimane(conn, prima_di=al)}
+    dipendenti = {p["id"] for p in db.lista_persone(conn) if p["tipo"] == "dipendente"}
+    out = []
+    for lun in sorted(turni):
+        riga = righe.get(lun)
+        chi = set(riga["dipendenti"]) if riga else {a.persona_id for a in turni[lun] if a.persona_id in dipendenti}
+        out.append(SettimanaProgramma(lun, frozenset(chi), tuple(turni[lun])))
+    return out
 
 
 def conti_festivita(conn: sqlite3.Connection, riferimento: date,
                     festivita: list[dict] | None = None) -> dict[int, dict[int, ContoFestivita]]:
-    """Conti delle festività attive negli ultimi anni prima di `riferimento` (storico importato + programma)."""
+    """Conti delle festività (predefinito: le attive) negli ultimi anni prima di `riferimento` (storico
+    importato + programma)."""
     festivita = db_festivita.festivita_attive(conn) if festivita is None else festivita
     if not festivita:
         return {}
@@ -47,33 +60,74 @@ def conti_festivita(conn: sqlite3.Connection, riferimento: date,
                            settimane=settimane, malattia=malattia)
 
 
-def festivi_per_generazione(conn: sqlite3.Connection, giorni: list[date]) -> FestiviSettimana:
-    """Le festività della settimana da generare, con lo storico di ognuna fino al lunedì della settimana."""
+def festivi_per_generazione(conn: sqlite3.Connection, giorni: list[date],
+                            contesto: Iterable[Assegnazione] = ()) -> FestiviSettimana:
+    """Le festività della settimana da generare, con lo storico di ognuna fino al lunedì della settimana.
+
+    `contesto`: turni dei giorni prima (la notte della sera prima di un lunedì festivo conta come già fissata)."""
     festivita = db_festivita.festivita_attive(conn)
     if not turni_festivi(festivita, giorni[0], giorni[-1]):
         return FestiviSettimana()
-    return festivi_settimana(festivita, giorni, conti_festivita(conn, giorni[0], festivita))
+    dipendenti = {p["id"] for p in db.lista_persone(conn) if p["tipo"] == "dipendente"}
+    return festivi_settimana(festivita, giorni, conti_festivita(conn, giorni[0], festivita), contesto, dipendenti)
 
 
-def festivi_statistiche(conn: sqlite3.Connection, dipendenti: Iterable[int]) -> dict[int, dict]:
-    """Dipendente -> {turni, per_festivita: [{festivita, turni, ultimo_anno}]} negli ultimi anni, fino alla fine
-    dell'ultima settimana salvata (o a oggi), per ogni festività attiva."""
-    festivita = db_festivita.festivita_attive(conn)
-    settimane = db.lista_settimane(conn)
+def _riferimento_statistiche(conn) -> date:
+    """Fine del periodo delle statistiche: dopo l'ultima settimana salvata o l'ultimo turno, almeno domani."""
     riferimento = date.today() + timedelta(days=1)
+    settimane = db.lista_settimane(conn)
     if settimane:
         riferimento = max(riferimento, date.fromisoformat(settimane[-1]["inizio"]) + timedelta(days=7))
-    conti = conti_festivita(conn, riferimento, festivita)
-    out = {}
-    for pid in dipendenti:
-        voci = [{"festivita": f["nome"], "turni": c.turni, "ultimo_anno": c.ultimo_anno}
-                for f in festivita for c in [conti[f["id"]].get(pid, ContoFestivita())]]
-        out[pid] = {"turni": sum(v["turni"] for v in voci), "per_festivita": voci}
+    r = conn.execute("SELECT MAX(data) AS ultima FROM assegnazioni").fetchone()
+    if r and r["ultima"]:
+        riferimento = max(riferimento, date.fromisoformat(r["ultima"]) + timedelta(days=1))
+    return riferimento
+
+
+def _conti_statistiche(conn) -> list[tuple[dict, dict[int, ContoFestivita]]]:
+    """(festività, conti per persona) per le attive e per le non più attive, ognuna calcolata a parte."""
+    tutte = db_festivita.lista_festivita(conn)
+    riferimento = _riferimento_statistiche(conn)
+    nello_storico = {r["festivita_id"] for r in db_storico_festivi.tutti_i_turni(conn)}
+    # non attive: solo quelle che lo sono state o che sono nello storico importato (non le predefinite mai usate)
+    non_piu = [f for f in tutte if not f["attiva"] and (f["stata_attiva"] or f["id"] in nello_storico)]
+    out = []
+    for gruppo in ([f for f in tutte if f["attiva"]], non_piu):
+        conti = conti_festivita(conn, riferimento, gruppo)
+        out += [(f, conti.get(f["id"], {})) for f in sorted(gruppo, key=lambda f: f["id"])]
     return out
 
 
+def festivi_statistiche(conn: sqlite3.Connection, dipendenti: Iterable[int]) -> tuple[dict[int, dict], list[dict]]:
+    """Negli ultimi anni, fino alla fine dell'ultima settimana salvata (o a domani):
+
+    - dipendente -> {turni, per_festivita: [{festivita, attiva, turni, ultimo_anno}]}: tutte le festività attive,
+      più quelle non più nel calendario in cui ha lavorato (non contano più per il generatore, ma restano nel totale);
+    - turni festivi di chi non è tra `dipendenti` (es. ex dipendenti presenti solo nello storico importato):
+      [{festivita, attiva, turni}]."""
+    dipendenti = list(dipendenti)
+    in_tabella = set(dipendenti)
+    conti = _conti_statistiche(conn)
+    out = {}
+    for pid in dipendenti:
+        voci = [{"festivita": f["nome"], "attiva": f["attiva"], "turni": c.turni, "ultimo_anno": c.ultimo_anno}
+                for f, per_persona in conti for c in [per_persona.get(pid, ContoFestivita())]
+                if f["attiva"] or c.turni]
+        out[pid] = {"turni": sum(v["turni"] for v in voci), "per_festivita": voci}
+    fuori = [{"festivita": f["nome"], "attiva": f["attiva"],
+              "turni": sum(c.turni for pid, c in per_persona.items() if pid not in in_tabella)}
+             for f, per_persona in conti]
+    return out, [v for v in fuori if v["turni"]]
+
+
 def nomi_turni_festivi(conn: sqlite3.Connection, dal: date, al: date) -> dict[tuple[date, str], str]:
-    """(giorno, fascia) -> nome della festività attiva, per i turni festivi in [dal, al]."""
-    festivita = db_festivita.festivita_attive(conn)
-    nomi = {f["id"]: f["nome"] for f in festivita}
-    return {turno: nomi[fid] for turno, fid in turni_festivi(festivita, dal, al).items()}
+    """(giorno, fascia) -> nome della festività per i turni festivi in [dal, al]: prima le attive, poi le non più
+    nel calendario (con l'etichetta)."""
+    tutte = db_festivita.lista_festivita(conn)
+    out: dict[tuple[date, str], str] = {}
+    for attiva in (True, False):
+        gruppo = [f for f in tutte if f["attiva"] == attiva and (attiva or f["stata_attiva"])]
+        nomi = {f["id"]: f["nome"] if attiva else f"{f['nome']} ({NON_PIU_NEL_CALENDARIO})" for f in gruppo}
+        for turno, fid in turni_festivi(gruppo, dal, al).items():
+            out.setdefault(turno, nomi[fid])
+    return out
