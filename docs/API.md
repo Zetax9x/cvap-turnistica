@@ -546,8 +546,9 @@ tocca i dati veri. Scrive un report HTML (`--out`, predefinito `simulazione.html
 - `python -m cvap.simulazione [--settimane 4] [--scarto 12 6] [--tempo 30] [--worker N]`: 19 dipendenti e 3
   volontari dal 19/10/2026, con ferie, indisponibilità, divieti, Standby e Programmati (`simula`).
 - `python -m cvap.simulazione --festivita [--anni 3] [--tempo 20] [--worker 2] [--pesi NOME=VALORE ...]`
-  (`simula_festivi`): 17 dipendenti (10 autisti, 7 soccorritori), le settimane dal 24/12 al 1/1 di ogni anno dal
-  2026, con Natale (peso 3, anche la notte della Vigilia), Santo Stefano (peso 1) e Capodanno (peso 2, anche la notte
+  (`simula_festivi`): 17 dipendenti (10 autisti, 7 soccorritori), le settimane dal 24/12 al 1/1 di ogni anno (`settimane_festive`)
+  dal primo Natale con la settimana non ancora cominciata (`primo_anno_festivo(oggi)`: "vuole lavorare" si segna solo
+  per le festività non passate e lo storico importato arriva fino a oggi), con Natale (peso 3, anche la notte della Vigilia), Santo Stefano (peso 1) e Capodanno (peso 2, anche la notte
   di San Silvestro) attivi; storico sintetico dei 5 anni prima (`storico_sintetico`: 4 persone di giorno e 4 di notte
   per festività, due persone sempre a Natale) inserito con `PUT /storico-festivi/{anno}`; un dipendente vuole lavorare
   il giorno di Natale ogni anno, uno è in ferie a Natale il primo anno.
@@ -559,3 +560,5 @@ tocca i dati veri. Scrive un report HTML (`--out`, predefinito `simulazione.html
 - `--pesi` prova pesi diversi solo per la durata della simulazione (`pesi_temporanei`: `P_FESTIVITA`,
   `P_STESSA_FESTIVITA`, `P_DOPPIO_FESTIVO`, `P_DISPONIBILE_FESTIVO`); `--worker` limita i processi del risolutore
   (`worker_limitati`), utile per confrontare più configurazioni con lo stesso tempo.
+- Taratura dei pesi (novembre 2026, 3 anni, 20 s a settimana, 2 worker): i pesi di partenza restano; numeri in
+  `docs/PIANO-rotazioni.md`, 3.3.

@@ -16,6 +16,10 @@ Inoltre:
 
 Il piano parte dal codice di `main` al commit `5c4a7e1`.
 
+**Stato (2 novembre 2026): tutte le fasi del capitolo 5 sono fatte** (1–10, sul branch
+`piano/rotazioni-ascoli-extra-festivita`). I pesi delle festività restano quelli di partenza: la simulazione non ha
+mostrato un miglioramento chiaro (numeri al punto 3.3).
+
 ---
 
 ## 0. Situazione attuale
@@ -250,6 +254,36 @@ servizio" di un anno non è salvato usare la stessa proposta della pagina (dipen
   | `P_DOPPIO_FESTIVO` | 300 | come il doppio weekend |
   | `P_DISPONIBILE_FESTIVO` | −3.000 (sconto) | supera le penalità di rotazione, resta sotto i tre di fila (5.000) |
 
+  **Taratura con la simulazione (fase 10, fatta il 2 novembre 2026): i pesi restano questi.**
+  `python -m cvap.simulazione --festivita --anni 3 --tempo 20 --worker 2 --pesi ...`: 17 dipendenti, settimane dal
+  24/12 al 1/1 per 3 anni (7 settimane), Natale peso 3 con la notte della Vigilia, Santo Stefano peso 1, Capodanno
+  peso 2 con la notte di San Silvestro, storico inventato dei 5 anni prima (4 persone di giorno e 4 di notte per
+  festività, due sempre a Natale), uno che vuole lavorare il giorno di Natale, uno in ferie a Natale il primo anno.
+  Una configurazione per riga, cambiando un peso alla volta:
+
+  | Pesi | Scoperti | Diff. ore peggiore | Divario saldi ore | Turni festivi | Ripetute dall'anno prima | Doppi festivi | Più − meno in 5 anni (Natale, S. Stefano, Capodanno) | Vuole lavorare |
+  |---|---|---|---|---|---|---|---|---|
+  | partenza (60 / 500 / 300 / −3.000) | 2 | 24 h | 37 h | 117 | 44 | 36 | 3, 2, 2 | 1/3 |
+  | partenza, ripetuta | 1 | 12 h | 13 h | 117 | 41 | 33 | 3, 3, 2 | 2/3 |
+  | `P_FESTIVITA` 30 | 1 | 24 h | 49 h | 118 | 56 | 32 | 3, 3, 2 | 1/3 |
+  | `P_FESTIVITA` 120 | 0 | 36 h | 21 h | 118 | 61 | 26 | 3, 4, 2 | 2/3 |
+  | `P_STESSA_FESTIVITA` 250 | 0 | 24 h | 24 h | 118 | 58 | 32 | 3, 3, 2 | 2/3 |
+  | `P_STESSA_FESTIVITA` 1.000 | 2 | 12 h | 25 h | 116 | 38 | 28 | 3, 2, 2 | 2/3 |
+  | `P_DOPPIO_FESTIVO` 150 | 0 | 24 h | 8 h | 118 | 40 | 32 | 3, 2, 2 | 3/3 |
+  | `P_DOPPIO_FESTIVO` 600 | 0 | 12 h | 18 h | 118 | 52 | 29 | 3, 2, 2 | 2/3 |
+  | `P_DISPONIBILE_FESTIVO` −1.500 | 0 | 12 h | 19 h | 118 | 44 | 27 | 3, 3, 2 | 2/3 |
+
+  Letture: il rumore è grande (la stessa configurazione ripetuta cambia di 3 ripetute, 3 doppi, 1 scoperto, 12 h di
+  differenza): nessuna settimana arriva all'ottimo dimostrato in 20 s. Abbassare `P_STESSA_FESTIVITA` o cambiare
+  `P_FESTIVITA` in su o in giù aumenta chiaramente le ripetute (56–61 contro 41–44); alzare `P_STESSA_FESTIVITA` a
+  1.000 le riduce poco (38) ma con 2 posti scoperti, quindi non è un miglioramento chiaro. I doppi festivi sono quasi
+  tutti inevitabili: nella settimana di Natale e Santo Stefano ci sono circa 24–30 turni festivi per 16–17 persone.
+  Il divario negli ultimi 5 anni (3, 2–3, 2) e nessuno senza la festività non cambiano con i pesi. I posti scoperti (0–2
+  su 7 settimane) e la differenza di ore oltre 12 compaiono anche con i pesi di partenza: dipendono dal tempo di
+  ricerca con 17 dipendenti nelle settimane B, non dai pesi delle festività.
+  Pesi finali: `P_FESTIVITA = 60`, `P_STESSA_FESTIVITA = 500`, `P_DOPPIO_FESTIVO = 300`,
+  `P_DISPONIBILE_FESTIVO = −3.000`.
+
   Nessuna di queste supera i vincoli più importanti (copertura, ore minime, differenza massima, regole di Ascoli):
   la rotazione dei festivi sceglie *tra* le soluzioni che rispettano le regole.
 - Lo storico dei festivi si ricalcola ogni volta, come quello attuale: se si aggiunge una festività al calendario,
@@ -364,6 +398,9 @@ chi chiede "perché sempre io?".
 ## 5. Ordine di lavoro
 
 Ogni fase è un commit di test (rossi) seguito da un commit di implementazione (verdi), come nella storia del progetto.
+
+**Fatte tutte (1–10).** Fase 10: `python -m cvap.simulazione --festivita`, taratura al punto 3.3 (pesi invariati),
+`docs/API.md` (indice dei moduli e sezione Simulazione), README e guida per i dipendenti `docs/GUIDA-dipendenti.md`.
 
 1. **Refactor** di `_richieste` in `_rotazioni` con la tabella delle categorie, senza cambiare il comportamento.
 2. **Ascoli a rotazione**, numero di turni e giorni/notti, + colonna nelle statistiche.
