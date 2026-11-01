@@ -12,7 +12,16 @@ Frontend: HTML + JS vanilla (ES modules) in `static/`, servito da FastAPI. UI in
 | `slot.py` | `unita_da_coprire(giorni, postazioni, occupate) -> list[Unita]` |
 | `vincoli.py` | `Violazione(livello: "errore"\|"avviso", codice, messaggio, persona_id=None, data=None)`, `valida_settimana(giorni, postazioni, assegnazioni, persone: dict[int, Persona], contesto=()) -> list[Violazione]` |
 | `storico.py` | `StoricoPersona(settimane, saldo_ore, weekend: dict, ore_giorno, ore_notte)`, `SettimanaPassata(media_ore, dipendenti: list[int], assegnazioni)`, `calcola_storico(list[SettimanaPassata]) -> dict[int, StoricoPersona]` |
-| `solver.py` | `genera(giorni, postazioni, persone: list[Persona], fissi=(), contesto=(), storico=None, tempo_max=20.0) -> Risultato` con `Risultato(stato, assegnazioni: list[Assegnazione]` (solo nuove, origine `generato`)`, scoperti: list[Unita], media_ore: float, ore: dict[int,int], messaggio: str, durata_s: float, qualita: dict \| None)`; `stato` ∈ `ottimo \| ammissibile \| impossibile \| nessuna_soluzione` |
+| `solver.py` | `genera(giorni, postazioni, persone: list[Persona], fissi=(), contesto=(), storico=None, tempo_max=45.0, seed=0, workers=8, ferie=None, indisponibili=None, fabbisogno=(), scarto_ore_max=12, festivi=None) -> Risultato` con `Risultato(stato, assegnazioni: list[Assegnazione]` (solo nuove, origine `generato`)`, scoperti: list[Unita], media_ore: float, ore: dict[int,int], messaggio: str, durata_s: float, qualita: dict \| None)`; `stato` ∈ `ottimo \| ammissibile \| impossibile \| nessuna_soluzione` |
+| `festivita.py` | Calendario delle festività (puro): `pasqua`, `data_nell_anno`, `date_festive`, `turni_festivi`, `FESTIVITA_PREDEFINITE` (sezione "Festività a rotazione: calendario") |
+| `db_festivita.py`, `api_festivita.py`, `api_comune.py` | Repository e router del calendario (`/api/festivita`), chi vuole lavorare (`/api/festivita/disponibili`), ordine e storico per anno (`/api/festivita/prossime`, `/lavorate`); tipi condivisi delle API |
+| `storico_festivi.py`, `db_storico_festivi.py`, `api_storico_festivi.py` | Storico delle festività degli anni passati: lettura CSV, anteprima, limite della prima settimana generata, router `/api/storico-festivi` |
+| `rotazione_festivi.py` | Rotazione delle festività (puro): `conta_festivita`, `debiti`, `costo_festivita`, `ordine_rotazione`, `festivi_settimana`, pesi `P_FESTIVITA`, `P_STESSA_FESTIVITA`, `ANNI_FESTIVI` |
+| `dati_festivi.py`, `db_festivi_disponibili.py` | Dati della rotazione letti dal database per generatore, statistiche e riepiloghi; chi vuole lavorare |
+| `prossime_festivita.py` | Ordine di rotazione delle prossime festività e chi le ha lavorate in un anno |
+| `equita.py`, `api_equita.py` | Quadro dell'equità (`/api/statistiche/equita`) |
+| `riepilogo.py`, `email_turni.py`, `posta.py`, `liberi.py`, `accesso.py` | Riepilogo per dipendente, email dei turni e dei riepiloghi, invio SMTP, liberi del giorno, password del sito |
+| `simulazione.py` | Simulazione su dati di prova (file temporaneo, stesse API della pagina) con report HTML; con `--festivita` le festività di fine anno su più anni con storico importato, per tarare i pesi (sezione "Simulazione") |
 
 Valori: `tipo` ∈ dipendente|volontario; `qualifica` ∈ autista|soccorritore; `fascia` ∈ giorno|notte;
 `segmento` ∈ intero|mattina|pomeriggio (mattina/pomeriggio solo con fascia giorno: 8-14 / 14-20);
@@ -513,3 +522,25 @@ attivo, partecipa, fatti, quota, scarto}]}`.
     come tendenza;
   - si calcolano anche senza settimane generate nel periodo: la pagina, in quel caso, mostra solo le festività che
     hanno dati.
+
+## Simulazione (`cvap/simulazione.py`)
+
+Fase 10 di `docs/PIANO-rotazioni.md`. Lavora su un database temporaneo e passa dalle stesse API della pagina; non
+tocca i dati veri. Scrive un report HTML (`--out`, predefinito `simulazione.html`).
+
+- `python -m cvap.simulazione [--settimane 4] [--scarto 12 6] [--tempo 30] [--worker N]`: 19 dipendenti e 3
+  volontari dal 19/10/2026, con ferie, indisponibilità, divieti, Standby e Programmati (`simula`).
+- `python -m cvap.simulazione --festivita [--anni 3] [--tempo 20] [--worker 2] [--pesi NOME=VALORE ...]`
+  (`simula_festivi`): 17 dipendenti (10 autisti, 7 soccorritori), le settimane dal 24/12 al 1/1 di ogni anno dal
+  2026, con Natale (peso 3, anche la notte della Vigilia), Santo Stefano (peso 1) e Capodanno (peso 2, anche la notte
+  di San Silvestro) attivi; storico sintetico dei 5 anni prima (`storico_sintetico`: 4 persone di giorno e 4 di notte
+  per festività, due persone sempre a Natale) inserito con `PUT /storico-festivi/{anno}`; un dipendente vuole lavorare
+  il giorno di Natale ogni anno, uno è in ferie a Natale il primo anno.
+  Misure (`riassunto`, report): posti scoperti, settimane non ottime, differenza di ore peggiore e divario dei saldi
+  ore, per festività e anno chi l'ha lavorata e quanti turni sono andati a chi l'aveva fatta l'anno prima
+  (`ripetute`), dipendenti con più di un festivo nella settimana (`doppi_festivi`), turni avuti da chi vuole
+  lavorare, e per ogni festività negli ultimi 5 anni la differenza tra chi l'ha fatta di più e chi di meno e quanti
+  non l'hanno mai fatta.
+- `--pesi` prova pesi diversi solo per la durata della simulazione (`pesi_temporanei`: `P_FESTIVITA`,
+  `P_STESSA_FESTIVITA`, `P_DOPPIO_FESTIVO`, `P_DISPONIBILE_FESTIVO`); `--worker` limita i processi del risolutore
+  (`worker_limitati`), utile per confrontare più configurazioni con lo stesso tempo.
