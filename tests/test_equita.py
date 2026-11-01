@@ -1,0 +1,250 @@
+"""Quadro dell'equità (Statistiche → Equità): modulo puro cvap/equita.py e API /api/statistiche/equita."""
+from datetime import date, timedelta
+
+import pytest
+from fastapi.testclient import TestClient
+
+from cvap import db
+from cvap.app import create_app
+from cvap.equita import ROTAZIONI, equita
+from cvap.modello import STANDBY, Assegnazione
+from cvap.storico import SettimanaPassata
+from cvap.vincoli import ASCOLI
+
+W1 = date(2026, 10, 19)  # lunedì
+W2 = date(2026, 10, 26)
+W3 = date(2026, 11, 2)
+
+
+def ass(d, postazione, fascia, persona_id, ruolo="soccorritore", origine="generato"):
+    return Assegnazione(d, postazione, fascia, "intero", ruolo, persona_id, origine)
+
+
+def giorno(lunedi, i):
+    return lunedi + timedelta(days=i)
+
+
+PERSONE = [
+    {"id": 1, "nome": "Anna", "tipo": "dipendente", "attivo": True},
+    {"id": 2, "nome": "Bruno", "tipo": "dipendente", "attivo": True},
+    {"id": 3, "nome": "Carla", "tipo": "dipendente", "attivo": True},
+    {"id": 4, "nome": "Dario", "tipo": "dipendente", "attivo": False},   # disattivato, con turni
+    {"id": 5, "nome": "Elena", "tipo": "dipendente", "attivo": False},   # disattivato, senza turni
+    {"id": 9, "nome": "Vito", "tipo": "volontario", "attivo": True},
+]
+
+
+def settimane_note():
+    """Due settimane generate. Standby: Anna 2 + 1, Bruno 1. Ascoli (solo la seconda): Carla 1."""
+    s1 = SettimanaPassata(media_ore=12, dipendenti=[1, 2, 3, 4, 5], assegnazioni=[
+        ass(giorno(W1, 0), STANDBY, "giorno", 1), ass(giorno(W1, 2), STANDBY, "giorno", 1),
+        ass(giorno(W1, 1), STANDBY, "giorno", 2), ass(giorno(W1, 3), "Acquasanta", "notte", 4),
+        ass(giorno(W1, 4), "Acquasanta", "giorno", 9),
+    ])
+    s2 = SettimanaPassata(media_ore=12, dipendenti=[1, 2, 3, 4], assegnazioni=[
+        ass(giorno(W2, 0), STANDBY, "giorno", 1), ass(giorno(W2, 1), ASCOLI, "notte", 3),
+    ])
+    return [(W1, s1), (W2, s2)]
+
+
+def per_id(rotazione):
+    return {d["persona_id"]: d for d in rotazione["dipendenti"]}
+
+
+# --- modulo puro -----------------------------------------------------------------------------------
+
+def test_registro_comprende_le_rotazioni_esistenti():
+    chiavi = [r.chiave for r in ROTAZIONI]
+    assert chiavi == ["ore", "giorno_notte", "sab_giorno", "sab_notte", "dom_giorno", "dom_notte",
+                      "standby", "programmati", "assistenze", "ascoli", "ascoli_giorno_notte", "sedi"]
+    out = equita(settimane_note(), PERSONE)
+    assert list(out) == chiavi
+
+
+def test_rotazione_con_storico_noto_piu_avanti_piu_indietro_e_differenza():
+    standby = equita(settimane_note(), PERSONE)["standby"]
+    # 4 turni su 8 settimane lavorate (4 dipendenti x 2): quota attesa 1 a testa
+    d = per_id(standby)
+    assert (d[1]["fatti"], d[1]["quota"], d[1]["scarto"]) == (3, 1, 2)
+    assert (d[2]["fatti"], d[2]["quota"], d[2]["scarto"]) == (1, 1, 0)
+    assert d[3]["scarto"] == -1 and d[4]["scarto"] == -1
+    assert standby["piu_avanti"]["persona_id"] == 1 and standby["piu_avanti"]["scarto"] == 2
+    # a pari merito il primo in ordine di nome
+    assert standby["piu_indietro"]["persona_id"] == 3 and standby["piu_indietro"]["nome"] == "Carla"
+    assert standby["differenza"] == 3
+
+
+def test_dettaglio_ordinato_da_chi_ha_fatto_di_piu():
+    standby = equita(settimane_note(), PERSONE)["standby"]
+    assert [d["persona_id"] for d in standby["dipendenti"]] == [1, 2, 3, 4]
+
+
+def test_andamento_un_valore_per_settimana_generata_e_tendenza():
+    standby = equita(settimane_note(), PERSONE)["standby"]
+    # dopo la prima settimana: 3 turni su 4 settimane, quota 0,75: Anna +1,25, Carla -0,75
+    assert standby["andamento"] == [{"settimana": "2026-10-19", "differenza": 2.0},
+                                    {"settimana": "2026-10-26", "differenza": 3.0}]
+    assert standby["tendenza"] == "aumenta"
+
+
+def test_andamento_segue_solo_le_settimane_generate():
+    manuale = SettimanaPassata(media_ore=0, dipendenti=[1, 2, 3, 4], assegnazioni=[
+        ass(giorno(W3, 0), STANDBY, "giorno", 2, origine="manuale")])
+    out = equita(settimane_note() + [(W3, manuale)], PERSONE)
+    assert [p["settimana"] for p in out["standby"]["andamento"]] == ["2026-10-19", "2026-10-26"]
+    assert per_id(out["standby"])[2]["fatti"] == 1
+
+
+def test_tendenza_si_riduce_e_stabile():
+    s3 = SettimanaPassata(media_ore=12, dipendenti=[1, 2, 3, 4], assegnazioni=[
+        ass(giorno(W3, 0), STANDBY, "giorno", 3), ass(giorno(W3, 1), STANDBY, "giorno", 4),
+        ass(giorno(W3, 2), STANDBY, "notte", 3), ass(giorno(W3, 3), STANDBY, "notte", 4)])
+    out = equita(settimane_note() + [(W3, s3)], PERSONE)
+    assert out["standby"]["tendenza"] == "si_riduce"
+    # una sola settimana: niente tendenza
+    assert equita(settimane_note()[:1], PERSONE)["standby"]["tendenza"] is None
+    # Programmati mai fatti: differenza sempre 0
+    assert out["programmati"]["tendenza"] == "stabile"
+
+
+def test_esposizione_di_ascoli_sono_le_settimane_con_ascoli():
+    ascoli = equita(settimane_note(), PERSONE)["ascoli"]
+    d = per_id(ascoli)
+    # una settimana con Ascoli per 4 dipendenti, 1 turno: quota 0,25
+    assert d[3]["fatti"] == 1 and d[3]["quota"] == 0.25 and d[3]["scarto"] == 0.75
+    assert d[1]["scarto"] == -0.25
+    assert ascoli["andamento"][0]["differenza"] == 0  # la prima settimana non aveva Ascoli
+
+
+def test_chi_ha_il_divieto_non_entra_nella_rotazione():
+    out = equita(settimane_note(), PERSONE, vietate={2: {ASCOLI}})
+    d = per_id(out["ascoli"])
+    assert d[2]["partecipa"] is False and d[2]["scarto"] is None
+    assert d[3]["quota"] == pytest.approx(1 / 3, abs=0.01)
+    assert per_id(out["ascoli_giorno_notte"])[2]["partecipa"] is False
+    assert per_id(out["standby"])[2]["partecipa"] is True
+
+
+def test_rotazioni_a_meta_giorni_e_notti_ad_ascoli():
+    gn = equita(settimane_note(), PERSONE)["ascoli_giorno_notte"]
+    d = per_id(gn)
+    # Carla 0 giorni e 1 notte: metà dei turni = 0,5, ha fatto più notti
+    assert (d[3]["fatti"], d[3]["quota"], d[3]["scarto"]) == (0, 0.5, -0.5)
+    # chi non è mai stato ad Ascoli non partecipa
+    assert d[1]["partecipa"] is False
+    assert gn["piu_avanti"]["persona_id"] == 3 and gn["piu_indietro"]["persona_id"] == 3
+    assert gn["differenza"] == 0
+
+
+def test_ore_rispetto_alla_media():
+    ore = equita(settimane_note(), PERSONE)["ore"]
+    d = per_id(ore)
+    assert sum(x["scarto"] for x in d.values()) == pytest.approx(0, abs=0.05)
+    assert ore["piu_avanti"]["persona_id"] == 1  # 36 ore, il più alto
+
+
+def test_volontari_esclusi_e_disattivati_solo_con_turni():
+    out = equita(settimane_note(), PERSONE)
+    for rot in out.values():
+        ids = {d["persona_id"] for d in rot["dipendenti"]}
+        assert 9 not in ids and 5 not in ids and 4 in ids
+    assert per_id(out["standby"])[4]["attivo"] is False
+
+
+def test_dipendente_attivo_senza_settimane_compare_ma_non_partecipa():
+    persone = PERSONE + [{"id": 6, "nome": "Franco", "tipo": "dipendente", "attivo": True}]
+    d = per_id(equita(settimane_note(), persone)["standby"])
+    assert d[6]["partecipa"] is False and d[6]["fatti"] is None
+
+
+def test_senza_settimane_nessun_dato():
+    out = equita([], PERSONE)
+    assert out["standby"]["andamento"] == [] and out["standby"]["piu_avanti"] is None
+    assert out["standby"]["differenza"] == 0
+
+
+# --- API -------------------------------------------------------------------------------------------
+
+@pytest.fixture(params=["sqlite", "libsql"])
+def ambiente(request, tmp_path, monkeypatch):
+    if request.param == "libsql":
+        pytest.importorskip("libsql")
+        monkeypatch.setattr(db, "remoto", lambda path: True)
+    percorso = str(tmp_path / "t.db")
+    return TestClient(create_app(percorso)), percorso
+
+
+def crea(client, nome, tipo="dipendente"):
+    r = client.post("/api/persone", json={"nome": nome, "tipo": tipo, "qualifica": "soccorritore"})
+    assert r.status_code == 201, r.text
+    return r.json()["id"]
+
+
+def prepara(ambiente):
+    client, percorso = ambiente
+    a, b, c = crea(client, "Anna"), crea(client, "Bruno"), crea(client, "Carla")
+    vol = crea(client, "Vito", "volontario")
+    ex, ex_senza = crea(client, "Dario"), crea(client, "Elena")
+    conn = db.apri(percorso)
+    try:
+        db.salva_generazione(conn, W1, giorno(W1, 6), [
+            ass(giorno(W1, 0), STANDBY, "giorno", a), ass(giorno(W1, 2), STANDBY, "giorno", a),
+            ass(giorno(W1, 1), STANDBY, "giorno", b), ass(giorno(W1, 3), "Acquasanta", "notte", ex)],
+            [a, b, c, ex, ex_senza], "2026-10-18T10:00:00", {})
+        db.crea_assegnazione(conn, ass(giorno(W1, 4), "Acquasanta", "giorno", vol, origine="volontario"))
+        db.salva_generazione(conn, W2, giorno(W2, 6), [ass(giorno(W2, 0), STANDBY, "giorno", a)],
+                             [a, b, c, ex], "2026-10-25T10:00:00", {})
+        # terza settimana compilata solo a mano: non conta
+        db.crea_assegnazione(conn, ass(giorno(W3, 0), STANDBY, "giorno", b, origine="manuale"))
+        db.imposta_stato(conn, W3, "confermata")
+        for pid, nome in ((ex, "Dario"), (ex_senza, "Elena")):
+            db.aggiorna_persona(conn, pid, nome, "dipendente", "soccorritore", False)
+    finally:
+        conn.close()
+    return client, {"a": a, "b": b, "c": c, "vol": vol, "ex": ex, "ex_senza": ex_senza}
+
+
+def rotazione(risposta, chiave):
+    return next(r for r in risposta["rotazioni"] if r["chiave"] == chiave)
+
+
+def test_api_equita(ambiente):
+    client, ids = prepara(ambiente)
+    r = client.get("/api/statistiche/equita")
+    assert r.status_code == 200, r.text
+    dati = r.json()
+    assert dati["settimane"] == ["2026-10-19", "2026-10-26"]
+    assert [x["chiave"] for x in dati["rotazioni"]] == [rot.chiave for rot in ROTAZIONI]
+    standby = rotazione(dati, "standby")
+    assert standby["nome"] == "Standby" and standby["unita"] == "turni"
+    assert standby["piu_avanti"]["persona_id"] == ids["a"] and standby["differenza"] == 3
+    assert [p["differenza"] for p in standby["andamento"]] == [2.0, 3.0]
+    presenti = {d["persona_id"] for d in standby["dipendenti"]}
+    assert presenti == {ids["a"], ids["b"], ids["c"], ids["ex"]}
+
+
+def test_api_equita_nel_periodo(ambiente):
+    client, ids = prepara(ambiente)
+    dati = client.get("/api/statistiche/equita", params={"dal": "2026-10-27", "al": "2026-11-30"}).json()
+    # la settimana del 26 ottobre si sovrappone al periodo: conta da sola
+    assert dati["settimane"] == ["2026-10-26"]
+    standby = rotazione(dati, "standby")
+    assert len(standby["andamento"]) == 1
+    assert {d["persona_id"]: d["fatti"] for d in standby["dipendenti"]}[ids["a"]] == 1
+    # nel periodo il disattivato non ha turni: non compare
+    assert ids["ex"] not in {d["persona_id"] for d in standby["dipendenti"]}
+
+
+def test_api_equita_esclude_chi_ha_il_divieto(ambiente):
+    client, ids = prepara(ambiente)
+    r = client.post("/api/divieti", json={"persona_id": ids["b"], "postazione": STANDBY})
+    assert r.status_code == 201, r.text
+    standby = rotazione(client.get("/api/statistiche/equita").json(), "standby")
+    assert {d["persona_id"]: d["partecipa"] for d in standby["dipendenti"]}[ids["b"]] is False
+
+
+def test_api_equita_periodo_non_valido(ambiente):
+    client, _ = ambiente
+    r = client.get("/api/statistiche/equita", params={"dal": "2026-11-02", "al": "2026-10-01"})
+    assert r.status_code == 400
+    assert client.get("/api/statistiche/equita", params={"dal": "non-data"}).status_code == 422
