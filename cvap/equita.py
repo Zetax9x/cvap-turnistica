@@ -20,11 +20,12 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date
 
-from .modello import EXTRA, PROGRAMMATI, STANDBY
+from .modello import EXTRA, PROGRAMMATI, STANDBY, Persona
 from .storico import SEDI_ALTERNATE, SettimanaPassata, StoricoPersona, calcola_storico, solo_generate
 from .vincoli import ASCOLI
 
-SETTIMANE_TENDENZA = 4   # la tendenza confronta l'ultima differenza con la media delle settimane prima
+ANDAMENTO_PUNTI_MAX = 26  # punti del grafico: oltre, settimane scelte in modo uniforme (calcolo più leggero)
+SETTIMANE_TENDENZA = 4   # la tendenza confronta l'ultimo punto con la media dei punti prima
 SOGLIA_TENDENZA = 0.05   # variazioni entro il 5% contano come "stabile"
 DECIMALI = 2
 
@@ -126,14 +127,38 @@ def _r(x: float) -> float:
 
 
 def _gruppo(rot: Rotazione, storico: dict[int, StoricoPersona], ids: Iterable[int],
-            vietate: dict[int, set[str]]) -> dict[int, StoricoPersona]:
+            esclusi: set[int]) -> dict[int, StoricoPersona]:
     return {pid: storico[pid] for pid in ids
-            if pid in storico and rot.partecipa(storico[pid]) and not vietate.get(pid, set()) & set(rot.postazioni)}
+            if pid in storico and pid not in esclusi and rot.partecipa(storico[pid])}
 
 
 def _valori(rot: Rotazione, storico: dict[int, StoricoPersona], ids: Iterable[int],
-            vietate: dict[int, set[str]]) -> dict[int, tuple[float, float]]:
-    return rot.calcola(_gruppo(rot, storico, ids, vietate))
+            esclusi: set[int]) -> dict[int, tuple[float, float]]:
+    return rot.calcola(_gruppo(rot, storico, ids, esclusi))
+
+
+def _esclusi(rot: Rotazione, persone: Sequence[dict], vietate: dict[int, set[str]],
+             ruoli: dict[str, set[str]]) -> set[int]:
+    """Chi non potrebbe fare i turni della rotazione, come gli "idonei" di `solver._Modello._rotazioni`:
+    divieto per l'intera postazione, oppure nessuno dei ruoli usati in quella postazione nel periodo
+    (es. Standby solo con autisti: i soccorritori non entrano nel conto). Senza turni nel periodo il ruolo
+    non filtra. I divieti sono quelli di oggi."""
+    out = set()
+    for p in persone:
+        persona = Persona(p["id"], p["nome"], p["tipo"], p["qualifica"], bool(p.get("autista_programmati")))
+        for postazione in rot.postazioni:
+            usati = ruoli.get(postazione, set())
+            if postazione in vietate.get(p["id"], set()) or (
+                    usati and not any(persona.puo_ricoprire(r, postazione) for r in usati)):
+                out.add(p["id"])
+    return out
+
+
+def _punti(n: int, massimo: int) -> list[int]:
+    """Al più `massimo` indici tra 0 e n-1, distribuiti in modo uniforme, sempre con l'ultimo."""
+    if n <= massimo:
+        return list(range(n))
+    return sorted({round(i * (n - 1) / (massimo - 1)) for i in range(massimo)})
 
 
 def _differenza(valori: dict[int, tuple[float, float]]) -> float:
@@ -184,27 +209,37 @@ def _dettaglio(persone: list[dict], valori: dict[int, tuple[float, float]]) -> l
 
 def equita(settimane: Sequence[tuple[date, SettimanaPassata]], persone: Sequence[dict],
            vietate: dict[int, set[str]] | None = None, extra: Sequence[Rotazione] = ()) -> dict[str, dict]:
-    """Quadro dell'equità sulle settimane con turni generati tra quelle date (coppie lunedì, settimana).
+    """Quadro dell'equità sulle settimane date (coppie lunedì, settimana), come le vede il generatore.
 
-    `persone`: dict con id, nome, tipo, attivo (i volontari si scartano). `vietate`: per id, le postazioni vietate
-    per intero (divieto senza tipo di turno): escludono dalle rotazioni di quelle postazioni. `extra`: rotazioni in
-    più (le festività, vedi il commento del modulo).
+    Lo storico usa tutte le settimane dalla prima generata in poi (anche quelle fatte solo a mano in mezzo, come
+    `calcola_storico` per il generatore) fino all'ultima generata; l'andamento ha un punto per settimana generata
+    (al più ANDAMENTO_PUNTI_MAX, distribuiti in modo uniforme, sempre con l'ultima).
+    `persone`: dict con id, nome, tipo, qualifica, autista_programmati, attivo (i volontari si scartano).
+    `vietate`: per id, le postazioni vietate per intero (divieto senza tipo di turno). `extra`: rotazioni in più
+    (le festività, vedi il commento del modulo).
     Restituisce `{chiave: {nome, unita, sopra, sotto, fatti, quota, piu_avanti, piu_indietro, differenza,
     tendenza, andamento: [{settimana, differenza}], dipendenti: [{persona_id, nome, attivo, partecipa, fatti,
     quota, scarto}]}}` nell'ordine del registro."""
     vietate = vietate or {}
-    generate = [(inizio, s) for inizio, s in sorted(settimane, key=lambda x: x[0])
-                if solo_generate([s])]
-    scelti = _scelti(persone, [s for _, s in generate])
+    ordinate = sorted(settimane, key=lambda x: x[0])
+    generate = [i for i, (_, s) in enumerate(ordinate) if solo_generate([s])]
+    # dalla prima all'ultima generata: le settimane solo a mano dopo l'ultima non contano ancora
+    contate = [s for _, s in ordinate[generate[0]:generate[-1] + 1]] if generate else []
+    scelti = _scelti(persone, contate)
     ids = [p["id"] for p in scelti]
-    rotazioni = (*ROTAZIONI, *extra)
-    # lo storico alla fine di ogni settimana, per l'andamento; l'ultimo è quello di tutto il periodo
-    storici = [calcola_storico([s for _, s in generate[:i + 1]]) for i in range(len(generate))]
+    ruoli: dict[str, set[str]] = {}
+    for s in contate:
+        for a in s.assegnazioni:
+            ruoli.setdefault(a.postazione, set()).add(a.ruolo)
+    punti = [generate[i] for i in _punti(len(generate), ANDAMENTO_PUNTI_MAX)]
+    # lo storico alla fine di ogni settimana dell'andamento; l'ultimo è quello di tutto il periodo
+    storici = [(ordinate[i][0], calcola_storico([s for _, s in ordinate[:i + 1]])) for i in punti]
     out = {}
-    for rot in rotazioni:
-        andamento = [{"settimana": inizio.isoformat(), "differenza": _differenza(_valori(rot, st, ids, vietate))}
-                     for (inizio, _), st in zip(generate, storici)]
-        valori = _valori(rot, storici[-1], ids, vietate) if storici else {}
+    for rot in (*ROTAZIONI, *extra):
+        esclusi = _esclusi(rot, scelti, vietate, ruoli)
+        andamento = [{"settimana": inizio.isoformat(), "differenza": _differenza(_valori(rot, st, ids, esclusi))}
+                     for inizio, st in storici]
+        valori = _valori(rot, storici[-1][1], ids, esclusi) if storici else {}
         dettaglio = _dettaglio(scelti, valori)
         out[rot.chiave] = {
             "nome": rot.nome, "unita": rot.unita, "sopra": rot.sopra, "sotto": rot.sotto,

@@ -6,12 +6,13 @@ import { api } from "./api.js";
 import { el, clear, dataLunga, formatOre, formatSaldo } from "./util.js";
 import { bottoneStampa, focusTitolo, nuovoCaricamento, renderSchede, superato } from "./statistiche.js";
 
-const stato = { root: null, dati: null, dal: "", al: "", aperte: new Set() };
+// dal/al: periodo applicato; bozza: date scritte nel modulo e non ancora applicate (restano tra un ridisegno e l'altro)
+const stato = { root: null, dati: null, dal: "", al: "", bozza: { dal: "", al: "" }, aperte: new Set() };
 
 const TENDENZE = {
-  si_riduce: { testo: "Si sta riducendo", simbolo: "↓", classe: "eq-tend-giu" },
-  aumenta: { testo: "Sta aumentando", simbolo: "↑", classe: "eq-tend-su" },
-  stabile: { testo: "Stabile", simbolo: "→", classe: "eq-tend-pari" },
+  si_riduce: { testo: "Si sta riducendo", simbolo: "↓", classe: "eq-tend-giu", linea: "eq-linea-giu" },
+  aumenta: { testo: "Sta aumentando", simbolo: "↑", classe: "eq-tend-su", linea: "eq-linea-su" },
+  stabile: { testo: "Stabile", simbolo: "→", classe: "eq-tend-pari", linea: "eq-linea-pari" },
 };
 
 export async function mostra(root) {
@@ -30,8 +31,11 @@ async function carica() {
     focusTitolo(stato.root);
   } catch (err) {
     if (superato(numero)) return;
-    clear(stato.root).append(renderSchede("equita"), el("div", { class: "banner banner-errore", role: "alert" },
-      el("strong", {}, "Impossibile caricare l'equità. "), err.message));
+    // il periodo resta, così si può correggere o riprovare
+    clear(stato.root).append(renderSchede("equita"), renderPeriodo(),
+      el("div", { class: "banner banner-errore", role: "alert" },
+        el("strong", {}, "Impossibile caricare l'equità. "), err.message, " ",
+        el("button", { type: "button", class: "btn", onclick: () => carica() }, "Riprova")));
   }
 }
 
@@ -50,15 +54,19 @@ function render() {
     root.append(el("p", { class: "muted" }, "Nessuna settimana con turni generati nel periodo scelto."));
     return;
   }
-  root.append(el("p", { class: "hint" }, `${settimane.length} ${settimane.length === 1 ? "settimana" : "settimane"} `
-    + `con turni generati, dal ${dataLunga(settimane[0])} alla settimana del ${dataLunga(settimane[settimane.length - 1])}.`));
+  root.append(el("p", { class: "hint" }, settimane.length === 1
+    ? `1 settimana con turni generati: quella del ${dataLunga(settimane[0])}.`
+    : `${settimane.length} settimane con turni generati, dalla settimana del ${dataLunga(settimane[0])} `
+      + `a quella del ${dataLunga(settimane[settimane.length - 1])}.`));
 
   const tutteAperte = rotazioni.every((r) => stato.aperte.has(r.chiave));
   root.append(el("div", { class: "filtri" }, el("button", {
-    type: "button", class: "btn btn-ghost",
+    type: "button", class: "btn btn-ghost eq-tutti",
     onclick: () => {
       stato.aperte = tutteAperte ? new Set() : new Set(rotazioni.map((r) => r.chiave));
       render();
+      const b = stato.root.querySelector(".eq-tutti");
+      if (b) b.focus();
     },
   }, tutteAperte ? "Chiudi tutti i dettagli" : "Apri tutti i dettagli")));
 
@@ -76,7 +84,9 @@ function render() {
   root.append(el("p", { class: "hint" },
     "Distanza: quanto è lontano chi ha fatto di più da chi ha fatto di meno, rispetto alla parte di ognuno. "
     + "Più è bassa, più i turni sono distribuiti in modo giusto. Il grafico mostra la distanza alla fine di ogni "
-    + "settimana; la tendenza confronta l'ultima settimana con le quattro precedenti."));
+    + "settimana (con molte settimane, al massimo 26 punti distribuiti nel periodo); ogni grafico ha la sua scala, "
+    + "quindi le altezze non si confrontano tra una riga e l'altra. La tendenza confronta l'ultimo punto con i "
+    + "quattro precedenti, e il colore del grafico la segue."));
   root.append(el("p", { class: "hint" },
     "Ore: rispetto alla media dei dipendenti, settimana per settimana (le settimane con ferie non contano). "
     + "Giorni e notti, Ascoli giorni e notti, Acquasanta e Venarotta: l'ideale è metà e metà. "
@@ -104,7 +114,8 @@ function renderRighe(r) {
     onclick: (e) => { if (!e.target.closest("button")) apriChiudi(r.chiave); },
   },
   el("th", { scope: "row" }, el("button", {
-    type: "button", class: "eq-apri", "aria-expanded": aperta ? "true" : "false", "aria-controls": idDettaglio,
+    type: "button", class: "eq-apri", "aria-expanded": aperta ? "true" : "false",
+    "aria-controls": aperta ? idDettaglio : null, "data-chiave": r.chiave,
     onclick: () => apriChiudi(r.chiave),
   }, el("span", { class: "eq-freccia", "aria-hidden": "true" }, aperta ? "▾" : "▸"), r.nome)),
   !r.piu_avanti
@@ -128,7 +139,7 @@ function apriChiudi(chiave) {
   if (stato.aperte.has(chiave)) stato.aperte.delete(chiave);
   else stato.aperte.add(chiave);
   render();
-  const b = stato.root.querySelector(`[aria-controls="eq-det-${chiave}"]`);
+  const b = stato.root.querySelector(`.eq-apri[data-chiave="${CSS.escape(chiave)}"]`);
   if (b) b.focus();
 }
 
@@ -170,9 +181,11 @@ function grafico(r) {
   const ultimo = punti[punti.length - 1];
   const primoValore = valori[0];
   const ultimoValore = valori[valori.length - 1];
-  const descrizione = `Distanza settimana per settimana: da ${formatOre(primoValore)} a ${formatOre(ultimoValore)} ${r.unita}, `
-    + `massimo ${formatOre(Math.max(...valori))}`;
-  const colore = ultimoValore < primoValore ? "eq-linea-giu" : ultimoValore > primoValore ? "eq-linea-su" : "eq-linea-pari";
+  const descrizione = valori.length === 1
+    ? `Distanza nella settimana del ${dataLunga(r.andamento[0].settimana)}: ${formatOre(ultimoValore)} ${r.unita}`
+    : `Distanza settimana per settimana: da ${formatOre(primoValore)} a ${formatOre(ultimoValore)} ${r.unita}, `
+      + `massimo ${formatOre(Math.max(...valori))}`;
+  const colore = (TENDENZE[r.tendenza] || TENDENZE.stabile).linea;
   return svg("svg", {
     class: `eq-grafico ${colore}`, viewBox: `0 0 ${LARGO} ${ALTO}`, width: LARGO, height: ALTO,
     role: "img", "aria-label": descrizione,
@@ -236,12 +249,18 @@ function descriviPeriodo() {
 }
 
 function renderPeriodo() {
-  const dal = el("input", { type: "date", id: "equita-dal", value: stato.dal });
-  const al = el("input", { type: "date", id: "equita-al", value: stato.al });
+  const dal = el("input", { type: "date", id: "equita-dal", value: stato.bozza.dal });
+  const al = el("input", { type: "date", id: "equita-al", value: stato.bozza.al });
+  const aggiorna = () => {
+    stato.bozza = { dal: dal.value, al: al.value };
+    al.setCustomValidity("");  // altrimenti, dopo un errore, il modulo non si potrebbe più inviare
+  };
+  dal.addEventListener("input", aggiorna);
+  al.addEventListener("input", aggiorna);
   const applica = (e) => {
     e.preventDefault();
     if (dal.value && al.value && dal.value > al.value) {
-      al.setCustomValidity("La data di fine deve essere dopo quella di inizio");
+      al.setCustomValidity("La data di fine non può essere prima di quella di inizio");
       al.reportValidity();
       return;
     }
@@ -257,7 +276,7 @@ function renderPeriodo() {
     stato.dal || stato.al
       ? el("button", {
         type: "button", class: "btn btn-ghost",
-        onclick: () => { stato.dal = ""; stato.al = ""; carica(); },
+        onclick: () => { stato.dal = ""; stato.al = ""; stato.bozza = { dal: "", al: "" }; carica(); },
       }, "Tutto il periodo")
       : el("span", { class: "muted" }, "Senza date: tutte le settimane con turni generati."));
 }

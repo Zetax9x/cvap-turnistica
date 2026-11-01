@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from cvap import db
 from cvap.app import create_app
-from cvap.equita import ROTAZIONI, equita
+from cvap.equita import ANDAMENTO_PUNTI_MAX, ROTAZIONI, equita
 from cvap.modello import STANDBY, Assegnazione
 from cvap.storico import SettimanaPassata
 from cvap.vincoli import ASCOLI
@@ -24,13 +24,16 @@ def giorno(lunedi, i):
     return lunedi + timedelta(days=i)
 
 
+def persona(pid, nome, tipo="dipendente", attivo=True, qualifica="autista"):
+    return {"id": pid, "nome": nome, "tipo": tipo, "qualifica": qualifica, "autista_programmati": False,
+            "attivo": attivo}
+
+
 PERSONE = [
-    {"id": 1, "nome": "Anna", "tipo": "dipendente", "attivo": True},
-    {"id": 2, "nome": "Bruno", "tipo": "dipendente", "attivo": True},
-    {"id": 3, "nome": "Carla", "tipo": "dipendente", "attivo": True},
-    {"id": 4, "nome": "Dario", "tipo": "dipendente", "attivo": False},   # disattivato, con turni
-    {"id": 5, "nome": "Elena", "tipo": "dipendente", "attivo": False},   # disattivato, senza turni
-    {"id": 9, "nome": "Vito", "tipo": "volontario", "attivo": True},
+    persona(1, "Anna"), persona(2, "Bruno"), persona(3, "Carla"),
+    persona(4, "Dario", attivo=False),   # disattivato, con turni
+    persona(5, "Elena", attivo=False),   # disattivato, senza turni
+    persona(9, "Vito", "volontario"),
 ]
 
 
@@ -152,9 +155,53 @@ def test_volontari_esclusi_e_disattivati_solo_con_turni():
 
 
 def test_dipendente_attivo_senza_settimane_compare_ma_non_partecipa():
-    persone = PERSONE + [{"id": 6, "nome": "Franco", "tipo": "dipendente", "attivo": True}]
+    persone = PERSONE + [persona(6, "Franco")]
     d = per_id(equita(settimane_note(), persone)["standby"])
     assert d[6]["partecipa"] is False and d[6]["fatti"] is None
+
+
+def test_settimana_solo_a_mano_in_mezzo_conta_come_per_il_generatore():
+    manuale = SettimanaPassata(media_ore=0, dipendenti=[1, 2, 3, 4], assegnazioni=[
+        ass(giorno(W2, 0), STANDBY, "giorno", 2, origine="manuale")])
+    s3 = SettimanaPassata(media_ore=12, dipendenti=[1, 2, 3, 4], assegnazioni=[
+        ass(giorno(W3, 0), STANDBY, "giorno", 3)])
+    w1 = settimane_note()[0]
+    out = equita([w1, (W2, manuale), (W3, s3)], PERSONE)
+    # calcola_storico conta anche la settimana a mano in mezzo; l'andamento segue solo le generate
+    assert per_id(out["standby"])[2]["fatti"] == 2
+    assert [p["settimana"] for p in out["standby"]["andamento"]] == ["2026-10-19", "2026-11-02"]
+
+
+def test_con_dal_a_meta_il_conteggio_riparte_dalla_prima_settimana_del_periodo():
+    out = equita(settimane_note()[1:], PERSONE)
+    d = per_id(out["standby"])
+    assert d[1]["fatti"] == 1 and d[2]["fatti"] == 0
+    assert [p["settimana"] for p in out["standby"]["andamento"]] == ["2026-10-26"]
+
+
+def test_rotazione_a_richiesta_solo_per_chi_puo_ricoprire_i_ruoli_usati():
+    # Standby fatto solo da autisti: la soccorritrice Carla non potrebbe mai farlo
+    autisti = SettimanaPassata(media_ore=12, dipendenti=[1, 2, 3], assegnazioni=[
+        ass(giorno(W1, 0), STANDBY, "giorno", 1, ruolo="autista"),
+        ass(giorno(W1, 1), STANDBY, "giorno", 1, ruolo="autista")])
+    persone = [persona(1, "Anna"), persona(2, "Bruno"), persona(3, "Carla", qualifica="soccorritore")]
+    standby = equita([(W1, autisti)], persone)["standby"]
+    d = per_id(standby)
+    assert d[3]["partecipa"] is False
+    assert d[2]["quota"] == 1 and standby["piu_indietro"]["persona_id"] == 2
+    # un ruolo da soccorritore nella postazione la fa rientrare
+    misto = SettimanaPassata(media_ore=12, dipendenti=[1, 2, 3], assegnazioni=[
+        *autisti.assegnazioni, ass(giorno(W1, 2), STANDBY, "giorno", 2)])
+    assert per_id(equita([(W1, misto)], persone)["standby"])[3]["partecipa"] is True
+
+
+def test_andamento_al_massimo_ventisei_punti_con_l_ultima_settimana():
+    settimane = [(W1 + timedelta(weeks=i), SettimanaPassata(media_ore=12, dipendenti=[1, 2], assegnazioni=[
+        ass(W1 + timedelta(weeks=i), STANDBY, "giorno", 1 + i % 2)])) for i in range(30)]
+    andamento = equita(settimane, PERSONE)["standby"]["andamento"]
+    assert len(andamento) == ANDAMENTO_PUNTI_MAX == 26
+    assert andamento[0]["settimana"] == W1.isoformat()
+    assert andamento[-1]["settimana"] == (W1 + timedelta(weeks=29)).isoformat()
 
 
 def test_senza_settimane_nessun_dato():

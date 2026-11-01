@@ -334,17 +334,26 @@ storico_festivi_servizio(anno, persona_id REFERENCES persone, PRIMARY KEY (anno,
 `GET /statistiche/equita?dal=AAAA-MM-GG&al=AAAA-MM-GG` (entrambe facoltative; 400 se `dal` > `al`, 422 se una data
 non è valida). Logica in `cvap/equita.py` (`equita`, registro `ROTAZIONI`), route in `cvap/api_equita.py`.
 
-- Settimane: quelle che si sovrappongono al periodo (lunedì della settimana di `dal` … `al`) e hanno turni generati,
-  come le statistiche (`solo_generate`). Lo storico si calcola solo su quelle settimane: senza date, tutte.
-- Dipendenti: gli attivi e i disattivati con turni nelle settimane considerate; i volontari no.
+- Settimane: quelle che si sovrappongono al periodo (lunedì della settimana di `dal` … `al`). Lo storico si calcola
+  come per il generatore (`calcola_storico`): dalla prima settimana generata del periodo all'ultima generata, comprese
+  quelle compilate solo a mano in mezzo (quelle solo a mano dopo l'ultima generata non contano ancora). Con `dal` il
+  conteggio riparte dalla prima settimana generata del periodo; senza date, tutto lo storico. `settimane` e
+  `andamento` elencano solo le settimane generate.
+- Dipendenti: gli attivi e i disattivati con turni nelle settimane contate (che entrano anche nel tasso del gruppo);
+  i volontari no.
 - Per ogni rotazione e dipendente: `fatti`, `quota` (la sua parte) e `scarto = fatti − quota` (positivo = più della
   sua parte). Stesso "debito" del generatore: `quota = tasso del gruppo × esposizione`, con tasso = turni di tutti ÷
   esposizione di tutti (weekend, Standby, Programmati, Assistenze: settimane lavorate; Ascoli: settimane con Ascoli).
   Ore: `scarto = saldo ore − saldo medio del gruppo`, `fatti` = ore contate (con ferie e malattia). Giorni e notti,
   Ascoli giorni e notti, Acquasanta e Venarotta: `quota` = metà del totale (in ore per giorni/notti, in turni per gli altri).
-- Non partecipa (`partecipa: false`, valori `null`): chi non ha esposizione (nessuna settimana, nessuna settimana con
-  Ascoli, nessun turno nelle due sedi…) o ha un divieto per l'intera postazione (Standby, Programmati, Assistenze ed
-  Extra, Ascoli, Acquasanta/Venarotta). Il gruppo del tasso è fatto solo di chi partecipa.
+- Non partecipa (`partecipa: false`, valori `null`), come gli "idonei" del generatore: chi non ha esposizione (nessuna
+  settimana, nessuna settimana con Ascoli, nessun turno nelle due sedi…), chi ha un divieto per l'intera postazione
+  (Standby, Programmati, Assistenze ed Extra, Ascoli, Acquasanta/Venarotta) e chi non può ricoprire nessuno dei ruoli
+  usati in quella postazione nel periodo (es. Standby fatto solo da autisti: i soccorritori non entrano; senza turni
+  nella postazione il ruolo non filtra). I divieti sono quelli di oggi, non quelli in vigore nelle settimane passate.
+  Il gruppo del tasso è fatto solo di chi partecipa.
+- Calcolo: lo storico si ricalcola da capo per ogni punto dell'andamento, quindi i punti sono al massimo
+  `ANDAMENTO_PUNTI_MAX = 26` (settimane generate distribuite in modo uniforme nel periodo, sempre con l'ultima).
 
 Risposta: `{settimane: ["AAAA-MM-GG"], rotazioni: [...]}`; ogni rotazione, nell'ordine `ore, giorno_notte,
 sab_giorno, sab_notte, dom_giorno, dom_notte, standby, programmati, assistenze, ascoli, ascoli_giorno_notte, sedi`:
@@ -352,8 +361,8 @@ sab_giorno, sab_notte, dom_giorno, dom_notte, standby, programmati, assistenze, 
 piu_avanti: {persona_id, nome, scarto}|null, piu_indietro: {...}|null, differenza (scarto massimo − minimo),
 tendenza: "si_riduce"|"aumenta"|"stabile"|null, andamento: [{settimana, differenza}], dipendenti: [{persona_id, nome,
 attivo, partecipa, fatti, quota, scarto}]}`.
-- `andamento`: un valore per settimana considerata, con lo storico alla fine di quella settimana.
-- `tendenza`: l'ultima differenza rispetto alla media delle 4 settimane prima (entro il 5% = stabile; `null` con una
-  sola settimana). A pari scarto, `piu_avanti`/`piu_indietro` è il primo in ordine di nome.
+- `andamento`: un valore per settimana generata (al più 26, vedi sopra), con lo storico alla fine di quella settimana.
+- `tendenza`: l'ultimo punto dell'andamento rispetto alla media dei 4 punti prima (entro il 5% = stabile; `null` con
+  un solo punto). A pari scarto, `piu_avanti`/`piu_indietro` è il primo in ordine di nome.
 - `dipendenti`: prima chi partecipa, dallo scarto più alto; poi gli altri. Valori arrotondati a 2 decimali.
 - Festività (fase 6): una rotazione in più per festività attiva (vedi il commento in cima a `cvap/equita.py`).
