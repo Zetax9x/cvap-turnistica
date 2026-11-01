@@ -1,3 +1,5 @@
+import html
+
 import pytest
 
 from cvap import rotazione_festivi, solver
@@ -63,11 +65,13 @@ def test_simulazione_delle_festivita_con_lo_storico_importato():
     assert all(s.stato in ("ottimo", "ammissibile") for s in esito.settimane)
     assert {(f.nome, f.anno) for f in esito.festivi} == {("Natale", 2026), ("Santo Stefano", 2026),
                                                          ("Capodanno", 2027)}
-    # lo storico sintetico degli anni passati è entrato nel programma: chi fa sempre Natale ne ha 5
+    # lo storico sintetico degli anni passati è entrato nel programma: le statistiche (ultimi 5 anni, Natale dal
+    # 2022 al 2026) contano gli stessi turni di Natale della simulazione, importati compresi
     assert "Autista 1" in esito.lavorate[("Natale", 2025)]
     stat = {r["nome"]: r for r in esito.statistiche}
     natale = {v["festivita"]: v for v in stat["Autista 1"]["festivi"]["per_festivita"]}["Natale"]
-    assert natale["turni"] >= 5
+    assert natale["turni"] == sum(esito.lavorate.get(("Natale", a), {}).get("Autista 1", 0) for a in range(2022, 2027))
+    assert natale["turni"] >= 4
     for f in esito.festivi:
         assert sum(f.turni.values()) > 0 and set(f.turni) <= nomi
         prima = esito.lavorate.get((f.nome, f.anno - 1), {})
@@ -80,5 +84,5 @@ def test_simulazione_delle_festivita_con_lo_storico_importato():
     r = riassunto(esito)
     assert {"scoperti", "differenza_ore_max", "divario_ore", "ripetute", "doppi_festivi", "divario_festivita",
             "disponibili"} <= set(r)
-    pagina = report_html([esito])
+    pagina = html.unescape(report_html([esito]))
     assert "Natale 2026" in pagina and "Ripetute dall'anno prima" in pagina
