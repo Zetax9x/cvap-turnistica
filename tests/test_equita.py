@@ -6,8 +6,9 @@ from fastapi.testclient import TestClient
 
 from cvap import db
 from cvap.app import create_app
-from cvap.equita import ANDAMENTO_PUNTI_MAX, ROTAZIONI, equita
+from cvap.equita import ANDAMENTO_PUNTI_MAX, ROTAZIONI, equita, rotazione_festivita
 from cvap.modello import STANDBY, Assegnazione
+from cvap.rotazione_festivi import ContoFestivita, debiti
 from cvap.storico import SettimanaPassata
 from cvap.vincoli import ASCOLI
 
@@ -295,3 +296,131 @@ def test_api_equita_periodo_non_valido(ambiente):
     r = client.get("/api/statistiche/equita", params={"dal": "2026-11-02", "al": "2026-10-01"})
     assert r.status_code == 400
     assert client.get("/api/statistiche/equita", params={"dal": "non-data"}).status_code == 422
+
+
+# --- festività (fase 9): una rotazione per ogni festività attiva -------------------------------------
+
+NATALE = {"id": 7, "nome": "Natale"}
+
+
+def conti_natale():
+    """Ultimi 5 anni: Anna 2 turni su 2 volte in servizio, Bruno 1 su 2, Carla 0 su 1, Dario mai in servizio;
+    Zeno (ex dipendente, non tra le persone mostrate) 3 su 3: non entra nel tasso."""
+    return {1: ContoFestivita(turni=2, esposizione=2), 2: ContoFestivita(turni=1, esposizione=2),
+            3: ContoFestivita(turni=0, esposizione=1), 99: ContoFestivita(turni=3, esposizione=3)}
+
+
+def test_festivita_stesso_debito_del_generatore():
+    out = equita(settimane_note(), PERSONE, extra=[rotazione_festivita(NATALE, conti_natale())])
+    assert list(out)[-1] == "festivita_7"
+    natale = out["festivita_7"]
+    assert (natale["nome"], natale["unita"], natale["festivita"]) == ("Natale", "turni", True)
+    d = per_id(natale)
+    # stesso calcolo di rotazione_festivi.debiti tra chi è mostrato e ha esposizione: tasso 3/5
+    attesi = debiti(conti_natale(), [1, 2, 3])
+    for pid in (1, 2, 3):
+        assert d[pid]["partecipa"] is True
+        assert d[pid]["scarto"] == pytest.approx(attesi[pid], abs=0.01)
+    assert (d[1]["fatti"], d[1]["quota"], d[1]["scarto"]) == (2, 1.2, 0.8)
+    assert d[3]["quota"] == 0.6
+    # mai in servizio in quella festività: non partecipa
+    assert d[4]["partecipa"] is False and d[4]["fatti"] is None
+    assert natale["piu_avanti"]["persona_id"] == 1 and natale["piu_indietro"]["persona_id"] == 3
+    assert natale["differenza"] == 1.4
+
+
+def test_festivita_senza_andamento_settimanale():
+    out = equita(settimane_note(), PERSONE, extra=[rotazione_festivita(NATALE, conti_natale())])
+    assert out["festivita_7"]["andamento"] == [] and out["festivita_7"]["tendenza"] is None
+    # le altre rotazioni non sono festività e hanno l'andamento
+    assert out["standby"]["festivita"] is False and len(out["standby"]["andamento"]) == 2
+
+
+def test_festivita_conta_anche_chi_non_ha_settimane_nel_periodo():
+    # Franco, attivo, ha fatto Natale negli anni importati ma non ha settimane nel periodo
+    persone = PERSONE + [persona(6, "Franco")]
+    conti = {**conti_natale(), 6: ContoFestivita(turni=1, esposizione=1)}
+    d = per_id(equita(settimane_note(), persone, extra=[rotazione_festivita(NATALE, conti)])["festivita_7"])
+    assert d[6]["partecipa"] is True and d[6]["fatti"] == 1
+
+
+def test_festivita_anche_senza_settimane_generate():
+    natale = equita([], PERSONE, extra=[rotazione_festivita(NATALE, conti_natale())])["festivita_7"]
+    # senza settimane: i dipendenti attivi, con lo storico importato
+    assert per_id(natale)[1]["scarto"] == 0.8 and natale["andamento"] == []
+
+
+# --- API: festività -----------------------------------------------------------------------------------
+
+SETT_NATALE = date(2026, 12, 21)  # Natale 2026 è venerdì 25
+NATALE_2026 = date(2026, 12, 25)
+
+
+def prepara_festivita(ambiente):
+    """Natale attivo, Ferragosto attivato e poi disattivato. Natale 2025 (importato): Mario. Natale 2026 (programma):
+    Luigi di giorno e Mario di notte, Anna in ferie (conta come in servizio), Bruno in malattia (non conta)."""
+    from .test_api_storico_festivi import attiva, festivita, salva, turno
+    client, percorso = ambiente
+    mario, luigi, anna, bruno = (crea(client, n) for n in ("Mario", "Luigi", "Anna", "Bruno"))
+    tutti = [mario, luigi, anna, bruno]
+    natale = attiva(client, "Natale")
+    ferragosto = attiva(client, "Ferragosto")
+    f = festivita(client, "Ferragosto")
+    campi = ("nome", "regola", "giorno", "mese", "offset_pasqua", "data", "conta_giorno", "conta_notte",
+             "conta_notte_prima", "peso")
+    r = client.put(f"/api/festivita/{ferragosto}", json={**{k: f[k] for k in campi}, "attiva": False})
+    assert r.status_code == 200, r.text
+    assert salva(client, 2025, [turno(natale, mario), turno(ferragosto, luigi)], tutti).status_code == 200
+    conn = db.apri(percorso)
+    try:
+        db.salva_generazione(conn, W1, giorno(W1, 6), [ass(giorno(W1, 0), "Acquasanta", "giorno", mario)],
+                             tutti, "2026-10-18T10:00:00", {})
+        db.salva_generazione(conn, SETT_NATALE, giorno(SETT_NATALE, 6), [
+            ass(NATALE_2026, "Acquasanta", "giorno", luigi), ass(NATALE_2026, "Acquasanta", "notte", mario)],
+            tutti, "2026-12-20T10:00:00", {})
+    finally:
+        conn.close()
+    assert client.post("/api/ferie", json={"persona_id": anna, "dal": "2026-12-24", "al": "2026-12-26"}).status_code == 201
+    assert client.post("/api/ferie", json={"persona_id": bruno, "dal": "2026-12-25", "al": "2026-12-25",
+                                           "motivo": "malattia"}).status_code == 201
+    return client, {"mario": mario, "luigi": luigi, "anna": anna, "bruno": bruno, "natale": natale,
+                    "ferragosto": ferragosto}
+
+
+def test_api_equita_festivita_attive_con_storico_importato_e_programma(ambiente):
+    client, ids = prepara_festivita(ambiente)
+    dati = client.get("/api/statistiche/equita").json()
+    chiavi = [r["chiave"] for r in dati["rotazioni"]]
+    # dopo le rotazioni del registro, solo le festività attive
+    assert chiavi == [rot.chiave for rot in ROTAZIONI] + [f"festivita_{ids['natale']}"]
+    natale = rotazione(dati, f"festivita_{ids['natale']}")
+    assert (natale["nome"], natale["unita"], natale["festivita"]) == ("Natale", "turni", True)
+    assert natale["andamento"] == [] and natale["tendenza"] is None
+    d = {x["persona_id"]: x for x in natale["dipendenti"]}
+    # turni: Mario 2, Luigi 1; esposizione: Mario, Luigi, Anna 2, Bruno 1 (malattia a Natale 2026): tasso 3/7
+    assert (d[ids["mario"]]["fatti"], d[ids["mario"]]["quota"]) == (2, 0.86)
+    assert d[ids["anna"]]["quota"] == 0.86 and d[ids["anna"]]["scarto"] == -0.86
+    assert d[ids["bruno"]]["quota"] == 0.43
+    assert natale["piu_avanti"]["persona_id"] == ids["mario"]
+    assert natale["piu_indietro"]["persona_id"] == ids["anna"]
+    assert natale["differenza"] == 2
+
+
+def test_api_equita_festivita_ultimi_anni_fino_alla_fine_del_periodo(ambiente):
+    client, ids = prepara_festivita(ambiente)
+    # periodo che finisce prima di Natale 2026: conta solo Natale 2025 (importato)
+    dati = client.get("/api/statistiche/equita", params={"al": "2026-12-01"}).json()
+    d = {x["persona_id"]: x for x in rotazione(dati, f"festivita_{ids['natale']}")["dipendenti"]}
+    assert d[ids["mario"]]["fatti"] == 1 and d[ids["mario"]]["quota"] == 0.25
+    assert d[ids["luigi"]]["fatti"] == 0
+    # una fine lontana nel futuro non sposta la finestra oltre i dati: Natale 2025 e 2026 contano ancora
+    dati = client.get("/api/statistiche/equita", params={"al": "2100-01-01"}).json()
+    d = {x["persona_id"]: x for x in rotazione(dati, f"festivita_{ids['natale']}")["dipendenti"]}
+    assert d[ids["mario"]]["fatti"] == 2
+
+
+def test_api_equita_senza_festivita_attive(ambiente):
+    client, _ = prepara(ambiente)
+    dati = client.get("/api/statistiche/equita").json()
+    assert not [r for r in dati["rotazioni"] if r["chiave"].startswith("festivita_")]
+    assert all(r["festivita"] is False for r in dati["rotazioni"])
