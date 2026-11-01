@@ -7,6 +7,13 @@ Obiettivo: oltre alle ore, ai weekend, a Standby/Programmati e alle due sedi, il
 2. i turni di **Assistenze ed Extra**;
 3. i turni nelle **festività** scelte in Impostazioni, tenendo conto anche di **chi le ha lavorate negli anni passati**.
 
+Inoltre:
+
+- una festività passata a casa per **ferie o indisponibilità** conta come riposo goduto (punto 3.5);
+- si può segnare **chi vuole lavorare** una festività (punto 3.6);
+- l'**ordine di rotazione** delle prossime festività è visibile in anticipo (punto 3.7);
+- un **quadro dell'equità** nelle Statistiche mostra se le rotazioni funzionano (capitolo 4).
+
 Il piano parte dal codice di `main` al commit `5c4a7e1`.
 
 ---
@@ -216,7 +223,7 @@ Due modi per inserirli, nella nuova pagina **Impostazioni → Storico festività
   Non c'è un conteggio unico di tutte le festività. Per la festività `f`, di peso `w`, e il dipendente `p`:
   - **esposizione** = quante volte, nel periodo considerato, la festività `f` è caduta mentre `p` era in servizio:
     negli anni importati se era nell'elenco di chi era in servizio, nelle settimane del programma se era tra i
-    dipendenti della settimana e non in ferie;
+    dipendenti della settimana, **anche se era in ferie o indisponibile** (punto 3.5); è esclusa solo la malattia;
   - **tasso** = turni fatti in `f` da tutti ÷ esposizione di tutti, tra i dipendenti idonei quella settimana;
   - **debito** = turni fatti in `f` (anni importati + programma) + turni già fissati in `f` − tasso × esposizione;
   - ogni turno in `f` costa `P_FESTIVITA × w × (2 × debito + 1)`: chi ha fatto quella festività più del dovuto
@@ -237,6 +244,7 @@ Due modi per inserirli, nella nuova pagina **Impostazioni → Storico festività
   | `P_FESTIVITA` | 60 × peso, sul debito della festività | da 60 a 180: oltre il doppio dei weekend (30) |
   | `P_STESSA_FESTIVITA` | 500 × peso | da 500 a 1.500: sopra il doppio weekend (300), sotto i tre di fila (5.000) |
   | `P_DOPPIO_FESTIVO` | 300 | come il doppio weekend |
+  | `P_DISPONIBILE_FESTIVO` | −3.000 (sconto) | supera le penalità di rotazione, resta sotto i tre di fila (5.000) |
 
   Nessuna di queste supera i vincoli più importanti (copertura, ore minime, differenza massima, regole di Ascoli):
   la rotazione dei festivi sceglie *tra* le soluzioni che rispettano le regole.
@@ -250,6 +258,57 @@ Due modi per inserirli, nella nuova pagina **Impostazioni → Storico festività
   `festivi: {per_festivita: [{festivita, turni, ultimo_anno}]}`.
 - Riepilogo per dipendente: turni festivi del periodo.
 - Pagina **Storico festività**: per ogni anno chi ha lavorato ogni festività, importato o dal programma.
+
+### 3.5 Ferie e indisponibilità nelle festività
+
+**Decisione:** una festività passata a casa per **ferie** o per **indisponibilità** conta come **riposo goduto**.
+
+- Quella festività entra nell'esposizione della persona (punto 3.3): la sua quota attesa cresce, il debito scende e
+  la volta dopo ha la precedenza a lavorarla. Così chi prende sempre ferie a Natale non salta la rotazione.
+- La **malattia o infortunio** invece non conta: quella festività non vale né come lavorata né come riposo.
+- Indisponibilità: conta se riguarda almeno uno dei turni che contano per quella festività (es. la notte di Natale).
+- Negli anni importati non si distingue: chi era in servizio e non ha lavorato quella festività conta come a casa.
+- Esempio: Anna è in ferie a Natale 2026, Luca lavora. A Natale 2027, a parità di tutto, tocca prima ad Anna.
+
+### 3.6 Chi vuole lavorare una festività
+
+**Decisione:** si può segnare che un dipendente **vuole lavorare** una festività.
+
+- Si segna nella pagina delle prossime festività (punto 3.7), per persona e festività: giorno, notte o entrambi.
+- Dati:
+
+  ```
+  festivi_disponibili(data TEXT NOT NULL, persona_id INTEGER NOT NULL REFERENCES persone(id),
+                      fascia TEXT NOT NULL,     -- 'giorno' | 'notte' | 'entrambi'
+                      PRIMARY KEY (data, persona_id))
+  ```
+
+- Generatore: i turni di quella festività assegnati a chi è disponibile ricevono uno sconto
+  `P_DISPONIBILE_FESTIVO` (−3.000), più forte delle penalità di rotazione: quei turni vanno prima a loro.
+  Tutte le regole restano valide (riposi, ore, qualifica, Ascoli…).
+- Se i disponibili sono più dei posti, tra loro decide la rotazione.
+- I turni lavorati volentieri **contano comunque nella rotazione** di chi li fa: se un anno non è più disponibile,
+  la rotazione terrà conto di quante volte l'ha già fatta.
+- Nell'elenco dei dipendenti della cella della griglia compare l'indicazione "vuole lavorare".
+- API: `GET /api/festivita/disponibili?dal&al`, `PUT /api/festivita/disponibili` `{data, persona_id, fascia | null}`
+  (`null` = toglie).
+
+### 3.7 Ordine di rotazione visibile in anticipo
+
+**Decisione:** nuova scheda **Statistiche → Festività** con le prossime festività e l'ordine di rotazione.
+
+- Per ogni festività attiva dei prossimi 12 mesi: data, peso e l'elenco dei dipendenti attivi **in ordine di
+  precedenza a lavorarla** (prima chi ha il debito più basso, a parità chi non la fa da più tempo).
+- Per ogni persona: qualifica, volte negli ultimi 5 anni, ultimo anno in cui l'ha fatta, "vuole lavorarla"
+  (modificabile qui, punto 3.6), ferie o indisponibilità già registrate per quel giorno.
+- È un'indicazione: l'assegnazione vera dipende anche dalle regole (riposi, ore, Ascoli…) e dai posti da autista e
+  da soccorritore. Per questo l'elenco mostra la qualifica.
+- Usa la stessa funzione di calcolo del generatore, così ordine e assegnazione non possono divergere.
+- Stampabile, per comunicarlo al personale con anticipo (es. Natale già in autunno).
+- La stessa scheda mostra anche lo storico per anno (chi ha lavorato ogni festività), importato o dal programma.
+- API: `GET /api/festivita/prossime?mesi=12` →
+  `[{data, festivita_id, nome, peso, ordine: [{persona_id, nome, qualifica, volte_5_anni, ultimo_anno, debito,
+  disponibile, assente}]}]`.
 
 ### Test
 
@@ -265,10 +324,40 @@ Due modi per inserirli, nella nuova pagina **Impostazioni → Storico festività
   con peso più alto la rotazione prevale su preferenze che a peso 1 la batterebbero; al massimo un festivo a testa
   nella settimana quando possibile.
 - Festivo di domenica: il turno conta sia nei weekend sia nella festività.
+- Ferie e indisponibilità in una festività entrano nell'esposizione (la volta dopo ha la precedenza); la malattia no.
+- Chi vuole lavorare una festività riceve prima quei turni, nel rispetto delle regole; tra più disponibili decide la
+  rotazione; i turni lavorati volentieri contano nella rotazione.
+- L'ordine delle prossime festività coincide con quello usato dal generatore a parità di regole e posti.
 
 ---
 
-## 4. Ordine di lavoro
+## 4. Quadro dell'equità
+
+**Decisione:** nuova scheda **Statistiche → Equità** per verificare che le rotazioni funzionino e rispondere a
+chi chiede "perché sempre io?".
+
+- Una riga per ogni rotazione: ore (saldo), giorni/notti, weekend (sabato e domenica, giorno e notte), Standby,
+  Programmati, Assistenze ed Extra, Ascoli (turni e giorni/notti), Acquasanta/Venarotta e ogni festività attiva.
+- Per ogni rotazione: chi è più avanti e chi più indietro rispetto alla propria quota attesa (lo stesso "debito"
+  usato dal generatore), la differenza tra i due e se si sta riducendo.
+- **Andamento nel tempo:** la differenza settimana per settimana, in un piccolo grafico SVG fatto a mano (nessuna
+  libreria in più), calcolando lo storico alla fine di ogni settimana.
+- Cliccando una rotazione: il dettaglio per dipendente (fatti, quota attesa, scarto), ordinato.
+- Periodo filtrabile; stampabile.
+- Dati: `cvap/equita.py` (nuovo), `equita(settimane) -> {rotazione: {andamento, dipendenti}}`, riusando
+  `calcola_storico` sulle settimane fino a ognuna; API `GET /api/statistiche/equita?dal&al`.
+- Si può fare subito dopo le fasi di Ascoli e Assistenze, per le rotazioni già esistenti, e completare con le
+  festività quando arrivano.
+
+### Test
+
+- Per una rotazione con storico noto: chi è più avanti, chi più indietro, differenza e dettaglio per dipendente.
+- L'andamento ha un valore per settimana e segue le settimane generate.
+- I volontari non compaiono; i dipendenti disattivati solo se hanno turni nel periodo.
+
+---
+
+## 5. Ordine di lavoro
 
 Ogni fase è un commit di test (rossi) seguito da un commit di implementazione (verdi), come nella storia del progetto.
 
@@ -278,15 +367,19 @@ Ogni fase è un commit di test (rossi) seguito da un commit di implementazione (
 4. **Calendario delle festività**: database, API, scheda Impostazioni con turni che contano e peso, giorni
    evidenziati in griglia e stampa (ancora senza effetto sul generatore).
 5. **Storico festività**: tabelle, pagina di inserimento a mano, importazione da file.
-6. **Festività nel generatore** + statistiche e riepiloghi.
-7. **Simulazione** (`cvap/simulazione.py`): più settimane con festività e storico importato, per tarare i pesi;
-   aggiornamento di `docs/API.md`, README e guida per i dipendenti.
+6. **Festività nel generatore**, con ferie e indisponibilità come riposo goduto, + statistiche e riepiloghi.
+7. **Chi vuole lavorare una festività**: dati, API, sconto nel generatore.
+8. **Ordine di rotazione in anticipo**: scheda Statistiche → Festività, con stampa.
+9. **Quadro dell'equità**: scheda Statistiche → Equità (si può anticipare dopo la fase 3 per le rotazioni già
+   esistenti, e completare con le festività).
+10. **Simulazione** (`cvap/simulazione.py`): più settimane con festività e storico importato, per tarare i pesi;
+    aggiornamento di `docs/API.md`, README e guida per i dipendenti.
 
 Le fasi 1–3 sono piccole e indipendenti dalle festività: si possono rilasciare subito.
 
 ---
 
-## 5. Decisioni prese
+## 6. Decisioni prese
 
 | Domanda | Decisione |
 |---|---|
@@ -299,10 +392,16 @@ Le fasi 1–3 sono piccole e indipendenti dalle festività: si possono rilasciar
 | Assistenze: due nella stessa settimana alla stessa persona? | **Si evitano** |
 | Rotazione delle festività | **Festività per festività**: niente conteggio unico di tutte le festività |
 | Festivo di domenica | **Conta sia come weekend sia come festivo** |
+| Ferie o indisponibilità in una festività | **Contano come riposo goduto**: la volta dopo ha la precedenza a lavorarla (malattia esclusa) |
+| Chi vuole lavorare una festività | **Si può segnare**: riceve prima quei turni, che contano nella sua rotazione |
+| Ordine di rotazione in anticipo | **Sì**: scheda Statistiche → Festività, stampabile |
+| Quadro dell'equità | **Sì**: scheda Statistiche → Equità |
+| Quota proporzionale alle ore per chi ha un massimo più basso | **No** |
+| Limite di tempo per le altre rotazioni (weekend, Standby, Programmati, Ascoli, sedi) | **No**: guardano a tutto lo storico |
 
 Non restano domande aperte.
 
-## 6. Cosa mi serve per lo storico delle festività
+## 7. Cosa mi serve per lo storico delle festività
 
 - Per gli **ultimi 5 anni** (dalla fine del 2021 alla prima settimana generata, ottobre 2026): **chi ha lavorato
   ogni festività, di giorno e di notte**, nel formato della tabella del punto 3.2 (Excel, CSV o anche un elenco
