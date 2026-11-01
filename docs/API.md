@@ -237,3 +237,42 @@ Risposta: `{persona_id, nome, tipo, qualifica, dal, al, giorni, riepilogo}`.
 - `riepilogo`: `turni, ore_lavorate, ore_giorno, ore_notte, turni_giorno, turni_notte, giorni_ferie, giorni_malattia,
   ore_ferie_malattia` (6 h per giorno, solo dipendenti), `ore_totali, weekend {sab_giorno, sab_notte, dom_giorno,
   dom_notte}, postazioni [{postazione, turni, ore}], giorni_indisponibili`.
+
+## Festività a rotazione: calendario (Impostazioni)
+
+Fase 4 di `docs/PIANO-rotazioni.md`: il calendario esiste ed evidenzia i giorni festivi nella griglia, nella stampa e
+nell'email, ma **non cambia ancora la generazione** (arriva con la fase 6).
+
+- `cvap/festivita.py` (puro): `pasqua(anno)` (Meeus, 1583–4099), `data_nell_anno(f, anno)`,
+  `date_festive(festivita, anno) -> {date: nome}` (due festività nello stesso giorno: "Pasqua / Liberazione"),
+  `turni_festivi(festivita, dal, al) -> {(data_inizio_turno, fascia): id}` (la notte della sera prima è la notte del
+  giorno precedente; se un turno conta per due festività vince il peso più alto, poi l'id più basso),
+  `festivi_periodo(festivita, dal, al)`, `anteprima(f, anno)`, `errore_regola(...)`, `FESTIVITA_PREDEFINITE`.
+  Le funzioni non filtrano `attiva`.
+- `cvap/db_festivita.py`: repository; `cvap/api_festivita.py`: router (`crea_router(connessione)`);
+  `cvap/api_comune.py`: tipi condivisi delle API.
+
+### Database
+```
+festivita(id INTEGER PRIMARY KEY AUTOINCREMENT, chiave TEXT UNIQUE,  -- chiave solo per le predefinite
+          nome TEXT, regola TEXT,  -- 'fissa' | 'pasqua' | 'data'
+          giorno INTEGER, mese INTEGER, offset_pasqua INTEGER, data TEXT,
+          conta_giorno INTEGER DEFAULT 1, conta_notte INTEGER DEFAULT 1, conta_notte_prima INTEGER DEFAULT 0,
+          peso INTEGER DEFAULT 1, attiva INTEGER DEFAULT 0)
+```
+Le 15 predefinite (Capodanno … San Silvestro, con Pasqua, Lunedì dell'Angelo e Sant'Emidio 5/8) sono inserite
+all'avvio, non attive (`INSERT OR IGNORE` sulla `chiave`).
+
+### API
+- `GET /festivita?anno=AAAA` (2000–2099, predefinito l'anno di oggi) → `[{id, nome, regola, giorno, mese,
+  offset_pasqua, data, conta_giorno, conta_notte, conta_notte_prima, peso, attiva, predefinita,
+  anteprima: {"<anno>": iso|null, "<anno+1>": iso|null}}]`: prima le predefinite, poi quelle aggiunte.
+- `POST /festivita` `{nome, regola, giorno?, mese?, offset_pasqua? (−70..70), data?, conta_giorno, conta_notte,
+  conta_notte_prima, peso (1–3), attiva (predefinito true)}` → 201. I campi che non servono alla regola sono
+  azzerati prima dei controlli. 422 se mancano i campi della regola, il giorno non esiste (29/2 ammesso) o nessun turno conta;
+  400 se esiste già una festività con lo stesso nome (senza distinguere maiuscole e spazi) o con la stessa regola e
+  gli stessi valori (regole diverse nello stesso giorno sono ammesse), o se ce ne sono già 100 aggiunte a mano.
+- `PUT /festivita/{id}` (stesso corpo, sostituisce tutto) · 404. Sulle predefinite si cambiano solo `attiva`, `peso`
+  e `conta_*` (400 se cambiano nome o giorno).
+- `DELETE /festivita/{id}` → 204 · 404 · 400 sulle predefinite (si possono solo disattivare).
+- `GET /settimane/{data}` aggiunge `festivi: [{data, nome, peso}]` (solo festività attive, in ordine di data).

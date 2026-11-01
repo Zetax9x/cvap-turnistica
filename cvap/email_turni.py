@@ -23,6 +23,9 @@ GIORNO_BG, GIORNO_BORDO = "#fff4cc", "#d99a00"
 NOTTE_BG, NOTTE_BORDO = "#e3e8fb", "#3f4ba8"
 VOL_BG, VOL_TESTO = "#d9efe0", "#14532d"
 ROSSO = "#b51d2b"
+TESTA_BG = "#e9eef6"
+WEEKEND_BG = "#fbeccb"
+FESTIVO_BG, FESTIVO_TESTO = "#fadde4", "#9b1c3a"  # festività: rosa chiaro, prevale sul weekend
 
 
 def _e(x) -> str:
@@ -36,6 +39,22 @@ def _dmy(iso: str) -> str:
 
 def _dm(iso: str) -> str:
     return date.fromisoformat(iso).strftime("%d/%m")
+
+
+def _nomi_feste(s: dict, giorno: str) -> str:
+    """Nomi delle festività del giorno, uniti da " / " ("" se non è festivo)."""
+    return " / ".join(f["nome"] for f in s.get("festivi", []) if f["data"] == giorno)
+
+
+def _th_giorno(s: dict, giorno: str, stile: str, separatore: str, sfondo_feriale: str = "") -> str:
+    """Intestazione di un giorno: nome e data, sfondo del weekend o della festività con il suo nome sotto."""
+    d = date.fromisoformat(giorno)
+    feste = _nomi_feste(s, giorno)
+    sfondo = FESTIVO_BG if feste else WEEKEND_BG if d.weekday() >= 5 else sfondo_feriale
+    nome = (f'<br><span style="font-size:11px;font-weight:bold;color:{FESTIVO_TESTO};">{_e(feste)}</span>'
+            if feste else "")
+    return (f'<th style="{stile}{f"background:{sfondo};" if sfondo else ""}">'
+            f'{GIORNI_BREVI[d.weekday()]}{separatore}{_dm(giorno)}{nome}</th>')
 
 
 def fascia_orario(fascia: str, segmento: str) -> str:
@@ -284,10 +303,8 @@ def _html_extra(s: dict, pid: int | None, testa: str) -> str:
 
 def _html_tabellone(s: dict, pid: int | None) -> str:
     blocchi = []
+    testa = "".join(_th_giorno(s, g, _TD, "<br>", TESTA_BG) for g in s["giorni"])
     for postazione in _postazioni(s):
-        testa = "".join(
-            f'<th style="{_TD}background:{"#fbeccb" if date.fromisoformat(g).weekday() >= 5 else "#e9eef6"};">'
-            f'{GIORNI_BREVI[date.fromisoformat(g).weekday()]}<br>{_dm(g)}</th>' for g in s["giorni"])
         righe = []
         for i, (fascia, segmento, ruolo, turno) in enumerate(_righe(postazione)):
             bg = GIORNO_BG if fascia == "giorno" else NOTTE_BG
@@ -307,9 +324,6 @@ def _html_tabellone(s: dict, pid: int | None) -> str:
             + f'<table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;">'
             f'<tr><th style="{_TD}background:#e9eef6;">Turno</th>{testa}</tr>{"".join(righe)}</table>')
     if s.get("extra"):  # solo se nella settimana ci sono richieste
-        testa = "".join(
-            f'<th style="{_TD}background:{"#fbeccb" if date.fromisoformat(g).weekday() >= 5 else "#e9eef6"};">'
-            f'{GIORNI_BREVI[date.fromisoformat(g).weekday()]}<br>{_dm(g)}</th>' for g in s["giorni"])
         blocchi.append(_html_extra(s, pid, testa))
     return "".join(blocchi)
 
@@ -379,8 +393,7 @@ def _nomi(s: dict) -> dict[int, str]:
 
 def _testa_giorni(s: dict, prima: str) -> str:
     return f'<tr><th style="{_TH}">{prima}</th>' + "".join(
-        f'<th style="{_TH}{"background:#fbeccb;" if date.fromisoformat(g).weekday() >= 5 else ""}">'
-        f'{GIORNI_BREVI[date.fromisoformat(g).weekday()]} {_dm(g)}</th>' for g in s["giorni"]) + "</tr>"
+        _th_giorno(s, g, _TH, " ") for g in s["giorni"]) + "</tr>"
 
 
 def _voce(nome: str, nota: str = "", colore: str = "#4d5868") -> str:

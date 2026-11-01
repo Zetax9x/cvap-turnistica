@@ -220,7 +220,8 @@ def test_attiva_predefinita_con_peso_e_turni(client):
     assert g["attiva"] is True and g["peso"] == 3 and g["conta_notte_prima"] is True
 
 
-@pytest.mark.parametrize("modifica", [{"nome": "Natale bis"}, {"mese": 11}, {"regola": "data", "data": "2026-12-25"}])
+@pytest.mark.parametrize("modifica", [{"nome": "Natale bis"}, {"mese": 11}, {"giorno": 24},
+                                      {"regola": "data", "data": "2026-12-25"}])
 def test_predefinita_non_si_rinomina_ne_si_sposta(client, modifica):
     f = per_nome(client, "Natale")
     r = client.put(f"/api/festivita/{f['id']}", json=corpo(f, **modifica))
@@ -323,3 +324,25 @@ def test_payload_festivi_a_cavallo_d_anno(client):
     attiva(client, "Capodanno")
     festivi = client.get("/api/settimane/2026-12-28").json()["festivi"]
     assert [f["data"] for f in festivi] == ["2026-12-31", "2027-01-01"]
+
+
+def test_campi_che_la_regola_non_usa_non_danno_errore(client):
+    r = client.post("/api/festivita", json={"nome": "Ceneri", "regola": "pasqua", "offset_pasqua": -46,
+                                            "giorno": 0, "mese": 13, "data": "1900-01-01"})
+    assert r.status_code == 201, r.text
+    assert r.json()["giorno"] is None and r.json()["mese"] is None and r.json()["data"] is None
+
+
+def test_regole_diverse_nello_stesso_giorno_sono_ammesse(client):
+    r = client.post("/api/festivita", json={"nome": "Natale 2026 speciale", "regola": "data", "data": "2026-12-25"})
+    assert r.status_code == 201, r.text
+
+
+def test_tetto_alle_festivita_aggiunte_a_mano(client, monkeypatch):
+    from cvap import api_festivita
+    monkeypatch.setattr(api_festivita, "FESTIVITA_AGGIUNTE_MAX", 2)
+    for giorno in (1, 2):
+        assert client.post("/api/festivita", json={"nome": f"F{giorno}", "regola": "fissa", "giorno": giorno,
+                                                   "mese": 3}).status_code == 201
+    r = client.post("/api/festivita", json={"nome": "F3", "regola": "fissa", "giorno": 3, "mese": 3})
+    assert r.status_code == 400 and "100" not in r.text

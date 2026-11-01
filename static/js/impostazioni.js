@@ -1,7 +1,9 @@
-// Vista "Impostazioni": data di riferimento della settimana A, scarto ore e parametri dei dipendenti.
+// Vista "Impostazioni": data di riferimento della settimana A, scarto ore e parametri dei dipendenti;
+// la scheda "Festività a rotazione" è in festivita.js.
 
 import { api } from "./api.js";
 import { mostraRiepiloghi } from "./riepiloghi.js";
+import { mostra as mostraFestivita, renderSchede, nuovoCaricamento, superato } from "./festivita.js";
 import { el, clear, toast, toastErrore, mondayOf, todayISO, dataLunga, parseISO } from "./util.js";
 
 const SCARTO_PREDEFINITO = 12;
@@ -17,21 +19,28 @@ const TURNI_DIVIETO = [
 const A_RICHIESTA = ["Standby", "Programmati"];
 
 let root = null;
+let caricamentoScheda = 0;  // numero del caricamento della scheda Generali: i salvataggi lo riusano
 const dati = { imp: null, persone: [], divieti: [], postazioni: [] };
 
-async function carica() {
-  [dati.imp, dati.persone, dati.divieti, dati.postazioni] =
-    await Promise.all([api.impostazioni(), api.persone(), api.divieti(), api.postazioni()]);
+/** `numero`: il caricamento della scheda; se nel frattempo si è passati all'altra scheda non si ridisegna. */
+async function carica(numero = caricamentoScheda) {
+  const risposte = await Promise.all([api.impostazioni(), api.persone(), api.divieti(), api.postazioni()]);
+  if (superato(numero)) return;
+  [dati.imp, dati.persone, dati.divieti, dati.postazioni] = risposte;
   render(dati.imp);
 }
 
-export async function mostra(container) {
+export async function mostra(container, parametro) {
+  if (parametro === "festivita") return mostraFestivita(container);
   root = container;
-  clear(root).append(el("p", { class: "muted loading" }, "Caricamento delle impostazioni…"));
+  const numero = nuovoCaricamento();
+  caricamentoScheda = numero;
+  clear(root).append(renderSchede(""), el("p", { class: "muted loading" }, "Caricamento delle impostazioni…"));
   try {
-    await carica();
+    await carica(numero);
   } catch (err) {
-    clear(root).append(el("div", { class: "banner banner-errore", role: "alert" },
+    if (superato(numero)) return;
+    clear(root).append(renderSchede(""), el("div", { class: "banner banner-errore", role: "alert" },
       el("strong", {}, "Impossibile caricare le impostazioni. "), err.message));
   }
 }
@@ -88,6 +97,7 @@ function render(imp) {
     el("p", { class: "muted" }, "Caricamento degli indirizzi…"));
   mostraRiepiloghi(sezioneRiepiloghi);
   clear(root).append(
+    renderSchede(""),
     el("header", { class: "view-header" }, el("h1", {}, "Impostazioni")),
     form,
     renderScarto(imp),

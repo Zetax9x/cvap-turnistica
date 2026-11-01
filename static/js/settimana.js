@@ -439,6 +439,33 @@ function indiceViolazioni(s) {
   return mappa;
 }
 
+/** Nomi delle festività di un giorno, uniti da " / " ("" se non è festivo). */
+function nomiFeste(s, data) {
+  return (s.festivi || []).filter((f) => f.data === data).map((f) => f.nome).join(" / ");
+}
+
+/**
+ * Intestazione di colonna di un giorno (griglie e stampa dei liberi): nome e data, weekend e festività
+ * evidenziati, con il nome della festività sotto. Con `conLiberi` il giorno apre "chi è libero".
+ */
+function thGiorno(s, data, conLiberi = false) {
+  const i = indiceGiorno(data);
+  const feste = nomiFeste(s, data);
+  const classi = [i >= 5 ? "weekend" : null, feste ? "festivo" : null].filter(Boolean).join(" ") || null;
+  const contenuto = [
+    el("span", { class: "giorno-nome" }, GIORNI_BREVI[i]), " ", el("span", { class: "giorno-data" }, ddmm(data)),
+    feste ? el("span", { class: "giorno-festa" }, feste) : null,
+  ];
+  return el("th", { scope: "col", class: classi },
+    conLiberi
+      ? el("button", {
+        type: "button", class: "giorno-btn", title: "Chi è libero questo giorno",
+        "aria-label": `${GIORNI_BREVI[i]} ${ddmm(data)}${feste ? `, ${feste}` : ""}: chi è libero`,
+        onclick: () => apriLiberi(data),
+      }, contenuto)
+      : contenuto);
+}
+
 function renderGriglia(s, postazione) {
   const scopertiReport = new Set(((s.report && s.report.scoperti) || []).map((u) => chiaveCella(u)));
   const violazioni = indiceViolazioni(s);
@@ -447,17 +474,7 @@ function renderGriglia(s, postazione) {
 
   const thead = el("thead", {}, el("tr", {},
     el("th", { scope: "col", class: "col-turno" }, "Turno"),
-    s.giorni.map((g) => {
-      const i = indiceGiorno(g);
-      const etichettaGiorno = [el("span", { class: "giorno-nome" }, GIORNI_BREVI[i]), " ", el("span", { class: "giorno-data" }, ddmm(g))];
-      return el("th", { scope: "col", class: i >= 5 ? "weekend" : null },
-        haTurni(s)
-          ? el("button", {
-            type: "button", class: "giorno-btn", title: "Chi è libero questo giorno",
-            "aria-label": `${GIORNI_BREVI[i]} ${ddmm(g)}: chi è libero`, onclick: () => apriLiberi(g),
-          }, etichettaGiorno)
-          : etichettaGiorno);
-    }),
+    s.giorni.map((g) => thGiorno(s, g, haTurni(s))),
   ));
 
   const tbody = el("tbody");
@@ -1033,8 +1050,7 @@ function renderStampaLiberi(s) {
     el("table", { class: "tabella tabella-liberi" },
       el("thead", {}, el("tr", {},
         el("th", { scope: "col" }, ""),
-        s.giorni.map((g, i) => el("th", { scope: "col", class: i >= 5 ? "weekend" : null },
-          `${GIORNI_BREVI[i]} ${ddmm(g)}`)))),
+        s.giorni.map((g) => thGiorno(s, g)))),
       el("tbody", {},
         riga("Liberi tutto il giorno", "liberi", (g) => g.liberi.filter((v) => !(v.avvisi || []).length)),
         riga("Smontano dalla notte", "smonto", conAvviso("smonto_notte"), "smonto_notte"),
@@ -1080,8 +1096,7 @@ function renderGrigliaExtra(s) {
   const richieste = s.extra || [];
   const thead = el("thead", {}, el("tr", {},
     el("th", { scope: "col", class: "col-turno" }, "Richieste"),
-    s.giorni.map((g, i) => el("th", { scope: "col", class: i >= 5 ? "weekend" : null },
-      el("span", { class: "giorno-nome" }, GIORNI_BREVI[i]), " ", el("span", { class: "giorno-data" }, ddmm(g))))));
+    s.giorni.map((g) => thGiorno(s, g))));
   const celle = s.giorni.map((g, i) => {
     const delGiorno = richieste.filter((e) => e.data === g)
       .sort((a, b) => a.inizio - b.inizio || a.id - b.id);

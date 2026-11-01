@@ -10,6 +10,7 @@ import sqlite3
 from datetime import date, timedelta
 
 from .calendario import lunedi
+from .festivita import FESTIVITA_PREDEFINITE
 from .modello import (EXTRA, Assegnazione, Divieto, Fabbisogno, Persona, Postazione, fascia_extra,
                       segmento_extra)
 from .vincoli import ORE_MAX_SETTIMANA
@@ -116,6 +117,18 @@ CREATE TABLE IF NOT EXISTS richieste_extra (  -- Assistenze ed Extra: richieste 
     soccorritori INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_richieste_extra_data ON richieste_extra(data);
+CREATE TABLE IF NOT EXISTS festivita (  -- calendario delle festività a rotazione (cvap/festivita.py)
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chiave TEXT UNIQUE,  -- solo le predefinite (non si cancellano né si rinominano); NULL per quelle aggiunte a mano
+    nome TEXT NOT NULL,
+    regola TEXT NOT NULL,  -- 'fissa' (giorno/mese ogni anno) | 'pasqua' (offset da Pasqua) | 'data' (una volta)
+    giorno INTEGER, mese INTEGER, offset_pasqua INTEGER, data TEXT,
+    conta_giorno INTEGER NOT NULL DEFAULT 1,
+    conta_notte INTEGER NOT NULL DEFAULT 1,
+    conta_notte_prima INTEGER NOT NULL DEFAULT 0,
+    peso INTEGER NOT NULL DEFAULT 1,  -- 1 normale, 2 importante, 3 molto importante
+    attiva INTEGER NOT NULL DEFAULT 0
+);
 """
 
 _POSTAZIONI_SEED = (("Acquasanta", 0, 1), ("Venarotta", 0, 2), ("Ascoli", 1, 3))
@@ -212,6 +225,10 @@ def connetti(path: str) -> sqlite3.Connection:
         conn.executemany(
             "INSERT OR IGNORE INTO postazioni(nome, solo_settimane_b, ordine) VALUES (?, ?, ?)",
             _POSTAZIONI_SEED,
+        )
+        conn.executemany(  # le predefinite, non attive: la chiave unica evita doppioni anche con due avvii insieme
+            "INSERT OR IGNORE INTO festivita(chiave, nome, regola, giorno, mese, offset_pasqua) VALUES (?, ?, ?, ?, ?, ?)",
+            FESTIVITA_PREDEFINITE,
         )
         conn.execute(
             "INSERT OR IGNORE INTO impostazioni(chiave, valore) VALUES ('data_riferimento_a', ?)",

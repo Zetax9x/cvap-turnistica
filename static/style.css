@@ -19,6 +19,8 @@
   --primary-text: #ffffff;
   --focus: #0a3fa8;           /* 9:1 sul bianco */
   --weekend: #e8dbbd;
+  --festivo: #f6cdd6;          /* festività: rosa chiaro, distinto dal weekend beige */
+  --festivo-testo: #8e1838;
   --giorno: #b07400;          /* icona del sole */
   --notte: #4654b8;           /* icona della luna */
 
@@ -439,6 +441,7 @@ input[type="checkbox"] { min-height: 0; width: 1.1rem; height: 1.1rem; accent-co
 .scarto-alto { color: var(--err); font-weight: 700; }
 tr.inattivo th, tr.inattivo td:not(.azioni) { color: var(--muted); }
 tr.inattivo th { text-decoration: line-through; }
+tr.festa-spenta th, tr.festa-spenta td:not(.azioni) { color: var(--muted); }
 tr.in-modifica { background: var(--info-bg); }
 tr.in-modifica input[type="text"] { width: 100%; min-width: 10rem; }
 
@@ -659,6 +662,7 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
   :root {
     --bg: #fff; --surface: #fff; --surface-2: #eef1f5; --text: #000; --muted: #3d4450;
     --border: #9aa3af; --border-strong: #333; --weekend: #fff1d1;
+    --festivo: #fbd3db; --festivo-testo: #7a0f2b;
     --accent: #009541; --accent-text: #fff;
     --vol-bg: #d4f0dc;  --vol-border: #2f8a4a;  --vol-text: #0f4d22;
     --man-bg: #d6e3fb;  --man-border: #2f5fc4;  --man-text: #12347d;
@@ -1070,4 +1074,22 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
   .riep-voce dd { font-size: 13pt; }
   .tabella-riep-postazioni { font-size: 10pt; border-collapse: collapse; }
   .tabella-riep-postazioni th, .tabella-riep-postazioni td { border: 1px solid #555; padding: 1mm 2mm; }
+}
+
+/* ---------- Festività: intestazione del giorno evidenziata, con il nome (prevale sul weekend) ---------- */
+.griglia thead th.festivo, .tabella-liberi thead th.festivo { background: var(--festivo); }
+.giorno-festa {
+  display: block; margin-top: .1rem; font-size: .74rem; font-weight: 700; line-height: 1.2;
+  color: var(--festivo-testo); overflow-wrap: anywhere;
+}
+.tabella-festivita .col-spunta { text-align: center; }
+.tabella-festivita thead th.col-spunta { white-space: normal; min-width: 5.5rem; }
+.tabella-festivita input[type="checkbox"] { width: 1.2rem; height: 1.2rem; }
+.festa-orario { display: block; font-weight: 500; text-transform: none; letter-spacing: 0; }
+.campo-stretto { min-width: 5rem; flex: 0 1 6rem; }
+
+@media print {
+  #view-settimana .griglia thead th.festivo { background: #f5a9b8 !important; }
+  .tabella-liberi thead th.festivo { background: var(--festivo) !important; }
+  #view-settimana .giorno-festa { color: var(--festivo-testo) !important; font-size: 9pt; }
 }

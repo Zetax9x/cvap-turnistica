@@ -81,6 +81,12 @@ export const api = {
 
   postazioni: () => richiesta("GET", "/postazioni"),
 
+  // Festività a rotazione: anno facoltativo (anteprima delle date di quell'anno e del successivo)
+  festivita: (anno) => richiesta("GET", `/festivita${anno ? `?${new URLSearchParams({ anno })}` : ""}`),
+  creaFestivita: (dati) => richiesta("POST", "/festivita", dati),
+  aggiornaFestivita: (id, dati) => richiesta("PUT", `/festivita/${enc(id)}`, dati),
+  eliminaFestivita: (id) => richiesta("DELETE", `/festivita/${enc(id)}`),
+
   impostazioni: () => richiesta("GET", "/impostazioni"),
   salvaImpostazioni: (dati) => richiesta("PUT", "/impostazioni", dati),
 

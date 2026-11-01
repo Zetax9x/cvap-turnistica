@@ -20,10 +20,11 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, BeforeValidator, Field, StringConstraints, model_validator
 
-from . import accesso, db, email_turni
+from . import accesso, api_festivita, db, db_festivita, email_turni
 from .api_comune import DATA_MAX, DATA_MIN, DataValida, Id, IdPath, Nome, errore as _errore
 from .posta import PostinoBloccato, PostinoSmtp
 from .calendario import giorni_settimana, lunedi, postazioni_attive, tipo_settimana
+from .festivita import festivi_periodo
 from .liberi import liberi_settimana
 from .riepilogo import GIORNI_MAX as GIORNI_MAX_RIEPILOGO, riepilogo_persona
 from .modello import (EXTRA, INTERO_DI, PARTI_TURNO, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, SEGMENTI, STANDBY,
@@ -350,6 +351,7 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
         "giorni": [g.isoformat() for g in giorni],
         "postazioni": attive,
         "postazioni_a_richiesta": _a_richiesta(tipo),
+        "festivi": festivi_periodo(db_festivita.festivita_attive(conn), giorni[0], giorni[-1]),
         "extra": [{**e, "fine": e["fine"] % 24} for e in db.extra_periodo(conn, giorni[0], giorni[-1])],
         "fabbisogno": [{"data": f.data.isoformat(), "postazione": f.postazione, "fascia": f.fascia,
                         "segmento": f.segmento, "ruolo": f.ruolo, "quantita": f.quantita} for f in fabbisogno],
@@ -521,6 +523,7 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
             conn.close()
 
     Conn = Annotated[sqlite3.Connection, Depends(connessione)]
+    app.include_router(api_festivita.crea_router(connessione))
 
     # --- persone ---
     @app.get("/api/persone")
