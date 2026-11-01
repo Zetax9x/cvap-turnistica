@@ -1,0 +1,49 @@
+---
+name: cvap-turnistica-progetto
+description: "Stato e decisioni del progetto turnistica CVAP (generatore turni ambulanze, utente parla italiano)"
+metadata:
+  node_type: memory
+  type: project
+  originSessionId: 4ae50bdc-2e45-4adf-b099-2c326bea170f
+  modified: 2026-11-01T17:01:15.084Z
+---
+
+App web turni settimanali per associazione (dipendenti + volontari), costruita il 2026-10-17.
+Stack: Python FastAPI + SQLite + OR-Tools CP-SAT, frontend vanilla JS in static/.
+
+- L'utente aveva già provato un sistema a punteggi che "rischiava di non funzionare": per questo il generatore è CP-SAT, non un LLM né un greedy.
+- Fatto il 2026-10-18: indisponibilità a giornata intera, ferie dal/al e niente recupero ore dopo; volontari inseriti scrivendo solo il nome (creati in automatico); vista "Turni dipendente".
+- Dal 2026-10-19 ogni giorno di ferie conta 6h (`ORE_FERIE_GIORNO` in `cvap/vincoli.py`) sommate alle ore lavorate e confrontate con la media ±12h; prima la quota era proporzionale ai giorni. Ferie tutta la settimana = escluso.
+- Dal 2026-10-19 Ascoli (solo settimane B): max 2 turni/settimana per dipendente, 3 solo in extremis (penalità P_TERZO_ASCOLI, sotto il posto scoperto), mai più di 3; anche mezzo turno conta; volontari senza limite.
+- L'utente inserisce lui tutte le prenotazioni (niente login per ora).
+- "Max 2 di fila" = stesso tipo (giorni o notti); ore ±12 dalla media settimanale con recupero del saldo nelle settimane successive.
+- Deploy su Vercel (filesystem sola lettura) → DB su Turso via `libsql` se c'è TURSO_DATABASE_URL (+TURSO_AUTH_TOKEN), altrimenti SQLite locale (2026-10-18).
+- Fatto il 2026-10-18: postazioni a richiesta Standby (7-19/19-7, spezzabile 7-14/14-19) e Programmati (7-14/14-20, N persone) solo settimane A; priorità scoperti: prima Programmati, poi Standby; campo "Tempo max" generazione (max 280 s, Vercel Hobby 300 s, 1 vCPU, regione iad1).
+- La data di riferimento settimana A è provvisoria, l'utente la cambierà.
+- Dal 2026-10-23 la regola ore è: massimo − minimo delle ore contate (lavorate + 6h/giorno ferie) tra i dipendenti senza "massimo ore" ≤ `scarto_ore_max` (configurabile, default 12); sostituisce il vecchio ±12 dalla media. Chi ha massimo ore ha un tetto rigido ed è fuori dal confronto. Payload `differenza_ore` usato dall'interfaccia.
+- Dal 2026-10-23 minimo 36h/settimana per dipendente (`ORE_MIN_SETTIMANA`, ferie comprese, errore `ore_min`, nel solver con evidenza); l'utente dice che nessuno avrà massimo ore < 36.
+- Dal 2026-10-23 lo storico (saldo, weekend, statistiche) parte dalla prima settimana con turni `generato`: le settimane prima, inserite a mano per avviare il sistema, sono solo contesto.
+- Dal 2026-10-23 il report di generazione ha `qualita` (punteggio, gap %, soluzioni, tempo soluzione migliore) e `qualita_precedente`, mostrati in tabella.
+- Dal 2026-10-27 tetto rigido di 72 ore lavorate a settimana per ogni dipendente (`ORE_MAX_SETTIMANA`, `massimo_ore(p)` = min(72, massimo personale); nel solver è il dominio della variabile ore, nel validatore errore `ore_max`); massimo personale ammesso 1..72, i vecchi valori oltre 72 migrati a 72. Se manca personale restano scoperti (segnalati nel report).
+- Dal 2026-10-27 il payload settimana ha `liberi` per giorno (solo dipendenti attivi; avvisi smonto_notte/notte; ferie e indisponibili in elenchi a parte, scelta dell'utente); clic sul giorno nella griglia + "Stampa liberi"; la stampa di "Turni dipendente" è orizzontale senza ore né totali.
+- Dal 2026-10-27 la pagina Statistiche conta solo le settimane con turni generati (`storico.solo_generate`), per scelta dell'utente; lo storico del generatore resta "dalla prima generata in poi".
+- Dal 2026-10-27 Statistiche ha due schede (hash #statistiche e #statistiche/indisponibilita): la seconda conta le indisponibilità per giorno della settimana (`GET /api/statistiche/indisponibilita`). Tutte le stampe sono a colori (giorno giallo, notte blu, chip per origine), anche le Statistiche.
+- Dal 2026-10-30 ad Ascoli giorno e notte alternati per dipendente (obiettivo P_ASCOLI_GIORNO_NOTTE=2000, sotto P_TRE_DI_FILA; avviso `ascoli_giorno_notte`). I "3 di fila" erano già penalità (max 3 rigido): misurato che dipendono dal tempo di ricerca (a 60 s su 2 CPU spariscono; a 30 s 2–5 con 17 dipendenti in settimana B); alzare il peso o fare due fasi non aiuta. Vercel ha 1 vCPU con workers=8.
+- Dal 2026-10-30 stampa settimanale essenziale: niente legenda/A-B/stato, colori solo verde volontari e rosso scoperti, nomi grandi centrati in grassetto. Casella indisponibilità colorata (`disp-indisponibile`) se non "Disponibile".
+- 2026-10-30: nuova grafica unita a main (non ancora pubblicata su GitHub): logo Croce Verde in static/img, colore marchio verde #009541, passi della settimana, "Altre opzioni", menu in basso su telefono. Per gli screenshot si può installare Playwright in un venv temporaneo (`pip install playwright && playwright install --with-deps chromium`) e avviare `CVAP_DB=<demo.db> PORT=8765 ./run.sh`.
+- Preferenze grafiche dell'utente (2026-10-30): sito sempre in tema chiaro (niente tema scuro automatico); colori luminosi, non cupi; stampe a colori tenui (giorno giallo, notte azzurro, ☀/☾, linea spessa tra giorno e notte), non monocolore; niente dati tecnici del solver nell'interfaccia.
+- Dal 2026-10-30 le assenze hanno un motivo: `ferie` o `malattia` (malattia/infortunio), colonna `ferie.motivo`; stesso conteggio (6 h/giorno, niente turni), cambia solo l'etichetta (viola). Il motore usa ancora `ferie_periodo` per entrambe.
+- Per fermare il server di prova usare `pkill -f "[u]vicorn cvap"`: senza parentesi pkill uccide anche il comando stesso (exit 144).
+- 2026-10-30: `feat/email-turni` unito a main (servizio scelto: Brevo; anteprima Vercel richiede TURSO_* anche per Preview): password del sito `APP_PASSWORD` + invio turni via email SMTP (variabili SMTP_*), niente allegato calendario (scelta utente). Su Vercel senza APP_PASSWORD l'invio è disattivato.
+- 2026-10-30: `feat/email-riepiloghi` unito a main (push non ancora fatto): Impostazioni → riepiloghi via email per indirizzi extra con contenuti scelti; spunta Responsabile = riceve turni+liberi a ogni invio della settimana. Le email del personale vanno SOLO a chi è di turno quella settimana (scelta utente).
+- 2026-10-31: `feat/equita-sedi` unito a main (su GitHub al 2026-10-31): equilibrio Acquasanta/Venarotta per dipendente (scelta utente: metà e metà a testa, storico compreso; volontari esclusi; colonna in Statistiche ed email). Fatto DOPO la soluzione con `riequilibra_sedi` (scambi tra chi fa lo stesso turno nelle due sedi, divieti rispettati): misurato che qualsiasi termine aggiunto al modello principale (abs, quadrato, tangenti) peggiora la ricerca e lascia posti scoperti a 5-10 s. Per regole "intercambiabili" preferire un post-processing.
+- 2026-10-31 `feat/statistiche-ore-contate` unito a main (push non fatto): Statistiche "Ore totali" = lavorate + 6 h/giorno ferie o malattia, con dettaglio; stampa settimanale una tabella (postazione) per pagina, righe 22 mm, volontari solo scritta verde #007a35 senza sfondo/bordo, colonna turno a filo del testo (table-layout auto solo in stampa), weekend colorato solo in intestazione (scelta utente).
+- 2026-10-31: `fix/email-tabellone-programmati` unito a main: il tabellone email (`_righe`/`_cella` in cvap/email_turni.py) ricalca `righeGriglia`/`coperturaCella` di static/js/settimana.js (Programmati = righe Mattina 7–14/Pomeriggio 14–20, scoperti di Standby/Programmati). Se cambia la griglia del sito, aggiornare anche l'email. Anche le righe personali usano le etichette del sito (`orario_turno`), ma `impronta` usa ancora il vecchio formato `fascia_orario` apposta: cambiarlo farebbe reinviare AGGIORNAMENTO a tutti.
+- 2026-10-31: `feat/assistenze-extra` unito a main: tabellone "Assistenze ed Extra" in tutte le settimane (richieste con nome, ore intere anche oltre mezzanotte, N autisti + M soccorritori; tabella `richieste_extra`; segmento `extra_<id>_<inizio>_<fine>`; scelte utente: le riempie il generatore, le ore contano, scoperte per prime, dipendenti e volontari, in email/stampa solo se ci sono richieste; max 50/settimana). Limite noto: richieste che iniziano 0–6 contano come "notte" di quel giorno. Stampa liberi in 5 righe (liberi tutto il giorno, smontano, fanno la notte, indisponibili, ferie/malattia).
+- 2026-10-31: `feat/riepilogo-dipendente` unito a main: Statistiche → scheda "Riepilogo per dipendente" (#statistiche/dipendente, `GET /api/statistiche/persona/{id}?dal&al`, `cvap/riepilogo.py`): un giorno per riga, totali in fondo, stampa. Conta tutti i turni del periodo (anche settimane fatte a mano), solo dipendenti nel menu, periodo max 366 giorni, predefinito il mese corrente.
+- 2026-11-01: branch `piano/rotazioni-ascoli-extra-festivita` (piano in docs/PIANO-rotazioni.md, 10 fasi). Fatte fasi 1–3: `_rotazioni` + tabella `ROTAZIONI` in solver.py; Ascoli a rotazione (turni e giorni/notti, `settimane_ascoli` = settimane con almeno un turno ad Ascoli); Assistenze in `CATEGORIE_RICHIESTA`. Lezione: i test di rotazione (pesi deboli, 30–100) su settimane intere con 30 persone sono instabili a 10–20 s perché il solver non arriva all'ottimo; usare modelli piccoli (pochi giorni, una sede) che il solver chiude subito, e verificare che il test fallisca togliendo la regola.
+- La squadra vera ha 17 dipendenti (da data/export_turso.sql).
+- L'utente pubblica da sé con PR su GitHub (es. PR #1): non fare push senza richiesta.
+- La macchina di sviluppo ha 2 CPU (e niente browser per chrome-devtools): non far girare due suite pytest in parallelo, i test CP-SAT a tempo diventano instabili.
+
+**How to apply:** rispondere in italiano; per nuove regole aggiungerle al modello CP-SAT e al validatore `cvap/vincoli.py`, con test.
