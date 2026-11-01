@@ -15,12 +15,13 @@ from email.utils import getaddresses
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Path as PathParam, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, BeforeValidator, Field, StringConstraints, model_validator
 
 from . import accesso, db, email_turni
+from .api_comune import DATA_MAX, DATA_MIN, DataValida, Id, IdPath, Nome, errore as _errore
 from .posta import PostinoBloccato, PostinoSmtp
 from .calendario import giorni_settimana, lunedi, postazioni_attive, tipo_settimana
 from .liberi import liberi_settimana
@@ -35,8 +36,6 @@ from .vincoli import (ASCOLI, ORE_MAX_SETTIMANA, TESTO_FERIE, TESTO_MALATTIA, di
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 GIORNI_CONTESTO = 3
-DATA_MIN, DATA_MAX = date(2000, 1, 1), date(2100, 12, 31)
-DataValida = Annotated[date, Field(ge=DATA_MIN, le=DATA_MAX)]
 FERIE_GIORNI_MAX = 366
 FABBISOGNO_VOCI_MAX = 200
 EXTRA_PER_SETTIMANA_MAX = 50  # richieste di Assistenze ed Extra: oltre, il generatore diventa troppo pesante
@@ -47,11 +46,6 @@ TURNI_RICHIEDIBILI = {
     PROGRAMMATI: {("giorno", "prog_mattina"), ("giorno", "prog_pomeriggio")},
 }
 
-Nome = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100,
-                                        pattern=r"^[^\x00-\x1f\x7f]+$")]  # niente caratteri di controllo
-ID_MAX = 2 ** 63 - 1  # oltre, SQLite non accetta l'intero (OverflowError -> 500)
-Id = Annotated[int, Field(ge=1, le=ID_MAX)]
-IdPath = Annotated[int, PathParam(ge=1, le=ID_MAX)]
 Tipo = Literal["dipendente", "volontario"]
 Qualifica = Literal["autista", "soccorritore"]
 
@@ -220,10 +214,6 @@ class ExtraIn(BaseModel):
 
 class GeneraIn(BaseModel):
     tempo_max: float | None = Field(default=None, gt=0, le=600)
-
-
-def _errore(messaggio: str) -> HTTPException:
-    return HTTPException(status_code=400, detail=messaggio)
 
 
 def _data(valore: str) -> date:
