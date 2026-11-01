@@ -250,8 +250,11 @@ def test_chi_non_puo_fare_le_assistenze_non_entra_nella_rotazione():
 
 
 def test_nessuno_fa_due_assistenze_nella_stessa_settimana_se_si_puo_evitare():
+    # richieste da 12 h come i turni: con richieste brevi l'equilibrio delle ore può preferire
+    # 3 turni + 2 Assistenze (44 h) a 3 turni + 1 (40 h) o 4 turni + 1 (52 h).
+    # Una sola sede: modello piccolo, l'ottimo si trova in pochi secondi
     persone = staff(8, 8)
-    richieste = [f for i, d in enumerate(GIORNI) for f in richiesta(d, i + 1, 9, 13, autisti=1)]
-    r = genera(GIORNI, ["Acquasanta", "Venarotta"], persone, fabbisogno=richieste, tempo_max=20)
+    richieste = [f for i, d in enumerate(GIORNI) for f in richiesta(d, i + 1, 8, 20, autisti=1)]
+    r = genera(GIORNI, ["Acquasanta"], persone, fabbisogno=richieste, tempo_max=15)
     assert not [u for u in r.scoperti if u.postazione == EXTRA]
     assert max(_extra_per_persona(r).values()) == 1

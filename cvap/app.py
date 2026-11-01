@@ -1005,6 +1005,7 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                 "saldo_ore": st.saldo_ore, "ore_giorno": st.ore_giorno, "ore_notte": st.ore_notte,
                 "weekend": dict(st.weekend),
                 "standby": st.richieste[STANDBY], "programmati": st.richieste[PROGRAMMATI],
+                "assistenze": st.richieste[EXTRA],
                 "sedi": dict(st.sedi),
                 "ascoli": {"turni": st.ascoli, "giorno": st.ascoli_giorno, "notte": st.ascoli_notte},
             })
@@ -1020,7 +1021,7 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                     "persona_id": p["id"], "nome": p["nome"], "tipo": p["tipo"], "qualifica": p["qualifica"],
                     "settimane": 0, "ore_totali": 0, "ore_lavorate": 0, "ore_ferie": 0, "ore_malattia": 0,
                     "saldo_ore": 0, "ore_giorno": 0, "ore_notte": 0,
-                    "weekend": {k: 0 for k in CATEGORIE_WEEKEND}, "standby": 0, "programmati": 0,
+                    "weekend": {k: 0 for k in CATEGORIE_WEEKEND}, "standby": 0, "programmati": 0, "assistenze": 0,
                     "sedi": {k: 0 for k in SEDI_ALTERNATE},
                     "ascoli": {"turni": 0, "giorno": 0, "notte": 0},
                 })
@@ -1033,7 +1034,7 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                 cat = categoria_weekend(a)
                 if cat:
                     v["weekend"][cat] += 1
-                chiave = {STANDBY: "standby", PROGRAMMATI: "programmati"}.get(a.postazione)
+                chiave = {STANDBY: "standby", PROGRAMMATI: "programmati", EXTRA: "assistenze"}.get(a.postazione)
                 if chiave:
                     v[chiave] += 1
                 if a.postazione in v["sedi"]:

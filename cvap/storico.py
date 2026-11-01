@@ -3,11 +3,12 @@ from dataclasses import dataclass, field
 
 from datetime import date
 
-from .modello import PARTI_TURNO, POSTAZIONI_A_RICHIESTA, Assegnazione
+from .modello import EXTRA, PARTI_TURNO, POSTAZIONI_A_RICHIESTA, Assegnazione
 from .vincoli import ASCOLI, ORE_FERIE_GIORNO
 
 CATEGORIE_WEEKEND = ("sab_giorno", "sab_notte", "dom_giorno", "dom_notte")
-CATEGORIE_RICHIESTA = POSTAZIONI_A_RICHIESTA  # Standby e Programmati, distribuiti come i weekend
+# Standby, Programmati e Assistenze ed Extra: turni distribuiti a rotazione come i weekend
+CATEGORIE_RICHIESTA = (*POSTAZIONI_A_RICHIESTA, EXTRA)
 SEDI_ALTERNATE = ("Acquasanta", "Venarotta")  # ognuno, nel tempo, tanti turni nell'una quanti nell'altra
 
 
@@ -23,7 +24,7 @@ class StoricoPersona:
     weekend: dict[str, int] = field(default_factory=dict)
     ore_giorno: int = 0
     ore_notte: int = 0
-    richieste: dict[str, int] = field(default_factory=dict)  # turni Standby e Programmati
+    richieste: dict[str, int] = field(default_factory=dict)  # turni Standby, Programmati, Assistenze ed Extra
     sedi: dict[str, int] = field(default_factory=dict)  # turni ad Acquasanta e a Venarotta (anche mezzi)
     ore_ferie: int = 0     # ORE_FERIE_GIORNO per giorno di ferie (nelle settimane che contano)
     ore_malattia: int = 0  # idem per malattia o infortunio

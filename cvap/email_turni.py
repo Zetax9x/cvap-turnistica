@@ -454,7 +454,8 @@ def _ascoli(r: dict) -> str:
 
 def _sezione_statistiche(righe: list[dict]) -> tuple[str, str]:
     colonne = ["Persona", "Tipo", "Settimane", "Ore totali", "Saldo ore", "Ore giorno / notte",
-               "Acquasanta / Venarotta", "Turni weekend", "Standby", "Programmati", "Ascoli (giorni / notti)"]
+               "Acquasanta / Venarotta", "Turni weekend", "Standby", "Programmati", "Ascoli (giorni / notti)",
+               "Assistenze"]
     corpo, txt = [], []
     for r in righe:
         saldo = r.get("saldo_ore", 0)
@@ -463,7 +464,7 @@ def _sezione_statistiche(righe: list[dict]) -> tuple[str, str]:
         valori = [r["nome"], "Dipendente" if r["tipo"] == "dipendente" else "Volontario", r["settimane"],
                   _ore_totali(r), saldo_t, f"{r['ore_giorno']} / {r['ore_notte']}",
                   f"{sedi.get('Acquasanta', 0)} / {sedi.get('Venarotta', 0)}", sum(r["weekend"].values()),
-                  r["standby"], r["programmati"], _ascoli(r)]
+                  r["standby"], r["programmati"], _ascoli(r), r.get("assistenze", 0)]
         corpo.append("<tr>" + "".join(f'<td style="{_TC}{"text-align:right;" if i >= 2 else ""}">'
                                       f'{"<b>" if i == 0 else ""}{_e(v)}{"</b>" if i == 0 else ""}</td>'
                                       for i, v in enumerate(valori)) + "</tr>")

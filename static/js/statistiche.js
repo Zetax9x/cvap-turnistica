@@ -23,6 +23,7 @@ const COLONNE = [
   { campo: "standby", titolo: "Standby", valore: (r) => r.standby || 0 },
   { campo: "programmati", titolo: "Programmati", valore: (r) => r.programmati || 0 },
   { campo: "ascoli", titolo: "Ascoli (G / N)", valore: (r) => asc(r, "turni") },
+  { campo: "assistenze", titolo: "Assistenze", valore: (r) => r.assistenze || 0 },
 ];
 
 function tot(r) { return (r.ore_giorno || 0) + (r.ore_notte || 0); }
@@ -173,6 +174,7 @@ function render() {
       el("td", { class: "num" }, String(r.standby || 0)),
       el("td", { class: "num" }, String(r.programmati || 0)),
       el("td", { class: "num" }, `${asc(r, "turni")} (${asc(r, "giorno")} / ${asc(r, "notte")})`),
+      el("td", { class: "num" }, String(r.assistenze || 0)),
     );
   }));
 
@@ -185,7 +187,8 @@ function render() {
   root.append(el("p", { class: "hint" }, "Weekend: numero di turni svolti il sabato e la domenica, di giorno (G) e di notte (N). " +
     "Acquasanta / Venarotta: turni svolti in ciascuna delle due sedi (anche i mezzi turni); il generatore cerca di farne " +
     "fare a ogni dipendente tanti nell'una quanti nell'altra. " +
-    "Standby e Programmati: turni svolti in quelle postazioni; il generatore li distribuisce in modo equo come i weekend. " +
+    "Standby, Programmati e Assistenze: turni svolti in quelle postazioni (ogni Assistenza conta 1, qualunque sia la " +
+    "durata); il generatore li distribuisce in modo equo come i weekend. " +
     "Ascoli: turni svolti ad Ascoli, tra parentesi quanti di giorno (G) e di notte (N); il generatore li distribuisce " +
     "in proporzione alle settimane con Ascoli e cerca di far fare a ognuno tanti giorni quante notti."));
 }
