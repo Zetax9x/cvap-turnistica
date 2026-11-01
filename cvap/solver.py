@@ -33,7 +33,7 @@ compreso, verso tanti turni nell'una quanti nell'altra. Così l'equilibrio non p
 """
 import time
 from collections import Counter, defaultdict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 from itertools import combinations
@@ -68,6 +68,26 @@ P_GIORNO_NOTTE_STORICO = 5
 P_WEEKEND = 30
 P_RICHIESTE = 30
 P_DOPPIA_RICHIESTA = 300
+
+
+@dataclass(frozen=True)
+class Rotazione:
+    """Una categoria di turni distribuita a rotazione nel tempo (vedi `_Modello._rotazioni`)."""
+    nome: str
+    conta: Callable  # turno (Unita o Assegnazione) -> bool: il turno appartiene alla categoria
+    contatore: Callable[[StoricoPersona], int]  # turni della categoria fatti nello storico
+    esposizione: Callable[[StoricoPersona], int]  # su cosa si calcola la quota attesa
+    peso: int
+    doppia: int = 0  # penalità per ogni turno oltre il primo nella settimana (0 = nessuna)
+
+
+def _rotazione_postazione(postazione: str) -> Rotazione:
+    return Rotazione(nome=postazione, conta=lambda u: u.postazione == postazione,
+                     contatore=lambda st: st.richieste[postazione], esposizione=lambda st: st.settimane,
+                     peso=P_RICHIESTE, doppia=P_DOPPIA_RICHIESTA)
+
+
+ROTAZIONI: tuple[Rotazione, ...] = tuple(_rotazione_postazione(c) for c in CATEGORIE_RICHIESTA)
 
 
 @dataclass
@@ -369,7 +389,7 @@ class _Modello:
         self._ore()
         self._giorni_notti()
         self._weekend()
-        self._richieste()
+        self._rotazioni()
         self.model.Minimize(sum(c * e for c, e in self.obiettivo))
         self._suggerimento_iniziale()
 
@@ -619,29 +639,32 @@ class _Modello:
             self.obiettivo.append((P_GIORNO_NOTTE * n, sett))
             self.obiettivo.append((P_GIORNO_NOTTE_STORICO * n, cumul))
 
-    def _richieste(self):
+    def _rotazioni(self):
+        """Distribuisce nel tempo i turni di ogni categoria in ROTAZIONI con il meccanismo del debito."""
         n = self.scala
-        for cat in CATEGORIE_RICHIESTA:
+        for rot in ROTAZIONI:
+            conta = rot.conta
             # contano solo i dipendenti che questa settimana possono fare quel turno (ruolo, ferie, ...)
-            vars_di = {p.id: [v for u, v in self._vars_di(p.id, lambda u, cat=cat: u.postazione == cat)]
-                       for p in self.dipendenti}
+            vars_di = {p.id: [v for u, v in self._vars_di(p.id, conta)] for p in self.dipendenti}
             idonei = [p for p in self.dipendenti if vars_di[p.id]]
             if not idonei:
                 continue
             storici = {p.id: self.storico.get(p.id, StoricoPersona()) for p in idonei}
-            settimane_tot = sum(st.settimane for st in storici.values())
-            tasso = sum(st.richieste[cat] for st in storici.values()) / settimane_tot if settimane_tot else 0.0
+            esposizione_tot = sum(rot.esposizione(st) for st in storici.values())
+            tasso = sum(rot.contatore(st) for st in storici.values()) / esposizione_tot if esposizione_tot else 0.0
             for p in idonei:
                 st = storici[p.id]
-                fissati = sum(1 for a in self.fissi_settimana if a.persona_id == p.id and a.postazione == cat)
-                # come per i weekend: costo marginale di (debito + c)^2, più una penalità per il secondo turno
-                debito = st.richieste[cat] + fissati - tasso * st.settimane
-                costo = round(P_RICHIESTE * n * (2 * debito + 1))
+                fissati = sum(1 for a in self.fissi_settimana if a.persona_id == p.id and conta(a))
+                # come per i weekend: costo marginale di (debito + c)^2
+                debito = rot.contatore(st) + fissati - tasso * rot.esposizione(st)
+                costo = round(rot.peso * n * (2 * debito + 1))
                 for v in vars_di[p.id]:
                     self.obiettivo.append((costo, v))
-                extra = self.model.NewIntVar(0, len(vars_di[p.id]) + fissati, "")
-                self.model.Add(sum(vars_di[p.id]) + fissati - 1 <= extra)
-                self.obiettivo.append((P_DOPPIA_RICHIESTA * n, extra))
+                if rot.doppia:
+                    # penalità per ogni turno della categoria oltre il primo nella settimana
+                    extra = self.model.NewIntVar(0, len(vars_di[p.id]) + fissati, "")
+                    self.model.Add(sum(vars_di[p.id]) + fissati - 1 <= extra)
+                    self.obiettivo.append((rot.doppia * n, extra))
 
     def _weekend(self):
         n = self.scala
