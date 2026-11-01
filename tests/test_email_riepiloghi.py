@@ -173,3 +173,13 @@ def test_le_statistiche_via_email_spiegano_ferie_e_malattia():
     html_, testo = _sezione_statistiche([riga])
     assert "54 (36 lavorate + 12 ferie + 6 malattia)" in testo
     assert "36 lavorate + 12 ferie + 6 malattia" in html_
+
+
+def test_le_statistiche_via_email_hanno_i_turni_ad_ascoli():
+    from cvap.email_turni import _sezione_statistiche
+    riga = {"nome": "Mario", "tipo": "dipendente", "settimane": 2, "ore_totali": 96, "saldo_ore": 0,
+            "ore_giorno": 48, "ore_notte": 48, "weekend": {}, "standby": 0, "programmati": 0,
+            "sedi": {"Acquasanta": 3, "Venarotta": 5}, "ascoli": {"turni": 4, "giorno": 3, "notte": 1}}
+    html_, testo = _sezione_statistiche([riga])
+    assert "Ascoli (giorni / notti)" in html_
+    assert "4 (3 / 1)" in html_ and "4 (3 / 1)" in testo
