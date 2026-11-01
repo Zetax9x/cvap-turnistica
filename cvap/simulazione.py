@@ -275,14 +275,14 @@ def simula(scarto: int, settimane: int, tempo: float, worker: int | None = None)
 # --- festività (docs/PIANO-rotazioni.md, fase 10) ---------------------------------------
 # 17 dipendenti (10 autisti, 7 soccorritori), come nella realtà
 DIPENDENTI_FESTIVI = [d for d in DIPENDENTI if d[0] not in ("Autista 11", "Soccorritore 8")]
-PRIMO_ANNO_FESTIVO = 2026
 # festività attive: (nome predefinito, peso, conta anche la notte della sera prima)
 FESTIVITA_SIM = [("Natale", 3, True), ("Santo Stefano", 1, False), ("Capodanno", 2, True)]
 PERIODO_FESTIVO = ((12, 24), (1, 1))  # (mese, giorno): dal 24/12 al 1/1 dell'anno dopo si generano le settimane
 ANNI_STORICO = 5                      # anni importati prima del primo anno simulato (come ANNI_FESTIVI)
 PERSONE_PER_FASCIA_STORICO = 4        # le due sedi, autista e soccorritore
 SEMPRE = {"Natale": ("Autista 1", "Soccorritore 1")}  # negli anni importati hanno fatto Natale ogni anno
-FERIE_FESTIVE = [("Autista 4", date(2026, 12, 24), date(2026, 12, 26))]  # a casa a Natale: riposo goduto
+# a casa a Natale il primo anno simulato (mese, giorno): riposo goduto
+FERIE_FESTIVE = [("Autista 4", (12, 24), (12, 26))]
 VUOLE_LAVORARE = [("Soccorritore 5", "Natale", "giorno")]  # ogni anno simulato
 SEME_STORICO = 7
 _CAMPI_FESTIVITA = ("nome", "regola", "giorno", "mese", "offset_pasqua", "data", "conta_giorno", "conta_notte")
@@ -330,11 +330,22 @@ def storico_sintetico(nomi: Sequence[str], festivita: Sequence[str], anni: Itera
     return righe
 
 
-def _settimane_anno(anno: int) -> list[date]:
+def settimane_festive(anno: int) -> list[date]:
+    """I lunedì delle settimane da generare per il periodo festivo che comincia nell'anno."""
     (m1, g1), (m2, g2) = PERIODO_FESTIVO
     dal = date(anno, m1, g1)
     al = date(anno + (1 if (m2, g2) < (m1, g1) else 0), m2, g2)
     return [lunedi(dal) + timedelta(weeks=i) for i in range((lunedi(al) - lunedi(dal)).days // 7 + 1)]
+
+
+def primo_anno_festivo(oggi: date) -> int:
+    """Il primo anno con la settimana di Natale non ancora cominciata: la simulazione resta nel futuro, perché
+    "vuole lavorare" si può segnare solo per le festività non passate e lo storico importato arriva fino a oggi."""
+    return oggi.year if settimane_festive(oggi.year)[0] > oggi else oggi.year + 1
+
+
+def _ferie_festive(anno: int) -> list[tuple[str, date, date]]:
+    return [(nome, date(anno, *dal), date(anno, *al)) for nome, dal, al in FERIE_FESTIVE]
 
 
 def _attiva_festivita(client: TestClient) -> list[dict]:
@@ -435,22 +446,24 @@ def _divario(festivi: list[FestivitaAnno], lavorate: dict, nomi: list[str]) -> d
 
 def simula_festivi(anni: int = 3, tempo: float = 20.0, worker: int | None = 2,
                    pesi: Mapping[str, float] | None = None, scarto: int = 12) -> Esito:
-    """Simula le settimane delle festività di fine anno per `anni` anni di fila (dal 2026), con lo storico
+    """Simula le settimane delle festività di fine anno per `anni` anni di fila (dal primo Natale non ancora
+    cominciato, vedi `primo_anno_festivo`), con lo storico
     sintetico dei 5 anni prima già importato, 17 dipendenti, chi vuole lavorare Natale e un dipendente in ferie
     a Natale il primo anno. `pesi`: pesi delle festività da provare al posto di quelli del programma."""
     esito = Esito(scarto, dipendenti=[n for n, _ in DIPENDENTI_FESTIVI])
     t0 = time.monotonic()
-    anni_sim = range(PRIMO_ANNO_FESTIVO, PRIMO_ANNO_FESTIVO + anni)
+    primo = primo_anno_festivo(date.today())
+    anni_sim = range(primo, primo + anni)
     fasce: set = set()
     viste: set = set()
     with pesi_temporanei(pesi or {}), worker_limitati(worker), tempfile.TemporaryDirectory() as cartella:
         client = TestClient(create_app(str(Path(cartella) / "simulazione.db")))
-        ids = _prepara(client, scarto, DIPENDENTI_FESTIVI, FERIE_FESTIVE)
+        ids = _prepara(client, scarto, DIPENDENTI_FESTIVI, _ferie_festive(primo))
         festivita = _attiva_festivita(client)
-        lavorate = _importa_storico(client, ids, festivita, _settimane_anno(PRIMO_ANNO_FESTIVO)[0])
+        lavorate = _importa_storico(client, ids, festivita, settimane_festive(primo)[0])
         _segna_disponibili(client, ids, festivita, anni_sim)
         for anno in anni_sim:
-            for inizio in _settimane_anno(anno):
+            for inizio in settimane_festive(anno):
                 s = _genera_settimana(client, ids, inizio, tempo, "festività", indisponibilita=False)
                 doppi = _conta_festivi(s, festivita, lavorate, fasce, viste)
                 esito.settimane.append(replace(_riassumi(s), doppi_festivi=doppi))
@@ -581,7 +594,8 @@ def _scenario_festivi() -> str:
             + f"; storico importato inventato dei {ANNI_STORICO} anni prima ("
             + ", ".join(f"{', '.join(chi)} sempre a {f}" for f, chi in SEMPRE.items()) + "); "
             + ", ".join(f"{n} vuole lavorare {f} ({t})" for n, f, t in VUOLE_LAVORARE) + "; "
-            + ", ".join(f"{n} in ferie dal {d:%d/%m/%Y} al {a:%d/%m/%Y}" for n, d, a in FERIE_FESTIVE) + ".")
+            + ", ".join(f"{n} in ferie dal {d[1]}/{d[0]} al {a[1]}/{a[0]} il primo anno" for n, d, a in FERIE_FESTIVE)
+            + ".")
 
 
 def report_html(esiti: list[Esito]) -> str:
