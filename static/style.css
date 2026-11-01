@@ -1127,3 +1127,50 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
   .tabella-liberi thead th.festivo { background: var(--festivo) !important; }
   #view-settimana .giorno-festa { color: var(--festivo-testo) !important; font-size: 9pt; }
 }
+
+/* ---------- Statistiche → Equità ---------- */
+.periodo-equita label { font-weight: 600; }
+.tabella-equita { background: #ffffff; }
+.tabella-equita td, .tabella-equita th { vertical-align: middle; }
+.eq-riga { cursor: pointer; }
+.eq-riga:hover, .eq-riga.aperta { background: #eef5ff; }
+.eq-apri {
+  display: inline-flex; align-items: center; gap: .4rem; min-height: var(--tap); padding: 0 .3rem;
+  border: 0; background: none; color: var(--text); font: inherit; font-weight: 700; cursor: pointer; text-align: left;
+}
+.eq-freccia { color: var(--primary); width: 1rem; }
+.eq-valore { font-weight: 700; white-space: nowrap; }
+.eq-frase { display: block; font-size: .8rem; color: var(--muted); }
+.eq-sopra .eq-valore, td.eq-sopra { color: #c2410c; }   /* più della sua parte: arancio */
+.eq-sotto .eq-valore, td.eq-sotto { color: #1d4ed8; }   /* meno della sua parte: blu */
+.eq-pari { color: var(--ok); font-weight: 650; }
+.eq-distanza { font-weight: 700; white-space: nowrap; }
+.eq-tend { font-weight: 650; white-space: nowrap; padding: .15rem .5rem; border-radius: 999px; }
+.eq-tend-giu { background: #dcfce7; color: #166534; }
+.eq-tend-su { background: #ffedd5; color: #9a3412; }
+.eq-tend-pari { background: #e0f2fe; color: #075985; }
+.eq-grafico { display: block; overflow: visible; }
+.eq-grafico .eq-base { stroke: #cbd5e1; stroke-width: 1; }
+.eq-grafico .eq-linea { fill: none; stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; }
+.eq-linea-giu .eq-linea { stroke: #16a34a; }  .eq-linea-giu .eq-punto { fill: #16a34a; }
+.eq-linea-su .eq-linea { stroke: #ea580c; }   .eq-linea-su .eq-punto { fill: #ea580c; }
+.eq-linea-pari .eq-linea { stroke: #0284c7; } .eq-linea-pari .eq-punto { fill: #0284c7; }
+.eq-dettaglio-riga > td { background: #f8fbff; padding: .6rem 1rem 1rem; }
+.tabella-equita-dettaglio { width: auto; min-width: 36rem; background: #ffffff; }
+.tabella-equita-dettaglio caption { text-align: left; font-weight: 650; padding: .2rem 0 .4rem; }
+.eq-barra { position: relative; display: block; width: 12rem; height: 10px; border-radius: 5px; background: #e2e8f0; }
+.eq-barra-centro { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 2px; background: #64748b; }
+.eq-barra-valore { position: absolute; top: 0; bottom: 0; border-radius: 5px; }
+.eq-barra-sopra { background: #fb923c; }
+.eq-barra-sotto { background: #60a5fa; }
+
+@media print {
+  .periodo-equita { display: none !important; }
+  .eq-riga:hover, .eq-riga.aperta, .eq-dettaglio-riga > td { background: none; }
+  .eq-apri { min-height: 0; padding: 0; }
+  .eq-freccia { display: none; }
+  .tabella-equita, .tabella-equita-dettaglio { font-size: 9pt; border: 1px solid #555; }
+  .tabella-equita th, .tabella-equita td { padding: 1.3mm 1.2mm; border-bottom: 1px solid #bbb; }
+  .tabella-equita-dettaglio { min-width: 0; page-break-inside: avoid; }
+  .eq-tend, .eq-barra, .eq-barra-valore, .eq-grafico { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

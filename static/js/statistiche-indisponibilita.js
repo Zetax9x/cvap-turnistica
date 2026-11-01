@@ -94,10 +94,14 @@ function descriviPeriodo() {
 function renderPeriodo() {
   const dal = el("input", { type: "date", id: "indisp-dal", value: stato.dal });
   const al = el("input", { type: "date", id: "indisp-al", value: stato.al });
+  // dopo un errore la validità va azzerata appena si corregge, altrimenti il modulo non si invia più
+  const azzera = () => al.setCustomValidity("");
+  dal.addEventListener("input", azzera);
+  al.addEventListener("input", azzera);
   const applica = (e) => {
     e.preventDefault();
     if (dal.value && al.value && dal.value > al.value) {
-      al.setCustomValidity("La data di fine deve essere dopo quella di inizio");
+      al.setCustomValidity("La data di fine non può essere prima di quella di inizio");
       al.reportValidity();
       return;
     }

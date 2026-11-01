@@ -130,4 +130,10 @@ export const api = {
     if (al) q.set("al", al);
     return richiesta("GET", `/statistiche/indisponibilita${q.size ? `?${q}` : ""}`);
   },
+  statisticheEquita: (dal, al) => {
+    const q = new URLSearchParams();
+    if (dal) q.set("dal", dal);
+    if (al) q.set("al", al);
+    return richiesta("GET", `/statistiche/equita${q.size ? `?${q}` : ""}`);
+  },
 };
