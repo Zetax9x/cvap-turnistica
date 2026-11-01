@@ -103,3 +103,18 @@ def importa(conn: sqlite3.Connection, turni_per_anno: dict[int, list[tuple[int, 
             _scrivi(conn, anno, risolti, servizio)
             inseriti += _conta(conn, anno) - prima
     return create, inseriti
+
+
+def tutti_i_turni(conn: sqlite3.Connection) -> list[dict]:
+    """Tutte le righe dello storico: {anno, festivita_id, persona_id, fascia} (per la rotazione delle festività)."""
+    rows = conn.execute("SELECT anno, festivita_id, persona_id, fascia FROM storico_festivi ORDER BY id").fetchall()
+    return [{"anno": r["anno"], "festivita_id": r["festivita_id"], "persona_id": r["persona_id"],
+             "fascia": r["fascia"]} for r in rows]
+
+
+def servizio_per_anno(conn: sqlite3.Connection) -> dict[int, set[int]]:
+    """Anno -> dipendenti in servizio salvati (solo gli anni con l'elenco salvato)."""
+    out: dict[int, set[int]] = {}
+    for r in conn.execute("SELECT anno, persona_id FROM storico_festivi_servizio").fetchall():
+        out.setdefault(r["anno"], set()).add(r["persona_id"])
+    return out

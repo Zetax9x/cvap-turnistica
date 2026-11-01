@@ -465,10 +465,17 @@ def _ascoli(r: dict) -> str:
     return f"{a.get('turni', 0)} ({a.get('giorno', 0)} / {a.get('notte', 0)})"
 
 
+def festivi_testo(r: dict) -> str:
+    """Turni festivi degli ultimi 5 anni, solo le festività lavorate: "Natale 2 (2025), Pasqua 1 (2023)"."""
+    voci = [f"{f['festivita']} {f['turni']} ({f['ultimo_anno']})"
+            for f in (r.get("festivi") or {}).get("per_festivita", []) if f.get("turni")]
+    return ", ".join(voci) or "—"
+
+
 def _sezione_statistiche(righe: list[dict]) -> tuple[str, str]:
     colonne = ["Persona", "Tipo", "Settimane", "Ore totali", "Saldo ore", "Ore giorno / notte",
                "Acquasanta / Venarotta", "Turni weekend", "Standby", "Programmati", "Ascoli (giorni / notti)",
-               "Assistenze"]
+               "Festivi (ultimo anno)", "Assistenze"]
     corpo, txt = [], []
     for r in righe:
         saldo = r.get("saldo_ore", 0)
@@ -477,7 +484,7 @@ def _sezione_statistiche(righe: list[dict]) -> tuple[str, str]:
         valori = [r["nome"], "Dipendente" if r["tipo"] == "dipendente" else "Volontario", r["settimane"],
                   _ore_totali(r), saldo_t, f"{r['ore_giorno']} / {r['ore_notte']}",
                   f"{sedi.get('Acquasanta', 0)} / {sedi.get('Venarotta', 0)}", sum(r["weekend"].values()),
-                  r["standby"], r["programmati"], _ascoli(r), r.get("assistenze", 0)]
+                  r["standby"], r["programmati"], _ascoli(r), festivi_testo(r), r.get("assistenze", 0)]
         corpo.append("<tr>" + "".join(f'<td style="{_TC}{"text-align:right;" if i >= 2 else ""}">'
                                       f'{"<b>" if i == 0 else ""}{_e(v)}{"</b>" if i == 0 else ""}</td>'
                                       for i, v in enumerate(valori)) + "</tr>")
@@ -486,7 +493,9 @@ def _sezione_statistiche(righe: list[dict]) -> tuple[str, str]:
              + "".join(f'<th style="{_TH}">{c}</th>' for c in colonne) + f'</tr>{"".join(corpo)}</table>'
              '<p style="font-size:11px;color:#4d5868;margin:4px 0 0;">Solo le settimane con turni generati. '
              'Ore totali: ore lavorate più 6 h per ogni giorno di ferie o malattia. '
-             'Saldo ore: differenza rispetto alla media dei dipendenti.</p>')
+             'Saldo ore: differenza rispetto alla media dei dipendenti. '
+             'Festivi: turni nelle festività a rotazione negli ultimi 5 anni (anni passati inseriti compresi), '
+             "tra parentesi l'ultimo anno in cui l'ha lavorata.</p>")
     return (html_ if righe else "<p>Nessuna settimana con turni generati.</p>"), "\n".join(txt)
 
 

@@ -113,7 +113,7 @@ Con `APP_PASSWORD` impostata (`create_app(..., password=...)`) tutte le API tran
   (`motivo`: `ferie` predefinito o `malattia`; altro → 422)
   (400 se dal > al, periodo > 366 giorni, sovrapposto ad altre ferie o malattia della persona o persona non dipendente · 404) ·
   `DELETE /ferie/{id}` → 204 · 404
-- `GET /statistiche` → `[{persona_id, nome, tipo, qualifica, settimane, ore_totali, ore_lavorate, ore_ferie, ore_malattia, saldo_ore, ore_giorno, ore_notte, weekend: {sab_giorno, sab_notte, dom_giorno, dom_notte}, standby, programmati, sedi: {Acquasanta, Venarotta}}]` (`ore_totali` = ore contate: lavorate + 6 h per giorno di ferie/malattia, nelle settimane non interamente di assenza; sedi = turni, anche mezzi, in ciascuna delle due sedi; il generatore le pareggia per ogni dipendente)
+- `GET /statistiche` → `[{persona_id, nome, tipo, qualifica, settimane, ore_totali, ore_lavorate, ore_ferie, ore_malattia, saldo_ore, ore_giorno, ore_notte, weekend: {sab_giorno, sab_notte, dom_giorno, dom_notte}, standby, programmati, assistenze, sedi: {Acquasanta, Venarotta}, ascoli: {turni, giorno, notte}, festivi: {turni, per_festivita: [{festivita, turni, ultimo_anno}]}}]` (`festivi`: vedi "Festività nel generatore") (`ore_totali` = ore contate: lavorate + 6 h per giorno di ferie/malattia, nelle settimane non interamente di assenza; sedi = turni, anche mezzi, in ciascuna delle due sedi; il generatore le pareggia per ogni dipendente)
   solo sulle settimane con turni generati (`storico.solo_generate`; volontari: solo totali, saldo 0).
   Il generatore invece usa come storico tutte le settimane dalla prima generata in poi.
 - `GET /statistiche/indisponibilita?dal&al` (date facoltative, estremi inclusi; `dal > al` → 400, data non valida → 422) →
@@ -236,12 +236,14 @@ Risposta: `{persona_id, nome, tipo, qualifica, dal, al, giorni, riepilogo}`.
   "<nome richiesta> (Assistenze ed Extra)".
 - `riepilogo`: `turni, ore_lavorate, ore_giorno, ore_notte, turni_giorno, turni_notte, giorni_ferie, giorni_malattia,
   ore_ferie_malattia` (6 h per giorno, solo dipendenti), `ore_totali, weekend {sab_giorno, sab_notte, dom_giorno,
-  dom_notte}, postazioni [{postazione, turni, ore}], giorni_indisponibili`.
+  dom_notte}, postazioni [{postazione, turni, ore}], giorni_indisponibili, turni_festivi, festivi [{festivita, turni}]`.
+- Ogni turno ha anche `festivita`: il nome della festività attiva per cui conta quel turno (giorno e fascia, come in
+  `turni_festivi`), altrimenti `null`; `riepilogo.festivi` li conta per festività, in ordine di data.
 
 ## Festività a rotazione: calendario (Impostazioni)
 
-Fase 4 di `docs/PIANO-rotazioni.md`: il calendario esiste ed evidenzia i giorni festivi nella griglia, nella stampa e
-nell'email, ma **non cambia ancora la generazione** (arriva con la fase 6).
+Fase 4 di `docs/PIANO-rotazioni.md`: il calendario evidenzia i giorni festivi nella griglia, nella stampa e
+nell'email; dalla fase 6 le festività attive guidano anche la generazione (sezione "Festività nel generatore").
 
 - `cvap/festivita.py` (puro): `pasqua(anno)` (Meeus, 1583–4099), `data_nell_anno(f, anno)`,
   `date_festive(festivita, anno) -> {date: nome}` (due festività nello stesso giorno: "Pasqua / Liberazione"),
@@ -280,7 +282,8 @@ all'avvio, non attive (`INSERT OR IGNORE` sulla `chiave`).
 ## Storico festività degli anni passati (Impostazioni)
 
 Fase 5 di `docs/PIANO-rotazioni.md`: chi ha lavorato le festività prima che il programma generasse i turni. Tabelle
-separate dalle assegnazioni: **non toccano ore, settimane, statistiche né generatore** (le userà la fase 6).
+separate dalle assegnazioni: **non toccano ore e settimane**; dalla fase 6 entrano nella rotazione delle festività
+(generatore e campo `festivi` delle statistiche).
 
 - **Limite**: lunedì della prima settimana con turni generati (`origine = 'generato'`); senza settimane generate,
   domani. Le festività dal limite in poi non si inseriscono: le conta già il programma. `anno_max` = anno del giorno
@@ -328,3 +331,39 @@ storico_festivi_servizio(anno, persona_id REFERENCES persone, PRIMARY KEY (anno,
   Servizio: per gli anni senza servizio salvato, o sostituiti (il servizio salvato a mano si perde), dipendenti
   attivi + chi compare; per gli altri si aggiunge chi compare. Massimo 20 persone per cella. `nuovo` con un nome
   già nel Personale → 400. Una sola transazione.
+
+## Festività nel generatore (rotazione festività per festività)
+
+Fase 6 di `docs/PIANO-rotazioni.md` (3.3-3.5). Ogni festività attiva è una rotazione a sé, con il meccanismo del
+debito; non c'è un conteggio unico di tutte le festività.
+
+- `cvap/rotazione_festivi.py` (puro, riusabile): `ANNI_FESTIVI = 5`, `inizio_periodo(riferimento)`,
+  `conta_festivita(festivita, riferimento, *, limite, importati, servizio, dipendenti_attivi, settimane, malattia)
+  -> {festivita_id: {persona_id: ContoFestivita(turni, esposizione, ultimo_anno, debito)}}` sulle festività cadute in
+  [riferimento − 5 anni, riferimento); `debiti(conti, gruppo, fissati)` (tasso = turni ÷ esposizione del solo
+  gruppo); `festivi_settimana(festivita, giorni, conti) -> FestiviSettimana(turni, peso, anno, conti)`;
+  `SettimanaProgramma(inizio, dipendenti, assegnazioni)`.
+  - **Turni**: anni importati (righe `storico_festivi` con data prima della prima settimana generata) + settimane del
+    programma dalla prima generata: turni dei dipendenti nei turni che contano (`turni_festivi`), volontari esclusi.
+    La notte della sera prima conta per l'anno della festività.
+  - **Esposizione**: anni importati, solo per le festività presenti nei dati di quell'anno: chi è nell'elenco "in
+    servizio" salvato, altrimenti la proposta (dipendenti attivi + chi compare quell'anno). Programma: i dipendenti
+    della settimana in cui cade la festività, **anche in ferie o indisponibili** (riposo goduto); non conta chi è in
+    **malattia** in un giorno dei turni che contano e non ne ha lavorato nessuno.
+  - **Debito** = turni + turni già fissati − tasso × esposizione. Nel risultato di `conta_festivita` il tasso è tra i
+    dipendenti attivi; il generatore lo ricalcola tra gli idonei della settimana.
+  - Una festività aggiunta al calendario conta subito per le settimane già fatte del programma; per gli anni
+    importati solo se è nei dati.
+- `cvap/dati_festivi.py`: lettura dal database (`conti_festivita`, `festivi_per_generazione`, `festivi_statistiche`,
+  `nomi_turni_festivi`); `db_storico_festivi.tutti_i_turni`, `servizio_per_anno`.
+- Generatore (`solver.genera(..., festivi=FestiviSettimana)`, passato da `POST /settimane/{data}/genera` con lo
+  storico fino al lunedì della settimana): per ogni turno festivo della settimana, costo
+  `P_FESTIVITA (60) × peso × (2 × debito + 1)` (debito tra gli idonei della settimana per quella festività), più
+  `P_STESSA_FESTIVITA (500) × peso` se l'ha fatta l'anno prima (metà se due anni prima); `P_DOPPIO_FESTIVO (300)`
+  per ogni turno festivo oltre il primo della stessa persona nella settimana. Il costo è costante per (persona,
+  festività): termini lineari. Tutto resta molto sotto copertura, ore e regole di Ascoli. Un festivo di domenica
+  conta anche nella rotazione dei weekend.
+- `GET /statistiche`, campo `festivi` (solo dipendenti; volontari `{turni: 0, per_festivita: []}`): per ogni festività
+  attiva (in ordine di id) `{festivita: nome, turni, ultimo_anno | null}` negli ultimi 5 anni fino alla fine dell'ultima
+  settimana salvata (o a domani), anni importati + programma; `turni` = totale. Colonna "Festivi" nella pagina, nella
+  stampa e nel riepilogo via email ("Natale 2 (2025), Pasqua 1 (2023)", solo le festività lavorate).

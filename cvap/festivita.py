@@ -89,7 +89,7 @@ def date_festive(festivita: Iterable[Mapping], anno: int) -> dict[date, str]:
     return {d: " / ".join(n) for d, n in nomi.items()}
 
 
-def _turni_di(f: Mapping, d: date) -> list[tuple[date, str]]:
+def turni_di(f: Mapping, d: date) -> list[tuple[date, str]]:
     """I turni che contano per la festività del giorno `d` (la notte appartiene al giorno in cui inizia)."""
     turni = []
     if f["conta_notte_prima"]:
@@ -108,7 +108,7 @@ def turni_festivi(festivita: Iterable[Mapping], dal: date, al: date) -> dict[tup
     """
     scelta: dict[tuple[date, str], Mapping] = {}
     for d, f in occorrenze(festivita, dal, al + timedelta(days=1)):  # +1: la notte prima della festività
-        for turno in _turni_di(f, d):
+        for turno in turni_di(f, d):
             if not dal <= turno[0] <= al:
                 continue
             attuale = scelta.get(turno)

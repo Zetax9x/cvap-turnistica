@@ -23,6 +23,7 @@ const COLONNE = [
   { campo: "standby", titolo: "Standby", valore: (r) => r.standby || 0 },
   { campo: "programmati", titolo: "Programmati", valore: (r) => r.programmati || 0 },
   { campo: "ascoli", titolo: "Ascoli (G / N)", valore: (r) => asc(r, "turni") },
+  { campo: "festivi", titolo: "Festivi", valore: (r) => (r.festivi && r.festivi.turni) || 0 },
   { campo: "assistenze", titolo: "Assistenze", valore: (r) => r.assistenze || 0 },
 ];
 
@@ -33,6 +34,14 @@ function dettaglioOre(r) {
     .filter(([k]) => r[k]).map(([k, nome]) => `${formatOre(r[k])} ${nome}`);
   if (!assenze.length) return null;
   return el("span", { class: "ore-dettaglio" }, [`${formatOre(r.ore_lavorate || 0)} lavorate`, ...assenze].join(" + "));
+}
+
+/** Le festività lavorate negli ultimi 5 anni, una per riga: "Natale 2 (ultima 2025)". */
+function festivi(r) {
+  const voci = ((r.festivi && r.festivi.per_festivita) || []).filter((f) => f.turni);
+  if (!voci.length) return "0";
+  return el("span", { class: "festivi-elenco" }, String(r.festivi.turni),
+    voci.map((f) => el("span", { class: "festivi-voce" }, `${f.festivita} ${f.turni} (ultima ${f.ultimo_anno})`)));
 }
 
 function sede(r, k) { return (r.sedi && r.sedi[k]) || 0; }
@@ -174,6 +183,7 @@ function render() {
       el("td", { class: "num" }, String(r.standby || 0)),
       el("td", { class: "num" }, String(r.programmati || 0)),
       el("td", { class: "num" }, `${asc(r, "turni")} (${asc(r, "giorno")} / ${asc(r, "notte")})`),
+      el("td", { class: "num" }, festivi(r)),
       el("td", { class: "num" }, String(r.assistenze || 0)),
     );
   }));
@@ -191,4 +201,9 @@ function render() {
     "durata); il generatore li distribuisce in modo equo come i weekend. " +
     "Ascoli: turni svolti ad Ascoli, tra parentesi quanti di giorno (G) e di notte (N); il generatore li distribuisce " +
     "in proporzione alle settimane con Ascoli e cerca di far fare a ognuno tanti giorni quante notti."));
+  root.append(el("p", { class: "hint" }, "Festivi: turni lavorati nelle festività a rotazione (scelte in Impostazioni) " +
+    "negli ultimi 5 anni, compresi gli anni passati inseriti nello Storico festività; sotto, il dettaglio per festività " +
+    "con l'ultimo anno in cui è stata lavorata. Il generatore fa ruotare ogni festività per conto suo: chi l'ha lavorata " +
+    "più volte o l'anno prima lascia il posto agli altri. Ferie e indisponibilità in una festività contano come riposo " +
+    "goduto: la volta dopo si ha la precedenza a lavorarla. I volontari non entrano nella rotazione."));
 }

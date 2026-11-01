@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, BeforeValidator, Field, StringConstraints, model_validator
 
-from . import accesso, api_festivita, api_storico_festivi, db, db_festivita, email_turni
+from . import accesso, api_festivita, api_storico_festivi, dati_festivi, db, db_festivita, email_turni
 from .api_comune import DATA_MAX, DATA_MIN, DataValida, Id, IdPath, Nome, errore as _errore
 from .posta import PostinoBloccato, PostinoSmtp
 from .calendario import giorni_settimana, lunedi, postazioni_attive, tipo_settimana
@@ -683,7 +683,8 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
             ris = solver.genera(giorni, attive, dipendenti, fissi=fissi, contesto=_contesto(conn, giorni),
                                 storico=storico, ferie=db.ferie_periodo(conn, giorni[0], giorni[-1]),
                                 indisponibili=db.indisponibili_periodo(conn, giorni[0], giorni[-1]),
-                                fabbisogno=fabbisogno, scarto_ore_max=db.get_scarto_ore_max(conn), **kwargs)
+                                fabbisogno=fabbisogno, scarto_ore_max=db.get_scarto_ore_max(conn),
+                                festivi=dati_festivi.festivi_per_generazione(conn, giorni), **kwargs)
             durata = round(time.monotonic() - t0, 2)
             if ris.stato in ("impossibile", "nessuna_soluzione"):
                 # niente da salvare: si tengono i turni generati in precedenza
@@ -986,6 +987,7 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
         passate = solo_generate([_settimana_passata(conn, r) for r in righe])
         storico = calcola_storico(passate)
         persone = {p["id"]: p for p in db.lista_persone(conn)}
+        festivi = dati_festivi.festivi_statistiche(conn, [pid for pid in storico if pid in persone])
 
         out = []
         for pid, st in storico.items():
@@ -1002,6 +1004,7 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                 "assistenze": st.richieste[EXTRA],
                 "sedi": dict(st.sedi),
                 "ascoli": {"turni": st.ascoli, "giorno": st.ascoli_giorno, "notte": st.ascoli_notte},
+                "festivi": festivi[pid],
             })
 
         volontari: dict[int, dict] = {}
@@ -1018,6 +1021,7 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                     "weekend": {k: 0 for k in CATEGORIE_WEEKEND}, "standby": 0, "programmati": 0, "assistenze": 0,
                     "sedi": {k: 0 for k in SEDI_ALTERNATE},
                     "ascoli": {"turni": 0, "giorno": 0, "notte": 0},
+                    "festivi": {"turni": 0, "per_festivita": []},  # la rotazione riguarda i dipendenti
                 })
                 if a.persona_id not in visti:
                     visti.add(a.persona_id)
@@ -1070,7 +1074,8 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                    for d in db.ferie_periodo(conn, dal, al).get(persona_id, set())}
         nomi_extra = {e["segmento"]: e["nome"] for e in db.extra_periodo(conn, dal, al)}
         return riepilogo_persona(p, dal, al, turni, assenze,
-                                 db.indisponibili_periodo(conn, dal, al).get(persona_id, set()), nomi_extra)
+                                 db.indisponibili_periodo(conn, dal, al).get(persona_id, set()), nomi_extra,
+                                 dati_festivi.nomi_turni_festivi(conn, dal, al))
 
     # --- statici ---
     app.mount("/static", StaticFiles(directory=STATIC_DIR, check_dir=False), name="static")

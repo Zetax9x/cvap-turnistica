@@ -118,7 +118,8 @@ function renderGiorni(d) {
       contenuto.push(el("div", { class: `riep-turno turno-${t.fascia}` },
         el("span", { class: "riep-orario" }, el("span", { "aria-hidden": "true" }, t.fascia === "notte" ? "☾ " : "☀ "), t.orario),
         el("span", { class: "riep-postazione" }, t.postazione),
-        el("span", { class: "riep-ruolo" }, t.ruolo)));
+        el("span", { class: "riep-ruolo" }, t.ruolo),
+        t.festivita ? el("span", { class: "riep-festivo" }, `Festivo: ${t.festivita}`) : null));
     }
     if (g.assenza) contenuto.push(badgeAssenza(g.assenza));
     if (g.indisponibile.length) {
@@ -154,6 +155,8 @@ function renderTotali(r) {
       voce("Ore totali", `${formatOre(r.ore_totali)} h`, "lavorate + 6 h per giorno di ferie o malattia"),
       voce("Turni nel weekend", String(w.sab_giorno + w.sab_notte + w.dom_giorno + w.dom_notte),
         `sab ${w.sab_giorno} G / ${w.sab_notte} N · dom ${w.dom_giorno} G / ${w.dom_notte} N`),
+      voce("Turni festivi", String(r.turni_festivi || 0),
+        (r.festivi || []).map((f) => `${f.festivita} ${f.turni}`).join(" · ") || null),
       voce("Giorni con indisponibilità", String(r.giorni_indisponibili))),
     r.postazioni.length ? el("table", { class: "tabella tabella-riep-postazioni" },
       el("caption", {}, "Turni per postazione"),
