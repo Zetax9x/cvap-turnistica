@@ -9,6 +9,7 @@ import secrets
 import sqlite3
 from datetime import date, timedelta
 
+from . import db_festivi_disponibili
 from .calendario import lunedi
 from .festivita import FESTIVITA_PREDEFINITE
 from .modello import (EXTRA, Assegnazione, Divieto, Fabbisogno, Persona, Postazione, fascia_extra,
@@ -351,8 +352,11 @@ INVARIATA = object()  # valore di `email` che lascia com'è quella salvata
 def aggiorna_persona(conn: sqlite3.Connection, persona_id: int, nome: str, tipo: str,
                      qualifica: str, attivo: bool, autista_programmati: bool | None = None,
                      email=INVARIATA) -> dict | None:
-    """`autista_programmati=None` e `email=INVARIATA` lasciano invariati i valori salvati."""
+    """`autista_programmati=None` e `email=INVARIATA` lasciano invariati i valori salvati. Se non è più un
+    dipendente attivo, le festività che voleva lavorare si tolgono nella stessa transazione."""
     with conn:
+        if not attivo or tipo != "dipendente":
+            db_festivi_disponibili.togli_persona(conn, persona_id)
         if email is not INVARIATA:
             conn.execute("UPDATE persone SET email = ? WHERE id = ?", (email, persona_id))
         if autista_programmati is None:
@@ -379,7 +383,7 @@ def elimina_persona(conn: sqlite3.Connection, persona_id: int) -> bool:
     if get_persona(conn, persona_id) is None:
         return False
     with conn:
-        conn.execute("DELETE FROM festivi_disponibili WHERE persona_id = ?", (persona_id,))
+        db_festivi_disponibili.togli_persona(conn, persona_id)
         usata = conn.execute(
             "SELECT 1 AS si FROM assegnazioni WHERE persona_id = ? UNION ALL "
             "SELECT 1 AS si FROM storico_festivi WHERE persona_id = ? UNION ALL "

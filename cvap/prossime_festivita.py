@@ -8,6 +8,7 @@ conto dei turni già fissati, oltre alle regole (riposi, ore, Ascoli) e ai posti
 """
 import calendar
 import sqlite3
+from dataclasses import replace
 from datetime import date, timedelta
 
 from . import dati_festivi, db, db_festivi_disponibili, db_festivita, db_storico_festivi
@@ -47,6 +48,31 @@ def _assenze(conn, dal: date, al: date):
     return assente
 
 
+def _solo_turni_festivi(festivita: list[dict], dati: dict) -> dict:
+    """Le settimane con i soli turni festivi (gli altri `conta_festivita` li scarta comunque), una volta sola invece
+    che a ogni riferimento. Una settimana senza turni festivi tiene un turno qualsiasi: resta "con turni" e quindi
+    continua a dare esposizione, come nel calcolo completo."""
+    settimane = dati["settimane"]
+    if not settimane:
+        return dati
+    mappa = turni_festivi(festivita, settimane[0].inizio - timedelta(days=1), settimane[-1].inizio + timedelta(days=6))
+    ridotte = []
+    for s in settimane:
+        festive = tuple(a for a in s.assegnazioni if (a.data, a.fascia) in mappa)
+        ridotte.append(replace(s, assegnazioni=festive or s.assegnazioni[:1]))
+    return {**dati, "settimane": ridotte}
+
+
+def _nel_periodo(dati: dict, riferimento: date) -> dict:
+    """I dati di `dati_conti` ristretti a quelli che possono contare per `riferimento` (stesso risultato di
+    `conta_festivita`, che filtra da sé, ma senza scorrere ogni volta tutto lo storico): settimane dal giorno prima
+    dell'inizio del periodo (la notte della sera prima) a `riferimento`, righe importate degli anni del periodo."""
+    dal = inizio_periodo(riferimento)
+    return {**dati,
+            "settimane": [s for s in dati["settimane"] if dal - timedelta(days=7) <= s.inizio < riferimento],
+            "importati": [r for r in dati["importati"] if dal.year <= r["anno"] <= riferimento.year]}
+
+
 def prossime(conn: sqlite3.Connection, oggi: date, mesi: int) -> list[dict]:
     """Le festività attive in [oggi, oggi + mesi), con i dipendenti attivi in ordine di precedenza a lavorarle."""
     festivita = db_festivita.festivita_attive(conn)
@@ -57,9 +83,10 @@ def prossime(conn: sqlite3.Connection, oggi: date, mesi: int) -> list[dict]:
     persone = {p["id"]: p for p in db.lista_persone(conn) if p["tipo"] == "dipendente" and p["attivo"]}
     nomi = {pid: p["nome"] for pid, p in persone.items()}
     riferimenti = sorted({lunedi(d) for d, _ in voci})
-    dati = dati_festivi.dati_conti(conn, inizio_periodo(riferimenti[0]), riferimenti[-1])
-    conti = {r: conta_festivita(festivita, r, **dati) for r in riferimenti}
-    disponibili = db_festivi_disponibili.per_giorno(conn, oggi, fine)
+    dati = _solo_turni_festivi(festivita, dati_festivi.dati_conti(conn, inizio_periodo(riferimenti[0]),
+                                                                  riferimenti[-1]))
+    conti = {r: conta_festivita(festivita, r, **_nel_periodo(dati, r)) for r in riferimenti}
+    disponibili = db_festivi_disponibili.per_giorno(conn, festivita, oggi, fine)
     assente = _assenze(conn, oggi - timedelta(days=1), fine)
     out = []
     for d, f in voci:
@@ -100,7 +127,8 @@ def lavorate_anno(conn: sqlite3.Connection, anno: int, oggi: date) -> dict:
 
     for r in db_storico_festivi.turni_anno(conn, anno):
         d = data_nell_anno(per_id[r["festivita_id"]], anno)
-        if d is not None and d < limite:
+        p = persone.get(r["persona_id"])
+        if d is not None and d < limite and p is not None and p["tipo"] == "dipendente":
             segna(r["festivita_id"], d, r["fascia"], r["persona_id"])
     if prima is not None:
         gruppo = [f for f in tutte if f["attiva"] or f["stata_attiva"]]

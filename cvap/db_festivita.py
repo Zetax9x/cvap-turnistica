@@ -2,6 +2,7 @@
 import sqlite3
 from datetime import date
 
+from . import db_festivi_disponibili
 from .db import _chiave_nome
 
 CAMPI = ("nome", "regola", "giorno", "mese", "offset_pasqua", "data", "conta_giorno", "conta_notte",
@@ -31,9 +32,13 @@ def lista_festivita(conn: sqlite3.Connection) -> list[dict]:
     return [_festivita_dict(r) for r in rows]
 
 
-def festivita_attive(conn: sqlite3.Connection) -> list[dict]:
+def _attive(conn) -> list[dict]:
     rows = conn.execute("SELECT * FROM festivita WHERE attiva = 1 ORDER BY id").fetchall()
     return [_festivita_dict(r) for r in rows]
+
+
+def festivita_attive(conn: sqlite3.Connection) -> list[dict]:
+    return _attive(conn)
 
 
 def get_festivita(conn: sqlite3.Connection, festivita_id: int) -> dict | None:
@@ -79,10 +84,15 @@ def aggiorna_festivita(conn: sqlite3.Connection, festivita_id: int, dati: dict) 
         cur = conn.execute(f"UPDATE festivita SET {', '.join(f'{k} = ?' for k in CAMPI)}, "
                            "stata_attiva = MAX(stata_attiva, ?) WHERE id = ?",
                            (*_valori(dati), int(dati["attiva"]), festivita_id))
+        # spostata, disattivata o con altri turni che contano: via chi voleva lavorare i giorni che non valgono più
+        db_festivi_disponibili.pulisci(conn, _attive(conn))
     return get_festivita(conn, festivita_id) if cur.rowcount else None
 
 
 def elimina_festivita(conn: sqlite3.Connection, festivita_id: int) -> bool:
     """Cancella solo le festività aggiunte a mano: le predefinite si possono solo disattivare."""
     with conn:
-        return conn.execute("DELETE FROM festivita WHERE id = ? AND chiave IS NULL", (festivita_id,)).rowcount > 0
+        cancellata = conn.execute("DELETE FROM festivita WHERE id = ? AND chiave IS NULL",
+                                  (festivita_id,)).rowcount > 0
+        db_festivi_disponibili.pulisci(conn, _attive(conn))
+    return cancellata

@@ -75,7 +75,7 @@ def festivi_per_generazione(conn: sqlite3.Connection, giorni: list[date],
         return FestiviSettimana()
     dipendenti = {p["id"] for p in db.lista_persone(conn) if p["tipo"] == "dipendente"}
     # la notte della domenica può essere la notte della sera prima di un lunedì festivo: un giorno in più
-    disponibili = db_festivi_disponibili.per_giorno(conn, giorni[0], giorni[-1] + timedelta(days=1))
+    disponibili = db_festivi_disponibili.per_giorno(conn, festivita, giorni[0], giorni[-1] + timedelta(days=1))
     return festivi_settimana(festivita, giorni, conti_festivita(conn, giorni[0], festivita), contesto, dipendenti,
                              disponibili)
 
@@ -83,7 +83,7 @@ def festivi_per_generazione(conn: sqlite3.Connection, giorni: list[date],
 def disponibili_settimana(conn: sqlite3.Connection, giorni: list[date]) -> list[dict]:
     """Per la griglia della settimana: [{data, fascia, persona_id}] dei turni festivi che qualcuno vuole lavorare."""
     festivita = db_festivita.festivita_attive(conn)
-    disponibili = db_festivi_disponibili.per_giorno(conn, giorni[0], giorni[-1] + timedelta(days=1))
+    disponibili = db_festivi_disponibili.per_giorno(conn, festivita, giorni[0], giorni[-1] + timedelta(days=1))
     if not festivita or not disponibili:
         return []
     return [{"data": g.isoformat(), "fascia": fascia, "persona_id": pid}
@@ -91,7 +91,7 @@ def disponibili_settimana(conn: sqlite3.Connection, giorni: list[date]) -> list[
             for pid in sorted(chi)]
 
 
-def _riferimento_statistiche(conn) -> date:
+def riferimento_statistiche(conn) -> date:
     """Fine del periodo delle statistiche: dopo l'ultima settimana salvata o l'ultimo turno, almeno domani."""
     riferimento = date.today() + timedelta(days=1)
     settimane = db.lista_settimane(conn)
@@ -106,7 +106,7 @@ def _riferimento_statistiche(conn) -> date:
 def _conti_statistiche(conn) -> list[tuple[dict, dict[int, ContoFestivita]]]:
     """(festività, conti per persona) per le attive e per le non più attive, ognuna calcolata a parte."""
     tutte = db_festivita.lista_festivita(conn)
-    riferimento = _riferimento_statistiche(conn)
+    riferimento = riferimento_statistiche(conn)
     nello_storico = {r["festivita_id"] for r in db_storico_festivi.tutti_i_turni(conn)}
     # non attive: solo quelle che lo sono state o che sono nello storico importato (non le predefinite mai usate)
     non_piu = [f for f in tutte if not f["attiva"] and (f["stata_attiva"] or f["id"] in nello_storico)]

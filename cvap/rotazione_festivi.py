@@ -25,7 +25,6 @@ ANNI_FESTIVI = 5
 # pesi del generatore (cvap/solver.py), qui perché li usa anche l'ordine di rotazione in anticipo
 P_FESTIVITA = 60             # x peso della festività, sul debito della festività
 P_STESSA_FESTIVITA = 500     # x peso: l'ha fatta l'anno prima (metà se due anni prima)
-FASCE_DISPONIBILE = ("giorno", "notte", "entrambi")  # chi vuole lavorare una festività (3.6)
 
 
 @dataclass(frozen=True)
@@ -81,8 +80,6 @@ def occorrenza(f: Mapping, giorno_turno: date, fascia: str) -> date:
     return giorno_turno + timedelta(days=1)
 
 
-_occorrenza = occorrenza
-
 
 def _conto(conti: dict, festivita_id: int, persona_id: int) -> ContoFestivita:
     return conti.setdefault(festivita_id, {}).setdefault(persona_id, ContoFestivita())
@@ -120,7 +117,7 @@ def _conta_programma(conti: Conti, festivita: list[Mapping], dal: date, al: date
             fid = mappa.get((a.data, a.fascia))
             if fid is None or (a.persona_id not in s.dipendenti and a.persona_id not in dipendenti_attivi):
                 continue
-            d = _occorrenza(per_id[fid], a.data, a.fascia)
+            d = occorrenza(per_id[fid], a.data, a.fascia)
             if dal <= d < al:
                 lavorati.setdefault((fid, d), set()).add(a.persona_id)
                 _conto(conti, fid, a.persona_id).lavorata(d.year)
@@ -210,11 +207,24 @@ def turni_disponibili(festivita: Iterable[Mapping], dal: date, al: date,
     per_id = {f["id"]: f for f in festivita}
     out: dict[tuple[date, str], frozenset[int]] = {}
     for (g, fascia), fid in turni_festivi(festivita, dal, al).items():
-        chi = disponibili.get(_occorrenza(per_id[fid], g, fascia), {})
+        chi = disponibili.get(occorrenza(per_id[fid], g, fascia), {})
         persone = frozenset(pid for pid, f in chi.items() if f in (fascia, "entrambi"))
         if persone:
             out[(g, fascia)] = persone
     return out
+
+
+def fasce_valide(festivita: Iterable[Mapping], d: date) -> frozenset[str]:
+    """Le fasce che si possono indicare come "vuole lavorare" nel giorno `d`, secondo i turni che contano per le
+    festività (attive) di quel giorno: "giorno" se conta il giorno, "notte" se conta la notte o la notte della sera
+    prima, "entrambi" solo se valgono tutte e due. Vuoto se `d` non è una festività."""
+    giorno = notte = False
+    for f in festivita:
+        if data_nell_anno(f, d.year) == d:
+            giorno = giorno or bool(f["conta_giorno"])
+            notte = notte or bool(f["conta_notte"] or f["conta_notte_prima"])
+    return frozenset([*(["giorno"] if giorno else []), *(["notte"] if notte else []),
+                      *(["entrambi"] if giorno and notte else [])])
 
 
 def festivi_settimana(festivita: Iterable[Mapping], giorni: list[date], conti: Mapping[int, dict[int, ContoFestivita]],
@@ -230,11 +240,11 @@ def festivi_settimana(festivita: Iterable[Mapping], giorni: list[date], conti: M
     vigilia = giorni[0] - timedelta(days=1)
     tutti = turni_festivi(festivita, vigilia, giorni[-1])
     turni = {t: fid for t, fid in tutti.items() if t[0] >= giorni[0]}
-    prima = {t: fid for t, fid in tutti.items() if t[0] == vigilia and _occorrenza(per_id[fid], *t) >= giorni[0]}
+    prima = {t: fid for t, fid in tutti.items() if t[0] == vigilia and occorrenza(per_id[fid], *t) >= giorni[0]}
     ids = set(turni.values()) | set(prima.values())
     anno: dict[int, int] = {}
     for (g, fascia), fid in sorted(prima.items()) + sorted(turni.items()):
-        anno.setdefault(fid, _occorrenza(per_id[fid], g, fascia).year)
+        anno.setdefault(fid, occorrenza(per_id[fid], g, fascia).year)
     dip = set(dipendenti)
     fuori: dict[int, dict[int, int]] = {}
     for a in contesto:

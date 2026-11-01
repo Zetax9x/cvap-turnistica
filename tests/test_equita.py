@@ -350,6 +350,25 @@ def test_festivita_anche_senza_settimane_generate():
     assert per_id(natale)[1]["scarto"] == 0.8 and natale["andamento"] == []
 
 
+def test_festivita_gruppo_come_il_generatore_dipendenti_attivi():
+    # Zeno, ex dipendente con 3 turni nello storico, non entra nel conto ma compare con il motivo; Dario,
+    # disattivato senza turni festivi, ha solo "non lavora più"; un attivo mai in servizio partecipa con 0 e 0
+    persone = PERSONE + [persona(99, "Zeno", attivo=False), persona(6, "Franco")]
+    d = per_id(equita(settimane_note(), persone, extra=[rotazione_festivita(NATALE, conti_natale())])["festivita_7"])
+    assert d[99]["partecipa"] is False and d[99]["motivo"] == "non lavora più, 3 turni nello storico"
+    assert d[4]["partecipa"] is False and d[4]["motivo"] == "non lavora più"
+    assert (d[6]["partecipa"], d[6]["fatti"], d[6]["quota"]) == (True, 0, 0)
+    assert d[1]["motivo"] is None
+    assert 5 not in d  # disattivata, senza turni né storico
+
+
+def test_festivita_senza_dati():
+    out = equita(settimane_note(), PERSONE, extra=[rotazione_festivita(NATALE, {}),
+                                                   rotazione_festivita({"id": 8, "nome": "Pasqua"}, conti_natale())])
+    assert out["festivita_7"]["con_dati"] is False and out["festivita_8"]["con_dati"] is True
+    assert out["standby"]["con_dati"] is True
+
+
 # --- API: festività -----------------------------------------------------------------------------------
 
 SETT_NATALE = date(2026, 12, 21)  # Natale 2026 è venerdì 25

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends
 from . import db, db_festivita
 from .api_comune import DATA_MAX, DATA_MIN, DataValida, errore
 from .calendario import lunedi
-from .dati_festivi import _riferimento_statistiche, conti_festivita
+from .dati_festivi import riferimento_statistiche, conti_festivita
 from .equita import Rotazione, equita, rotazione_festivita
 from .storico import SettimanaPassata, solo_generate
 
@@ -32,7 +32,7 @@ def rotazioni_festivita(conn, al: date | None) -> list[Rotazione]:
     festivita = db_festivita.festivita_attive(conn)
     if not festivita:
         return []
-    riferimento = _riferimento_statistiche(conn)
+    riferimento = riferimento_statistiche(conn)
     if al is not None:
         riferimento = min(riferimento, al + timedelta(days=1))
     conti = conti_festivita(conn, riferimento, festivita)

@@ -175,3 +175,15 @@ def test_storico_per_anno_importato_e_dal_programma(client):
     assert voce["giorno"] == [{"persona_id": luigi, "nome": "Luigi Bianchi"}]
     assert voce["notte"] == []  # i volontari non entrano nella rotazione
     assert client.get("/api/festivita/lavorate", params={"anno": 1999}).status_code == 422
+
+
+def test_storico_per_anno_importato_solo_dipendenti(client):
+    mario, luigi = crea(client, "Mario Rossi")["id"], crea(client, "Luigi Bianchi")["id"]
+    natale = attiva(client, "Natale")
+    assert salva(client, 2024, [turno(natale, mario), turno(natale, luigi)], [mario, luigi]).status_code == 200
+    # Luigi ora è un volontario: non entra nella rotazione e non compare
+    assert client.put(f"/api/persone/{luigi}", json={"nome": "Luigi Bianchi", "tipo": "volontario",
+                                                     "qualifica": "autista", "attivo": True}).status_code == 200
+    voce = next(f for f in client.get("/api/festivita/lavorate", params={"anno": 2024}).json()["festivita"]
+                if f["nome"] == "Natale")
+    assert voce["giorno"] == [{"persona_id": mario, "nome": "Mario Rossi"}]

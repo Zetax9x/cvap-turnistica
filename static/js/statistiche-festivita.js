@@ -110,34 +110,60 @@ function renderPersona(f, x, i) {
     el("td", {}, assenza ? el("span", { class: `badge ${assenza.classe}` }, assenza.testo) : "–"));
 }
 
-/** "Vuole lavorarla": un menu (a schermo) e il testo (in stampa). */
+/** Le scelte possibili quel giorno: solo i turni che contano (anche per un'altra festività dello stesso giorno). */
+function scelteValide(data) {
+  const stesso = stato.prossime.filter((f) => f.data === data);
+  const giorno = stesso.some((f) => f.conta_giorno);
+  const notte = stesso.some((f) => f.conta_notte || f.conta_notte_prima);
+  const valide = new Set(["", giorno ? "giorno" : null, notte ? "notte" : null, giorno && notte ? "entrambi" : null]);
+  return VOGLIA.filter(([v]) => valide.has(v));
+}
+
+function testoVoglia(v) {
+  return (VOGLIA.find(([k]) => k === (v || "")) || VOGLIA[0])[1];
+}
+
+/** "Vuole lavorarla": un menu (a schermo) e il testo (in stampa). Data e persona servono ad aggiornare insieme
+ *  le voci dello stesso giorno (due festività nello stesso giorno sono una sola indicazione). */
 function sceltaVoglia(f, x) {
-  const testo = (v) => (VOGLIA.find(([k]) => k === (v || "")) || VOGLIA[0])[1];
-  const stampa = el("span", { class: "solo-stampa voglia-stampa" }, testo(x.disponibile));
+  const dati = { data: f.data, persona: String(x.persona_id) };
+  const stampa = el("span", { class: "solo-stampa voglia-stampa", dataset: dati }, testoVoglia(x.disponibile));
   const menu = el("select", {
-    class: "no-print", "aria-label": `${x.nome} vuole lavorare ${f.nome}`,
-    onchange: (e) => salvaVoglia(f, x, e.currentTarget, stampa, testo),
-  }, VOGLIA.map(([v, t]) => el("option", { value: v, selected: v === (x.disponibile || "") }, t)));
+    class: "no-print voglia-menu", dataset: dati, "aria-label": `${x.nome} vuole lavorare ${f.nome}`,
+    onchange: (e) => salvaVoglia(f, x, e.currentTarget),
+  }, scelteValide(f.data).map(([v, t]) => el("option", { value: v, selected: v === (x.disponibile || "") }, t)));
   return el("span", {}, menu, stampa);
 }
 
-function salvaVoglia(f, x, menu, stampa, testo) {
-  const prima = x.disponibile || "";
+/** Aggiorna lo stato e la pagina per tutte le voci con quella data e quella persona. */
+function applicaVoglia(data, personaId, fascia) {
+  for (const f of stato.prossime) {
+    if (f.data !== data) continue;
+    for (const x of f.ordine) if (x.persona_id === personaId) x.disponibile = fascia;
+  }
+  const filtro = `[data-data="${data}"][data-persona="${personaId}"]`;
+  for (const m of stato.root.querySelectorAll(`select.voglia-menu${filtro}`)) m.value = fascia || "";
+  for (const t of stato.root.querySelectorAll(`.voglia-stampa${filtro}`)) t.textContent = testoVoglia(fascia);
+}
+
+function salvaVoglia(f, x, menu) {
+  const prima = x.disponibile || null;
   const fascia = menu.value || null;
-  menu.disabled = true;
+  applicaVoglia(f.data, x.persona_id, fascia);  // subito; si rimette com'era se il salvataggio non riesce
+  menu.setAttribute("aria-busy", "true");
   // uno alla volta, nell'ordine in cui si cambiano
   stato.salvataggi = stato.salvataggi.then(async () => {
     try {
       await api.impostaDisponibile({ data: f.data, persona_id: x.persona_id, fascia });
-      x.disponibile = fascia;
-      stampa.textContent = testo(fascia);
-      toast(fascia ? `${x.nome}: vuole lavorare ${f.nome} (${testo(fascia).toLowerCase()}).`
+      toast(fascia ? `${x.nome}: vuole lavorare ${f.nome} (${testoVoglia(fascia).toLowerCase()}).`
         : `${x.nome}: tolto “vuole lavorare” per ${f.nome}.`, "ok");
     } catch (err) {
-      menu.value = prima;
+      applicaVoglia(f.data, x.persona_id, prima);
       toastErrore(err);
     } finally {
-      menu.disabled = false;
+      menu.removeAttribute("aria-busy");
+      // il menu non si disabilita (perderebbe il focus); se il focus è andato perso, torna qui
+      if (menu.isConnected && (!document.activeElement || document.activeElement === document.body)) menu.focus();
     }
   });
 }
@@ -153,7 +179,7 @@ function renderLavorate() {
     el("div", { class: "filtri" },
       el("label", { for: id }, "Anno "),
       el("select", {
-        id, onchange: (e) => { stato.anno = Number(e.currentTarget.value); caricaAnno(); },
+        id, onchange: (e) => caricaAnno(Number(e.currentTarget.value), e.currentTarget),
       }, anni.map((a) => el("option", { value: String(a), selected: a === stato.anno }, String(a))))),
     el("p", { class: "hint" }, "Prima della prima settimana generata dal programma i dati vengono dallo Storico "
       + "festività (Impostazioni); dopo, dai turni del programma. Contano solo i dipendenti."));
@@ -177,17 +203,19 @@ function renderLavorate() {
   return sezione;
 }
 
-async function caricaAnno() {
+async function caricaAnno(anno, menuAnno) {
   const numero = nuovoCaricamento();
   try {
-    const dati = await api.festivitaLavorate(stato.anno);
+    const dati = await api.festivitaLavorate(anno);
     if (superato(numero)) return;
+    stato.anno = anno;  // solo se il caricamento riesce
     stato.lavorate = dati;
     render();
     const menu = stato.root.querySelector("#festivita-anno");
     if (menu) menu.focus();
   } catch (err) {
     if (superato(numero)) return;
+    if (menuAnno.isConnected) menuAnno.value = String(stato.anno);
     toastErrore(err);
   }
 }

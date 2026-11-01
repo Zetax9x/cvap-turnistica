@@ -416,17 +416,26 @@ festivi_disponibili(data TEXT NOT NULL, persona_id INTEGER NOT NULL REFERENCES p
                     fascia TEXT NOT NULL CHECK (fascia IN ('giorno', 'notte', 'entrambi')),
                     PRIMARY KEY (data, persona_id))
 ```
-Repository: `cvap/db_festivi_disponibili.py` (`elenco`, `per_giorno`, `imposta`). `DELETE /persone/{id}` toglie
-sempre le festività che la persona voleva lavorare, sia quando la cancella sia quando la disattiva soltanto (è una
-preferenza per il futuro, non storico).
+Repository: `cvap/db_festivi_disponibili.py` (`elenco`, `per_giorno`, `imposta`, `pulisci`, `togli_persona`).
+Fasce valide in un giorno (`rotazione_festivi.fasce_valide`, festività attive di quel giorno): "giorno" se conta il
+giorno, "notte" se conta la notte o la notte della sera prima, "entrambi" solo se valgono tutte e due.
+- **Righe che non valgono più** (scelta: si cancellano, e in più le letture filtrano): `PUT /festivita/{id}`
+  (spostata, disattivata, turni che contano cambiati) e `DELETE /festivita/{id}` cancellano, nella stessa
+  transazione, le righe di giorni che non sono più festività attive o con una fascia non più valida; riattivando la
+  festività non tornano. `DELETE /persone/{id}` (cancellata o solo disattivata) e `PUT /persone/{id}` che la rende
+  non attiva o non dipendente tolgono le sue righe nella stessa transazione (è una preferenza per il futuro, non
+  storico). Le letture (`GET /festivita/disponibili`, payload della settimana, generatore, ordine delle prossime
+  festività) restituiscono comunque solo righe di festività attive, con fascia valida e di dipendenti attivi.
 
 ### API
 - `GET /festivita/disponibili?dal=AAAA-MM-GG&al=AAAA-MM-GG` (entrambe obbligatorie, altrimenti 422) →
   `[{data, persona_id, nome, fascia}]` in ordine di data e nome. 400 se `al` è prima di `dal` o il periodo supera
   1098 giorni.
 - `PUT /festivita/disponibili` `{data, persona_id, fascia: "giorno"|"notte"|"entrambi"|null}` → `{data, persona_id,
-  fascia}`; `null` toglie (anche se non c'era). 404 persona inesistente; 400 se non è un dipendente o se quel giorno
-  non è una festività attiva; 422 fascia o data non valide.
+  fascia}`; `null` toglie (sempre permesso, anche se non c'era o il giorno è passato). 404 persona inesistente; 400 se
+  non è un dipendente attivo, se il giorno è passato (oggi del server: nel progetto non c'è una funzione "oggi"
+  comune), se non è una festività attiva o se quella festività non conta la fascia scelta; 422 fascia o data non
+  valide.
 - `GET /settimane/{data}` aggiunge `festivi_disponibili: [{data, fascia, persona_id}]`: i turni festivi della
   settimana (data di inizio del turno e fascia, solo i turni che contano) che qualcuno vuole lavorare. Nella finestra
   della cella l'elenco dei dipendenti segna "VUOLE LAVORARE".
@@ -451,7 +460,9 @@ Fase 8 di `docs/PIANO-rotazioni.md` (3.7). Modulo `cvap/prossime_festivita.py`; 
   festività attive in [oggi, oggi + mesi), in ordine di data; nell'ordine tutti i dipendenti attivi.
   - **Stesso calcolo del generatore**: conti con `rotazione_festivi.conta_festivita` sugli ultimi 5 anni fino al
     lunedì della settimana della festività (come quando la si genera), dati letti una volta da
-    `dati_festivi.dati_conti`; ordine con `rotazione_festivi.ordine_rotazione`: prima il costo di rotazione più basso
+    `dati_festivi.dati_conti` (poi, per ogni lunedì, solo i turni festivi delle settimane e le righe importate del suo
+    periodo: stesso risultato senza scorrere tutto lo storico; 24 mesi con 5 anni di settimane complete e 15
+    festività: da 0,48 a 0,39 s, il resto è la lettura dal database); ordine con `rotazione_festivi.ordine_rotazione`: prima il costo di rotazione più basso
     (`costo_festivita`, lo stesso del generatore: debito tra i dipendenti attivi più il supplemento per chi l'ha fatta
     l'anno prima o due anni prima), a parità chi non la fa da più tempo (mai prima), poi il nome. Con un solo posto e
     tutti idonei, il primo dell'ordine riceve il turno (test).
@@ -500,7 +511,10 @@ poi `festivita_<id>` per ogni festività attiva (in ordine di id):
 `{chiave, nome, unita ("ore"|"turni"), sopra, sotto (frasi per scarto positivo/negativo), fatti, quota (intestazioni),
 festivita (true per le festività), piu_avanti: {persona_id, nome, scarto}|null, piu_indietro: {...}|null,
 differenza (scarto massimo − minimo), tendenza: "si_riduce"|"aumenta"|"stabile"|null, andamento: [{settimana, differenza}], dipendenti: [{persona_id, nome,
-attivo, partecipa, fatti, quota, scarto}]}`.
+attivo, partecipa, motivo, fatti, quota, scarto}], con_dati}`. `motivo`: per le festività, perché non entra nel conto
+("non lavora più, N turni nello storico"), altrimenti `null`. `con_dati`: `false` per una festività che nessun
+dipendente attivo ha lavorato negli ultimi 5 anni (la pagina la nasconde e scrive "N festività senza dati nel
+periodo"); sempre `true` per le altre rotazioni.
 - `andamento`: un valore per settimana generata (al più 26, vedi sopra), con lo storico alla fine di quella settimana.
 - `tendenza`: l'ultimo punto dell'andamento rispetto alla media dei 4 punti prima (entro il 5% = stabile; `null` con
   un solo punto). A pari scarto, `piu_avanti`/`piu_indietro` è il primo in ordine di nome.
@@ -510,9 +524,10 @@ attivo, partecipa, fatti, quota, scarto}]}`.
   sui conti di `dati_festivi.conti_festivita` (route: `api_equita.rotazioni_festivita`):
   - stesso debito del generatore (`rotazione_festivi.debiti`): `fatti` = turni nella festività negli ultimi 5 anni
     (anni importati + programma, solo dipendenti), `quota` = tasso × esposizione, esposizione = volte in cui la
-    festività è caduta mentre era in servizio (anche in ferie o indisponibile; non in malattia). Partecipa chi ha
-    esposizione > 0 tra i dipendenti mostrati, anche senza settimane nel periodo (es. solo anni importati); il tasso
-    è calcolato tra loro (gli ex dipendenti non mostrati non entrano);
+    festività è caduta mentre era in servizio (anche in ferie o indisponibile; non in malattia). Partecipano i
+    **dipendenti attivi**, come nel generatore, anche senza settimane nel periodo (es. solo anni importati) e anche se
+    mai in servizio in quella festività (0 e 0); il tasso è calcolato tra loro. I disattivati (anche ex dipendenti
+    presenti solo nello storico, se vi hanno turni) compaiono tra chi non entra nel conto, con il motivo;
   - **periodo**: gli ultimi 5 anni fino alla fine del periodo, cioè fino al giorno dopo `al`, ma non oltre la fine
     usata dalle statistiche (dopo l'ultima settimana salvata o l'ultimo turno, almeno domani), così un `al` lontano
     nel futuro non sposta la finestra oltre i dati; senza `al`, quella delle statistiche (come la colonna Festivi).

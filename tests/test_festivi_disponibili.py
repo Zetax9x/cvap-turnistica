@@ -8,8 +8,8 @@ from datetime import date, timedelta
 
 os.environ.setdefault("CVAP_DB", ":memory:")  # l'app di modulo non deve creare data/turni.db
 
-from cvap import solver  # noqa: E402
-from cvap.rotazione_festivi import ContoFestivita, festivi_settimana, turni_disponibili  # noqa: E402
+from cvap import db, solver  # noqa: E402
+from cvap.rotazione_festivi import ContoFestivita, fasce_valide, festivi_settimana, turni_disponibili  # noqa: E402
 from cvap.solver import genera  # noqa: E402
 
 from . import test_api_festivi, test_api_storico_festivi  # noqa: E402
@@ -39,6 +39,14 @@ def test_turni_disponibili_notte_della_sera_prima_e_turni_che_non_contano():
     t = turni_disponibili([f], vigilia, D_NATALE, {D_NATALE: {1: "notte", 2: "giorno"}})
     # la notte della sera prima è una notte di Natale; il giorno non conta: chi vuole il giorno non ha turni
     assert t == {(vigilia, "notte"): frozenset({1}), (D_NATALE, "notte"): frozenset({1})}
+
+
+def test_fasce_valide_secondo_i_turni_che_contano():
+    assert fasce_valide([NATALE], D_NATALE) == {"giorno", "notte", "entrambi"}
+    assert fasce_valide([{**NATALE, "conta_notte": False}], D_NATALE) == {"giorno"}
+    assert fasce_valide([{**NATALE, "conta_giorno": False, "conta_notte": False, "conta_notte_prima": True}],
+                        D_NATALE) == {"notte"}
+    assert fasce_valide([NATALE], D_NATALE - timedelta(days=1)) == frozenset()
 
 
 def test_festivi_settimana_con_i_disponibili():
@@ -122,90 +130,209 @@ def test_i_disponibili_sono_preferiti_a_chi_tocca_per_rotazione(monkeypatch):
 
 
 # --- API ------------------------------------------------------------------------------------------------
+# date relative a oggi: le disponibilità si segnano solo per festività future
+
+def prossimo_natale() -> date:
+    oggi = date.today()
+    d = date(oggi.year, 12, 25)
+    return d if d >= oggi else date(oggi.year + 1, 12, 25)
+
+
+NAT = prossimo_natale()
+STEFANO = NAT + timedelta(days=1)
+LUN = NAT - timedelta(days=NAT.weekday())   # lunedì della settimana di Natale
+CAMPI_FESTIVITA = ("nome", "regola", "giorno", "mese", "offset_pasqua", "data", "conta_giorno", "conta_notte",
+                   "conta_notte_prima", "peso", "attiva")
+
 
 def metti(client, data, persona_id, fascia):
-    return client.put("/api/festivita/disponibili", json={"data": data, "persona_id": persona_id, "fascia": fascia})
+    return client.put("/api/festivita/disponibili", json={"data": str(data), "persona_id": persona_id,
+                                                          "fascia": fascia})
 
 
-def elenco(client, dal="2026-01-01", al="2027-12-31"):
-    r = client.get("/api/festivita/disponibili", params={"dal": dal, "al": al})
+def elenco(client, dal=None, al=None):
+    dal, al = dal or NAT - timedelta(days=30), al or NAT + timedelta(days=400)
+    r = client.get("/api/festivita/disponibili", params={"dal": str(dal), "al": str(al)})
     assert r.status_code == 200, r.text
     return r.json()
+
+
+def cambia_festivita(client, nome, **valori):
+    f = next(f for f in client.get("/api/festivita").json() if f["nome"] == nome)
+    r = client.put(f"/api/festivita/{f['id']}", json={**{k: f[k] for k in CAMPI_FESTIVITA}, **valori})
+    assert r.status_code == 200, r.text
 
 
 def test_segna_cambia_e_toglie_la_disponibilita(client):
     mario = crea(client, "Mario Rossi")["id"]
     attiva(client, "Natale")
-    r = metti(client, "2026-12-25", mario, "giorno")
+    r = metti(client, NAT, mario, "giorno")
     assert r.status_code == 200, r.text
-    assert r.json() == {"data": "2026-12-25", "persona_id": mario, "fascia": "giorno"}
-    assert elenco(client) == [{"data": "2026-12-25", "persona_id": mario, "nome": "Mario Rossi", "fascia": "giorno"}]
-    assert metti(client, "2026-12-25", mario, "entrambi").status_code == 200
+    assert r.json() == {"data": str(NAT), "persona_id": mario, "fascia": "giorno"}
+    assert elenco(client) == [{"data": str(NAT), "persona_id": mario, "nome": "Mario Rossi", "fascia": "giorno"}]
+    assert metti(client, NAT, mario, "entrambi").status_code == 200
     assert [x["fascia"] for x in elenco(client)] == ["entrambi"]
-    r = metti(client, "2026-12-25", mario, None)
+    r = metti(client, NAT, mario, None)
     assert r.status_code == 200 and r.json()["fascia"] is None
     assert elenco(client) == []
-    assert metti(client, "2026-12-25", mario, None).status_code == 200  # togliere due volte non è un errore
+    assert metti(client, NAT, mario, None).status_code == 200  # togliere due volte non è un errore
 
 
 def test_elenco_nel_periodo_in_ordine(client):
     mario, anna = crea(client, "Mario Rossi")["id"], crea(client, "Anna Verdi")["id"]
     attiva(client, "Natale")
     attiva(client, "Santo Stefano")
-    metti(client, "2026-12-26", mario, "notte")
-    metti(client, "2026-12-25", mario, "giorno")
-    metti(client, "2026-12-25", anna, "notte")
+    metti(client, STEFANO, mario, "notte")
+    metti(client, NAT, mario, "giorno")
+    metti(client, NAT, anna, "notte")
     assert [(x["data"], x["nome"]) for x in elenco(client)] == [
-        ("2026-12-25", "Anna Verdi"), ("2026-12-25", "Mario Rossi"), ("2026-12-26", "Mario Rossi")]
-    assert [x["data"] for x in elenco(client, "2026-12-26", "2026-12-31")] == ["2026-12-26"]
+        (str(NAT), "Anna Verdi"), (str(NAT), "Mario Rossi"), (str(STEFANO), "Mario Rossi")]
+    assert [x["data"] for x in elenco(client, STEFANO, STEFANO + timedelta(days=5))] == [str(STEFANO)]
 
 
 def test_validazioni(client):
     mario = crea(client, "Mario Rossi")["id"]
     vol = crea(client, "Vol", tipo="volontario")["id"]
-    assert metti(client, "2026-12-25", mario, "giorno").status_code == 400   # Natale non attivo
+    assert metti(client, NAT, mario, "giorno").status_code == 400   # Natale non attivo
     attiva(client, "Natale")
-    assert metti(client, "2026-12-23", mario, "giorno").status_code == 400   # non è una festività
-    assert metti(client, "2026-12-25", vol, "giorno").status_code == 400     # volontario
-    assert metti(client, "2026-12-25", 9999, "giorno").status_code == 404
-    assert metti(client, "2026-12-25", mario, "mattina").status_code == 422
+    assert metti(client, NAT - timedelta(days=2), mario, "giorno").status_code == 400   # non è una festività
+    assert metti(client, NAT, vol, "giorno").status_code == 400     # volontario
+    assert metti(client, NAT, 9999, "giorno").status_code == 404
+    assert metti(client, NAT, mario, "mattina").status_code == 422
     assert metti(client, "non-una-data", mario, "giorno").status_code == 422
     r = client.get("/api/festivita/disponibili", params={"dal": "2026-12-31", "al": "2026-01-01"})
     assert r.status_code == 400
     assert client.get("/api/festivita/disponibili").status_code == 422
 
 
+def test_rifiuta_festivita_passate_e_persone_non_attive(client):
+    mario = crea(client, "Mario Rossi")["id"]
+    attiva(client, "Natale")
+    passato = date(NAT.year - 1, 12, 25)  # Natale dell'anno scorso: già passato
+    assert metti(client, passato, mario, "giorno").status_code == 400
+    assert metti(client, passato, mario, None).status_code == 200  # togliere si può sempre
+    assert client.put(f"/api/persone/{mario}", json={"nome": "Mario Rossi", "tipo": "dipendente",
+                                                     "qualifica": "autista", "attivo": False}).status_code == 200
+    r = metti(client, NAT, mario, "giorno")
+    assert r.status_code == 400 and "non è attivo" in r.json()["detail"]
+
+
+def test_rifiuta_una_fascia_che_la_festivita_non_conta(client):
+    mario = crea(client, "Mario Rossi")["id"]
+    attiva(client, "Natale")
+    cambia_festivita(client, "Natale", conta_notte=False, attiva=True)   # conta solo il giorno
+    assert metti(client, NAT, mario, "notte").status_code == 400
+    assert metti(client, NAT, mario, "entrambi").status_code == 400
+    assert metti(client, NAT, mario, "giorno").status_code == 200
+    # la notte della sera prima vale come notte
+    cambia_festivita(client, "Natale", conta_giorno=False, conta_notte=False, conta_notte_prima=True, attiva=True)
+    assert metti(client, NAT, mario, "notte").status_code == 200
+    assert metti(client, NAT, mario, "giorno").status_code == 400
+
+
+def test_cambiare_o_togliere_la_festivita_cancella_le_disponibilita_che_non_valgono_piu(client):
+    mario, anna = crea(client, "Mario Rossi")["id"], crea(client, "Anna Verdi")["id"]
+    attiva(client, "Natale")
+    attiva(client, "Santo Stefano")
+    metti(client, NAT, mario, "giorno")
+    metti(client, NAT, anna, "notte")
+    metti(client, STEFANO, mario, "entrambi")
+    # Natale non conta più la notte: resta solo chi voleva il giorno
+    cambia_festivita(client, "Natale", conta_notte=False, attiva=True)
+    assert [(x["data"], x["persona_id"]) for x in elenco(client)] == [(str(NAT), mario), (str(STEFANO), mario)]
+    # Santo Stefano disattivato: le sue disponibilità si cancellano (riattivandolo non tornano)
+    cambia_festivita(client, "Santo Stefano", attiva=False)
+    cambia_festivita(client, "Santo Stefano", attiva=True)
+    assert [x["data"] for x in elenco(client)] == [str(NAT)]
+    # una festività aggiunta a mano e poi cancellata
+    altro = NAT + timedelta(days=10)
+    r = client.post("/api/festivita", json={"nome": "Festa del paese", "regola": "data", "data": str(altro),
+                                            "conta_giorno": True, "conta_notte": True, "conta_notte_prima": False,
+                                            "peso": 1, "attiva": True})
+    assert r.status_code == 201, r.text
+    metti(client, altro, anna, "giorno")
+    assert client.delete(f"/api/festivita/{r.json()['id']}").status_code == 204
+    assert [x["data"] for x in elenco(client)] == [str(NAT)]
+
+
+def test_le_letture_mostrano_solo_dipendenti_attivi_e_festivita_attive(client, cattura):
+    mario = crea(client, "Mario Rossi")["id"]
+    natale = attiva(client, "Natale")
+    metti(client, NAT, mario, "giorno")
+    conn = db.apri(client.percorso_db)
+    try:  # righe rimaste per qualunque motivo (es. scritte da una versione precedente)
+        with conn:
+            conn.execute("UPDATE festivita SET attiva = 0 WHERE id = ?", (natale,))
+    finally:
+        conn.close()
+    assert elenco(client) == []
+    attiva(client, "Natale")  # l'UPDATE diretto non ha pulito: riattivata, la riga torna valida
+    assert len(elenco(client)) == 1
+    conn = db.apri(client.percorso_db)
+    try:
+        with conn:
+            conn.execute("UPDATE persone SET attivo = 0 WHERE id = ?", (mario,))
+    finally:
+        conn.close()
+    assert elenco(client) == []
+    assert client.get(f"/api/settimane/{LUN}").json()["festivi_disponibili"] == []
+    assert client.post(f"/api/settimane/{LUN}/genera", json={}).status_code == 200
+    assert cattura[-1]["festivi"].disponibili == {}
+
+
+def test_smettere_di_essere_dipendente_attivo_toglie_le_disponibilita(client):
+    mario, anna = crea(client, "Mario Rossi")["id"], crea(client, "Anna Verdi")["id"]
+    attiva(client, "Natale")
+    metti(client, NAT, mario, "giorno")
+    metti(client, NAT, anna, "notte")
+    base = {"qualifica": "autista"}
+    assert client.put(f"/api/persone/{mario}", json={**base, "nome": "Mario Rossi", "tipo": "dipendente",
+                                                     "attivo": False}).status_code == 200
+    assert client.put(f"/api/persone/{anna}", json={**base, "nome": "Anna Verdi", "tipo": "volontario",
+                                                    "attivo": True}).status_code == 200
+    # riattivati, le indicazioni non tornano: erano state cancellate
+    for pid, nome in ((mario, "Mario Rossi"), (anna, "Anna Verdi")):
+        assert client.put(f"/api/persone/{pid}", json={**base, "nome": nome, "tipo": "dipendente",
+                                                       "attivo": True}).status_code == 200
+    assert elenco(client) == []
+
+
 def test_cancellare_una_persona_toglie_le_sue_disponibilita(client):
     mario, luigi = crea(client, "Mario Rossi")["id"], crea(client, "Luigi Bianchi")["id"]
     attiva(client, "Natale")
-    metti(client, "2026-12-25", mario, "giorno")
-    metti(client, "2026-12-25", luigi, "notte")
+    metti(client, NAT, mario, "giorno")
+    metti(client, NAT, luigi, "notte")
     # Luigi ha un turno: viene solo disattivato, ma la disponibilità si toglie comunque
-    assert client.post("/api/settimane/2026-12-21/assegnazioni", json={
-        "data": "2026-12-22", "postazione": "Acquasanta", "fascia": "giorno", "segmento": "intero",
+    assert client.post(f"/api/settimane/{LUN}/assegnazioni", json={
+        "data": str(LUN), "postazione": "Acquasanta", "fascia": "giorno", "segmento": "intero",
         "ruolo": "autista", "persona_id": luigi}).status_code == 201
     assert client.delete(f"/api/persone/{mario}").status_code == 204
     assert client.delete(f"/api/persone/{luigi}").status_code == 204
-    assert elenco(client) == []
+    conn = db.apri(client.percorso_db)
+    try:
+        assert conn.execute("SELECT COUNT(*) AS n FROM festivi_disponibili").fetchone()["n"] == 0
+    finally:
+        conn.close()
 
 
 def test_la_settimana_mostra_chi_vuole_lavorare(client):
     mario, anna = crea(client, "Mario Rossi")["id"], crea(client, "Anna Verdi")["id"]
     attiva(client, "Natale")
-    metti(client, "2026-12-25", mario, "entrambi")
-    metti(client, "2026-12-25", anna, "notte")
-    s = client.get("/api/settimane/2026-12-21").json()
-    assert sorted(s["festivi_disponibili"], key=lambda x: (x["fascia"], x["persona_id"])) == sorted([
-        {"data": "2026-12-25", "fascia": "giorno", "persona_id": mario},
-        {"data": "2026-12-25", "fascia": "notte", "persona_id": mario},
-        {"data": "2026-12-25", "fascia": "notte", "persona_id": anna},
-    ], key=lambda x: (x["fascia"], x["persona_id"]))
-    assert client.get("/api/settimane/2026-11-02").json()["festivi_disponibili"] == []
+    metti(client, NAT, mario, "entrambi")
+    metti(client, NAT, anna, "notte")
+    s = client.get(f"/api/settimane/{LUN}").json()
+    chiave = lambda x: (x["fascia"], x["persona_id"])  # noqa: E731
+    assert sorted(s["festivi_disponibili"], key=chiave) == sorted([
+        {"data": str(NAT), "fascia": "giorno", "persona_id": mario},
+        {"data": str(NAT), "fascia": "notte", "persona_id": mario},
+        {"data": str(NAT), "fascia": "notte", "persona_id": anna},
+    ], key=chiave)
+    assert client.get(f"/api/settimane/{LUN - timedelta(days=21)}").json()["festivi_disponibili"] == []
 
 
 def test_la_generazione_passa_i_disponibili(client, cattura):
     mario = crea(client, "Mario Rossi")["id"]
     attiva(client, "Natale")
-    metti(client, "2027-12-25", mario, "giorno")
-    assert client.post("/api/settimane/2027-12-20/genera", json={}).status_code == 200
-    assert cattura[-1]["festivi"].disponibili == {(date(2027, 12, 25), "giorno"): frozenset({mario})}
+    metti(client, NAT, mario, "giorno")
+    assert client.post(f"/api/settimane/{LUN}/genera", json={}).status_code == 200
+    assert cattura[-1]["festivi"].disponibili == {(NAT, "giorno"): frozenset({mario})}

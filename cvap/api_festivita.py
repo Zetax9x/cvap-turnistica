@@ -11,6 +11,7 @@ from . import db, db_festivi_disponibili, db_festivita, db_storico_festivi, pros
 from .api_comune import DataValida, Id, IdPath, Nome, errore
 from .festivita import OFFSET_PASQUA_MAX, PESO_MAX, PESO_MIN, anteprima, date_festive, errore_regola
 from .prossime_festivita import MESI_MAX, MESI_MIN
+from .rotazione_festivi import fasce_valide
 
 ANNO_MIN, ANNO_MAX = 2000, 2099
 FESTIVITA_AGGIUNTE_MAX = 100  # aggiunte a mano: bastano e avanzano, e il calendario resta leggibile
@@ -61,6 +62,25 @@ class FestivitaIn(BaseModel):
         return self.model_dump()
 
 
+def _controlla_disponibile(conn, p: dict, body: DisponibileIn) -> None:
+    """400 se la persona non è un dipendente attivo, il giorno è passato, non è una festività attiva o quella
+    festività non conta la fascia scelta ("entrambi" solo se contano sia il giorno sia la notte)."""
+    if p["tipo"] != "dipendente":
+        raise errore("Solo i dipendenti entrano nella rotazione delle festività")
+    if not p["attivo"]:
+        raise errore(f"{p['nome']} non è attivo: riattivalo in Personale")
+    if body.data < date.today():  # oggi del server, come nel resto delle API (non c'è una funzione comune)
+        raise errore("Quella festività è già passata")
+    festivita = db_festivita.festivita_attive(conn)
+    valide = fasce_valide(festivita, body.data)
+    if not valide:
+        raise errore("Quel giorno non è una festività a rotazione: attivala prima in Impostazioni")
+    if body.fascia not in valide:
+        nomi = {"giorno": "il giorno", "notte": "la notte", "entrambi": "sia il giorno sia la notte"}
+        raise errore(f"Per {date_festive(festivita, body.data.year)[body.data]} non conta {nomi[body.fascia]}: "
+                     "si possono scegliere solo i turni che contano nel calendario")
+
+
 def _con_anteprima(f: dict, anno: int) -> dict:
     return {**f, "anteprima": anteprima(f, anno)}
 
@@ -78,22 +98,21 @@ def crea_router(connessione: Callable) -> APIRouter:
             raise errore("La data di fine è prima di quella di inizio")
         if (al - dal).days > PERIODO_DISPONIBILI_MAX:
             raise errore(f"Il periodo può essere al massimo di {PERIODO_DISPONIBILI_MAX} giorni")
-        return db_festivi_disponibili.elenco(conn, dal, al)
+        return db_festivi_disponibili.elenco(conn, db_festivita.festivita_attive(conn), dal, al)
 
     @router.put("/api/festivita/disponibili")
     def imposta_disponibile(body: DisponibileIn, conn: Conn):
         p = db.get_persona(conn, body.persona_id)
         if p is None:
             raise HTTPException(404, "Persona non trovata")
-        if p["tipo"] != "dipendente":
-            raise errore("Solo i dipendenti entrano nella rotazione delle festività")
-        if body.data not in date_festive(db_festivita.festivita_attive(conn), body.data.year):
-            raise errore("Quel giorno non è una festività a rotazione: attivala prima in Impostazioni")
+        if body.fascia is not None:  # togliere si può sempre
+            _controlla_disponibile(conn, p, body)
         db_festivi_disponibili.imposta(conn, body.data, body.persona_id, body.fascia)
         return {"data": body.data.isoformat(), "persona_id": body.persona_id, "fascia": body.fascia}
 
     @router.get("/api/festivita/prossime")
     def prossime(conn: Conn, mesi: Annotated[int, Query(ge=MESI_MIN, le=MESI_MAX)] = 12):
+        # date.today(): l'oggi del server, come nel resto delle API (nel progetto non c'è una funzione comune)
         return prossime_festivita.prossime(conn, date.today(), mesi)
 
     @router.get("/api/festivita/lavorate")

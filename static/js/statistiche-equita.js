@@ -50,8 +50,9 @@ function render() {
       + "Fai clic su una riga per vedere tutti i dipendenti.")));
   root.append(renderPeriodo(), el("p", { class: "solo-stampa" }, `Periodo: ${descriviPeriodo()}`));
 
-  // senza settimane generate restano solo le festività con dati (anni importati)
-  const visibili = settimane.length ? rotazioni : rotazioni.filter((r) => r.festivita && r.piu_avanti);
+  // le festività senza dati si nascondono; senza settimane generate restano solo le festività con dati
+  const senzaDati = rotazioni.filter((r) => r.festivita && r.con_dati === false);
+  const visibili = rotazioni.filter((r) => (settimane.length || r.festivita) && !senzaDati.includes(r));
   if (!settimane.length) {
     root.append(el("p", { class: "muted" }, "Nessuna settimana con turni generati nel periodo scelto."));
     if (!visibili.length) return;
@@ -96,6 +97,10 @@ function render() {
     + "Weekend, Standby, Programmati e Assistenze: la parte attesa è in proporzione alle settimane lavorate; "
     + "per Ascoli alle settimane con Ascoli. Chi ha il divieto per una postazione non entra nel suo conto. "
     + "I volontari non compaiono."));
+  if (senzaDati.length) {
+    root.append(el("p", { class: "hint" }, `${senzaDati.length === 1 ? "1 festività" : `${senzaDati.length} festività`} `
+      + `senza dati nel periodo (nessun dipendente attivo l'ha lavorata negli ultimi 5 anni): ${senzaDati.map((r) => r.nome).join(", ")}.`));
+  }
   if (visibili.some((r) => r.festivita)) {
     root.append(el("p", { class: "hint" },
       "Festività: ognuna ha il suo conto, sugli ultimi 5 anni fino alla fine del periodo scelto (la data di inizio "
@@ -234,11 +239,10 @@ function renderDettaglio(r) {
     contenuto.push(el("p", { class: "muted" }, "Nessun dipendente ha ancora turni di questo tipo nel periodo."));
   }
   if (esclusi.length) {
-    const motivo = r.festivita
-      ? "mai in servizio in questa festività negli ultimi 5 anni"
-      : "divieto per la postazione o nessun turno o settimana di questo tipo nel periodo";
-    contenuto.push(el("p", { class: "hint" },
-      `Non entrano nel conto (${motivo}): ${esclusi.map((d) => d.nome).join(", ")}.`));
+    contenuto.push(el("p", { class: "hint" }, r.festivita
+      ? `Non entrano nel conto: ${esclusi.map((d) => (d.motivo ? `${d.nome} (${d.motivo})` : d.nome)).join(", ")}.`
+      : "Non entrano nel conto (divieto per la postazione o nessun turno o settimana di questo tipo nel periodo): "
+        + `${esclusi.map((d) => d.nome).join(", ")}.`));
   }
   return el("div", { class: "eq-dettaglio" }, contenuto);
 }

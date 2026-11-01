@@ -1367,7 +1367,7 @@ function renderFormAggiunta(c, mancanti) {
     }));
   const campoDip = el("div", { class: "campo campo-largo", hidden: true },
     el("label", { for: "cella-persona" }, "Dipendente"), select,
-    vuoleLavorare.size ? el("p", { class: "hint" },
+    dipendenti.some((p) => vuoleLavorare.has(p.id)) ? el("p", { class: "hint" },
       "“Vuole lavorare”: ha chiesto di lavorare questa festività (si segna in Statistiche → Festività).") : null,
     !dipendenti.length ? el("p", { class: "hint" }, c.ruolo === "autista"
       ? "Nessun dipendente attivo con qualifica autista."

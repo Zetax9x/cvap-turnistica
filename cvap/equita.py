@@ -46,9 +46,11 @@ class Rotazione:
     fatti: str = "Turni fatti"                 # intestazioni del dettaglio
     quota: str = "La sua parte"
     postazioni: tuple[str, ...] = ()           # un divieto per una di queste esclude dalla rotazione
-    # True: rotazione di una festività. `calcola` riceve tutti i dipendenti mostrati (anche senza settimane nel
-    # periodo: StoricoPersona o None) e decide da sé chi partecipa; niente andamento settimanale
+    # True: rotazione di una festività. Partecipano i dipendenti attivi, come nel generatore (anche senza settimane
+    # nel periodo: StoricoPersona o None); niente andamento settimanale
     festivita: bool = False
+    # festività: turni di una persona nello storico (per mostrare gli ex dipendenti esclusi e il motivo)
+    turni_storico: Callable[[int], int] | None = None
 
 
 def a_quota(chiave: str, nome: str, contatore: Callable[[StoricoPersona], int],
@@ -127,14 +129,17 @@ ROTAZIONI: tuple[Rotazione, ...] = (
 def rotazione_festivita(festivita: Mapping, conti: Mapping[int, ContoFestivita]) -> Rotazione:
     """La rotazione di una festività dai suoi conti per persona (`rotazione_festivi.conta_festivita`).
 
-    Partecipa chi è stato in servizio almeno una volta in quella festività negli ultimi anni (esposizione > 0);
-    il debito è `rotazione_festivi.debiti` tra loro, la stessa formula del generatore (che usa gli idonei della
-    settimana): quota = turni − debito = tasso × esposizione."""
+    Partecipano i dipendenti attivi (il gruppo lo sceglie `equita`), come nel generatore; il debito è
+    `rotazione_festivi.debiti` tra loro, la stessa formula: quota = turni − debito = tasso × esposizione (chi non è
+    mai stato in servizio in quella festività ha 0 e 0)."""
+    vuoto = ContoFestivita()
+
     def calcola(gruppo: dict[int, StoricoPersona | None]) -> dict[int, tuple[float, float]]:
-        validi = [pid for pid in gruppo if pid in conti and conti[pid].esposizione > 0]
-        return {pid: (conti[pid].turni, conti[pid].turni - d) for pid, d in debiti(conti, validi).items()}
+        return {pid: (conti.get(pid, vuoto).turni, conti.get(pid, vuoto).turni - d)
+                for pid, d in debiti(conti, list(gruppo)).items()}
     return Rotazione(f"festivita_{festivita['id']}", festivita["nome"], "turni", calcola,
-                     partecipa=lambda st: True, fatti=f"Turni negli ultimi {ANNI_FESTIVI} anni", festivita=True)
+                     partecipa=lambda st: True, fatti=f"Turni negli ultimi {ANNI_FESTIVI} anni", festivita=True,
+                     turni_storico=lambda pid: conti.get(pid, vuoto).turni)
 
 
 def _r(x: float) -> float:
@@ -211,13 +216,32 @@ def _estremo(dettaglio: list[dict], primo: bool) -> dict | None:
     return {"persona_id": d["persona_id"], "nome": d["nome"], "scarto": d["scarto"]}
 
 
-def _dettaglio(persone: list[dict], valori: dict[int, tuple[float, float]]) -> list[dict]:
+def _motivo(rot: Rotazione, p: dict) -> str | None:
+    """Perché un dipendente non entra nel conto di una festività (None per le altre rotazioni: testo generale)."""
+    if not rot.festivita or p["attivo"]:
+        return None
+    n = rot.turni_storico(p["id"]) if rot.turni_storico else 0
+    return "non lavora più" + (f", {n} {'turno' if n == 1 else 'turni'} nello storico" if n else "")
+
+
+def _mostrati(rot: Rotazione, scelti: list[dict], persone: Sequence[dict]) -> list[dict]:
+    """Festività: anche gli ex dipendenti con turni nello storico (non entrano nel conto, con il motivo)."""
+    if not rot.festivita or rot.turni_storico is None:
+        return scelti
+    ids = {p["id"] for p in scelti}
+    ex = [p for p in persone if p["tipo"] == "dipendente" and not p["attivo"] and p["id"] not in ids
+          and rot.turni_storico(p["id"])]
+    return sorted([*scelti, *ex], key=lambda p: (p["nome"].lower(), p["id"]))
+
+
+def _dettaglio(rot: Rotazione, persone: list[dict], valori: dict[int, tuple[float, float]]) -> list[dict]:
     out = []
     for p in persone:
         fatti_quota = valori.get(p["id"])
         f, q = fatti_quota if fatti_quota else (None, None)
         out.append({"persona_id": p["id"], "nome": p["nome"], "attivo": bool(p["attivo"]),
                     "partecipa": fatti_quota is not None,
+                    "motivo": None if fatti_quota is not None else _motivo(rot, p),
                     "fatti": None if f is None else _r(f), "quota": None if q is None else _r(q),
                     "scarto": None if f is None else _r(f - q)})
     # chi partecipa per primo, dallo scarto più alto; a pari scarto in ordine di nome (già ordinati)
@@ -234,9 +258,10 @@ def equita(settimane: Sequence[tuple[date, SettimanaPassata]], persone: Sequence
     `persone`: dict con id, nome, tipo, qualifica, autista_programmati, attivo (i volontari si scartano).
     `vietate`: per id, le postazioni vietate per intero (divieto senza tipo di turno). `extra`: rotazioni in più
     (le festività, vedi il commento del modulo: senza andamento, calcolate anche senza settimane generate).
-    Restituisce `{chiave: {nome, unita, sopra, sotto, fatti, quota, festivita, piu_avanti, piu_indietro, differenza,
-    tendenza, andamento: [{settimana, differenza}], dipendenti: [{persona_id, nome, attivo, partecipa, fatti,
-    quota, scarto}]}}` nell'ordine del registro."""
+    Restituisce `{chiave: {nome, unita, sopra, sotto, fatti, quota, festivita, con_dati, piu_avanti, piu_indietro,
+    differenza, tendenza, andamento: [{settimana, differenza}], dipendenti: [{persona_id, nome, attivo, partecipa,
+    motivo, fatti, quota, scarto}]}}` nell'ordine del registro. `con_dati`: False per una festività senza turni né
+    quota per nessuno (la pagina la nasconde); sempre True per le altre rotazioni."""
     vietate = vietate or {}
     ordinate = sorted(settimane, key=lambda x: x[0])
     generate = [i for i, (_, s) in enumerate(ordinate) if solo_generate([s])]
@@ -253,15 +278,19 @@ def equita(settimane: Sequence[tuple[date, SettimanaPassata]], persone: Sequence
     storici = [(ordinate[i][0], calcola_storico([s for _, s in ordinate[:i + 1]])) for i in punti]
     out = {}
     for rot in (*ROTAZIONI, *extra):
+        mostrati = _mostrati(rot, scelti, persone)
         esclusi = _esclusi(rot, scelti, vietate, ruoli)
+        if rot.festivita:  # come il generatore: solo i dipendenti attivi
+            esclusi |= {p["id"] for p in mostrati if not p["attivo"]}
         andamento = [] if rot.festivita else [
             {"settimana": inizio.isoformat(), "differenza": _differenza(_valori(rot, st, ids, esclusi))}
             for inizio, st in storici]
-        valori = _valori(rot, storici[-1][1] if storici else {}, ids, esclusi)
-        dettaglio = _dettaglio(scelti, valori)
+        valori = _valori(rot, storici[-1][1] if storici else {}, [p["id"] for p in mostrati], esclusi)
+        dettaglio = _dettaglio(rot, mostrati, valori)
         out[rot.chiave] = {
             "nome": rot.nome, "unita": rot.unita, "sopra": rot.sopra, "sotto": rot.sotto,
             "fatti": rot.fatti, "quota": rot.quota, "festivita": rot.festivita,
+            "con_dati": not rot.festivita or any(f or q for f, q in valori.values()),
             "piu_avanti": _estremo(dettaglio, primo=True), "piu_indietro": _estremo(dettaglio, primo=False),
             "differenza": _differenza(valori), "tendenza": _tendenza([p["differenza"] for p in andamento]),
             "andamento": andamento, "dipendenti": dettaglio,
