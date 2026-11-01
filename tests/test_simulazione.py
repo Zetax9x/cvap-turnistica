@@ -1,10 +1,11 @@
 import html
+from datetime import date
 
 import pytest
 
 from cvap import rotazione_festivi, solver
-from cvap.simulazione import (DIPENDENTI_FESTIVI, pesi_temporanei, report_html, riassunto, simula, simula_festivi,
-                              storico_sintetico, worker_limitati)
+from cvap.simulazione import (DIPENDENTI_FESTIVI, pesi_temporanei, primo_anno_festivo, report_html, riassunto,
+                              settimane_festive, simula, simula_festivi, storico_sintetico, worker_limitati)
 
 
 def test_simulazione_di_una_settimana_produce_il_report():
@@ -56,33 +57,45 @@ def test_la_simulazione_usa_al_massimo_i_worker_indicati(monkeypatch):
     assert solver.genera is finto
 
 
+def test_le_festivita_si_simulano_sempre_nel_futuro():
+    # "vuole lavorare" si può segnare solo per le festività non ancora passate: si parte dal primo Natale la cui
+    # prima settimana (lunedì della settimana del 24/12) è dopo oggi
+    assert primo_anno_festivo(date(2026, 11, 2)) == 2026
+    assert primo_anno_festivo(date(2026, 12, 20)) == 2026
+    assert primo_anno_festivo(date(2026, 12, 21)) == 2027  # la settimana di Natale 2026 è già cominciata
+    assert primo_anno_festivo(date(2027, 3, 1)) == 2027
+    assert settimane_festive(2026) == [date(2026, 12, 21), date(2026, 12, 28)]
+    assert settimane_festive(2028) == [date(2028, 12, 18), date(2028, 12, 25), date(2029, 1, 1)]
+
+
 def test_simulazione_delle_festivita_con_lo_storico_importato():
     esito = simula_festivi(anni=1, tempo=3, worker=2)
+    anno = primo_anno_festivo(date.today())
     nomi = {n for n, _ in DIPENDENTI_FESTIVI}
     assert len(nomi) == 17
     # le settimane con i turni di Natale (anche la notte della Vigilia), Santo Stefano e Capodanno
-    assert [s.inizio for s in esito.settimane] == ["2026-12-21", "2026-12-28"]
+    assert [s.inizio for s in esito.settimane] == [d.isoformat() for d in settimane_festive(anno)]
     assert all(s.stato in ("ottimo", "ammissibile") for s in esito.settimane)
-    assert {(f.nome, f.anno) for f in esito.festivi} == {("Natale", 2026), ("Santo Stefano", 2026),
-                                                         ("Capodanno", 2027)}
+    assert {(f.nome, f.anno) for f in esito.festivi} == {("Natale", anno), ("Santo Stefano", anno),
+                                                         ("Capodanno", anno + 1)}
     # lo storico sintetico degli anni passati è entrato nel programma: le statistiche (ultimi 5 anni, Natale dal
-    # 2022 al 2026) contano gli stessi turni di Natale della simulazione, importati compresi
-    assert "Autista 1" in esito.lavorate[("Natale", 2025)]
+    # anno − 4 all'anno simulato) contano gli stessi turni di Natale della simulazione, importati compresi
+    assert "Autista 1" in esito.lavorate[("Natale", anno - 1)]
     stat = {r["nome"]: r for r in esito.statistiche}
     natale = {v["festivita"]: v for v in stat["Autista 1"]["festivi"]["per_festivita"]}["Natale"]
-    assert natale["turni"] == sum(esito.lavorate.get(("Natale", a), {}).get("Autista 1", 0) for a in range(2022, 2027))
+    assert natale["turni"] == sum(esito.lavorate.get(("Natale", a), {}).get("Autista 1", 0) for a in range(anno - 4, anno + 1))
     assert natale["turni"] >= 4
     for f in esito.festivi:
         assert sum(f.turni.values()) > 0 and set(f.turni) <= nomi
         prima = esito.lavorate.get((f.nome, f.anno - 1), {})
         assert f.ripetute == sum(n for nome, n in f.turni.items() if nome in prima)
         assert f.lavorate_da == len(f.turni)
-    natale_2026 = next(f for f in esito.festivi if f.nome == "Natale")
-    assert natale_2026.disponibili[1] == 1  # chi vuole lavorare il giorno di Natale
+    natale_sim = next(f for f in esito.festivi if f.nome == "Natale")
+    assert natale_sim.disponibili[1] == 1  # chi vuole lavorare il giorno di Natale
     assert all(isinstance(s.doppi_festivi, int) for s in esito.settimane)
     assert set(esito.divario) == {"Natale", "Santo Stefano", "Capodanno"}
     r = riassunto(esito)
     assert {"scoperti", "differenza_ore_max", "divario_ore", "ripetute", "doppi_festivi", "divario_festivita",
             "disponibili"} <= set(r)
     pagina = html.unescape(report_html([esito]))
-    assert "Natale 2026" in pagina and "Ripetute dall'anno prima" in pagina
+    assert f"Natale {anno}" in pagina and "Ripetute dall'anno prima" in pagina
