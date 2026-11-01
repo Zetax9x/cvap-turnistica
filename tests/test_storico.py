@@ -70,8 +70,17 @@ def test_conta_i_turni_standby_e_programmati():
          ass(GIORNI[2], "Programmati", "giorno", "soccorritore", 2, segmento="prog_mattina"),
          ass(GIORNI[3], "Acquasanta", "giorno", "autista", 2)]
     s = calcola_storico([SettimanaPassata(media_ore=0, dipendenti=[1, 2], assegnazioni=a)])
-    assert s[1].richieste == {"Standby": 2, "Programmati": 0}
-    assert s[2].richieste == {"Standby": 0, "Programmati": 1}
+    assert s[1].richieste == {"Standby": 2, "Programmati": 0, "Assistenze ed Extra": 0}
+    assert s[2].richieste == {"Standby": 0, "Programmati": 1, "Assistenze ed Extra": 0}
+
+
+def test_conta_i_turni_di_assistenze_ed_extra_qualunque_sia_la_durata():
+    a = [ass(GIORNI[1], "Assistenze ed Extra", "giorno", "autista", 1, segmento="extra_1_9_13"),
+         ass(GIORNI[3], "Assistenze ed Extra", "giorno", "autista", 1, segmento="extra_2_8_20"),
+         ass(GIORNI[3], "Assistenze ed Extra", "notte", "soccorritore", 2, segmento="extra_3_22_26")]
+    s = calcola_storico([SettimanaPassata(media_ore=0, dipendenti=[1, 2], assegnazioni=a)])
+    assert s[1].richieste["Assistenze ed Extra"] == 2
+    assert s[2].richieste["Assistenze ed Extra"] == 1
 
 
 def test_con_un_massimo_di_ore_il_saldo_si_misura_dal_massimo():

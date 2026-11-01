@@ -211,3 +211,47 @@ def test_massimo_di_richieste_per_settimana(client, monkeypatch):
     assert nuova(client, LUNEDI_B).status_code == 201
     r = nuova(client, LUNEDI_B)
     assert r.status_code == 400 and "massimo" in r.json()["detail"].lower()
+
+
+# --- rotazione nel tempo -----------------------------------------------------------------
+
+def _extra_per_persona(r):
+    conta = {}
+    for a in r.assegnazioni:
+        if a.postazione == EXTRA:
+            conta[a.persona_id] = conta.get(a.persona_id, 0) + 1
+    return conta
+
+
+def test_chi_ha_fatto_piu_assistenze_in_passato_ne_fa_meno():
+    from cvap.solver import StoricoPersona
+    persone = staff(8, 8)
+    storico = {p.id: StoricoPersona(settimane=10, richieste={EXTRA: 3}) for p in persone}
+    for pid in (1, 2, 3, 4):
+        storico[pid] = StoricoPersona(settimane=10, richieste={EXTRA: 20})
+    richieste = [f for i, d in enumerate(GIORNI[:4]) for f in richiesta(d, i + 1, 9, 13, autisti=1)]
+    r = genera(GIORNI, ["Acquasanta", "Venarotta"], persone, fabbisogno=richieste, storico=storico, tempo_max=15)
+    assert not [u for u in r.scoperti if u.postazione == EXTRA]
+    assert not set(_extra_per_persona(r)) & {1, 2, 3, 4}
+
+
+def test_chi_non_puo_fare_le_assistenze_non_entra_nella_rotazione():
+    from cvap.modello import Divieto
+    from cvap.solver import StoricoPersona
+    persone = staff(8, 8)
+    persone[0] = Persona(1, "Autista 1", "dipendente", "autista", divieti=(Divieto(EXTRA, None),))
+    storico = {p.id: StoricoPersona(settimane=10, richieste={EXTRA: 3}) for p in persone}
+    storico[1] = StoricoPersona(settimane=10)  # mai fatte, ma non può farle
+    storico[2] = StoricoPersona(settimane=10, richieste={EXTRA: 20})
+    richieste = richiesta(MARTEDI, 1, 9, 13, autisti=1)
+    r = genera(GIORNI, ["Acquasanta", "Venarotta"], persone, fabbisogno=richieste, storico=storico, tempo_max=15)
+    assert not [u for u in r.scoperti if u.postazione == EXTRA]
+    assert not set(_extra_per_persona(r)) & {1, 2}
+
+
+def test_nessuno_fa_due_assistenze_nella_stessa_settimana_se_si_puo_evitare():
+    persone = staff(8, 8)
+    richieste = [f for i, d in enumerate(GIORNI) for f in richiesta(d, i + 1, 9, 13, autisti=1)]
+    r = genera(GIORNI, ["Acquasanta", "Venarotta"], persone, fabbisogno=richieste, tempo_max=20)
+    assert not [u for u in r.scoperti if u.postazione == EXTRA]
+    assert max(_extra_per_persona(r).values()) == 1
