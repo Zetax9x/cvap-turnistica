@@ -40,8 +40,9 @@ Le tre nuove rotazioni usano lo stesso meccanismo, cambiando solo **cosa si cont
 ## 1. Ascoli a rotazione
 
 **Comportamento atteso:** nel tempo ogni dipendente fa una quota simile di turni ad Ascoli, rispetto alle settimane B
-in cui era in servizio. Chi finora ne ha fatti di più ne riceve meno, e viceversa. Le regole settimanali restano
-come sono e hanno la precedenza.
+in cui era in servizio, e ad Ascoli fa **tanti giorni quante notti**. Chi finora ne ha fatti di più ne riceve meno,
+e viceversa; chi ad Ascoli ha fatto più giorni riceve più notti, e viceversa. Le regole settimanali restano come sono
+e hanno la precedenza.
 
 ### Dati
 
@@ -49,7 +50,9 @@ come sono e hanno la precedenza.
 - `StoricoPersona.settimane_ascoli: int`: settimane in cui Ascoli era attiva e la persona era presente
   (non in ferie tutta la settimana). Una settimana conta se contiene almeno un turno ad Ascoli: così non dipende
   dalla data di riferimento A/B, che può cambiare.
-- `calcola_storico` aggiorna i due contatori, nelle stesse settimane che contano già per gli altri.
+- `StoricoPersona.ascoli_giorno: int` e `StoricoPersona.ascoli_notte: int`: gli stessi turni divisi per fascia
+  (`ascoli = ascoli_giorno + ascoli_notte`).
+- `calcola_storico` aggiorna i contatori, nelle stesse settimane che contano già per gli altri.
 - **Decisione:** lo storico di Ascoli parte dalla **prima settimana generata**; nessuna importazione di dati passati.
 
 ### Generatore
@@ -68,21 +71,26 @@ come sono e hanno la precedenza.
   quella categoria: chi ha il divieto per Ascoli, è in ferie, ecc. non paga e non sposta il tasso.
 - Peso: `P_ASCOLI_STORICO = 30` (come weekend e Standby). Resta molto sotto le regole settimanali di Ascoli
   (`P_ASCOLI_GIORNO_NOTTE = 2000`, `P_TERZO_ASCOLI = 1.000.000`), che quindi continuano a prevalere.
-- Ancora da decidere (domanda aperta A): anche **giorno/notte ad Ascoli nel tempo** (contatori `ascoli_giorno` e
-  `ascoli_notte`), oltre all'alternanza nella settimana.
+- **Decisione: equilibrare anche giorni e notti ad Ascoli nel tempo**, oltre all'alternanza nella settimana.
+  Per ogni dipendente si minimizza `|(ascoli_giorno − ascoli_notte) dello storico + (giorni − notti) ad Ascoli della
+  settimana|`, con peso `P_ASCOLI_GN_STORICO = 100` per ogni turno di differenza. Anche mezzo turno conta 1.
+  Resta sotto l'alternanza settimanale (`P_ASCOLI_GIORNO_NOTTE = 2000`): prima si alterna nella settimana, poi si
+  recupera lo squilibrio accumulato.
 
 ### Dove si vede
 
-- Statistiche: colonna **Ascoli** (pagina, stampa, riepilogo via email). Il riepilogo per dipendente mostra già i turni per postazione.
-- `GET /api/statistiche`: campo `ascoli`.
+- Statistiche: colonna **Ascoli** con turni totali e giorni / notti (pagina, stampa, riepilogo via email).
+  Il riepilogo per dipendente mostra già i turni per postazione.
+- `GET /api/statistiche`: campo `ascoli: {turni, giorno, notte}`.
 
 ### Test (prima rossi, poi verdi, come negli altri commit)
 
 - `calcola_storico` conta i turni ad Ascoli (anche mezzi) e le settimane con Ascoli dei soli presenti.
 - A parità di tutto, chi ha più turni ad Ascoli nello storico ne riceve meno.
 - Chi ha il divieto per Ascoli non entra nel tasso.
+- A parità di tutto, chi ad Ascoli ha fatto più giorni che notti nello storico riceve una notte, e viceversa.
 - Le regole settimanali (max 2, mai di fila, alternanza) restano rispettate anche con uno storico molto sbilanciato.
-- Statistiche: campo `ascoli` per i dipendenti; per i volontari solo il totale.
+- Statistiche: campo `ascoli` (turni, giorno, notte) per i dipendenti; per i volontari solo i totali.
 
 ---
 
@@ -99,8 +107,8 @@ non *se* si coprono.
 - **Decisione:** si contano i **turni**, come per Standby e Programmati: ogni turno di Assistenze vale 1, qualunque
   sia la durata (da 1 a 24 ore). L'equilibrio delle ore c'è già.
 - **Decisione:** lo storico parte dalla **prima settimana generata**; nessuna importazione di dati passati.
-- Penalità per il secondo turno di Assistenze nella stessa settimana: proposta sì, per allargare la rotazione
-  (domanda aperta B).
+- **Decisione:** si evita di dare **due Assistenze alla stessa persona nella stessa settimana**: penalità
+  `P_DOPPIA_RICHIESTA` per ogni turno di Assistenze oltre il primo, come per Standby e Programmati.
 
 ### Dove si vede
 
@@ -110,6 +118,7 @@ non *se* si coprono.
 
 - Lo storico conta i turni di Assistenze ed Extra.
 - Chi ne ha fatti di più nello storico ne riceve meno; chi non può farli (ruolo, divieto, ferie) non entra nel tasso.
+- Quando possibile, nessuno riceve due turni di Assistenze nella stessa settimana.
 - La priorità di copertura non cambia: se manca personale restano scoperte per prime le Assistenze.
 
 ---
@@ -117,12 +126,10 @@ non *se* si coprono.
 ## 3. Festività a rotazione
 
 **Comportamento atteso:** il responsabile sceglie in Impostazioni le festività che contano. I turni in quelle
-festività vengono distribuiti a rotazione:
-
-- nel **totale**: negli ultimi 5 anni ognuno fa una quota simile di turni festivi, pesati secondo l'importanza
-  della festività scelta nel calendario;
-- nella **singola festività**: chi ha lavorato a Natale l'anno scorso, quest'anno a Natale ha la precedenza per
-  restare a casa.
+festività vengono distribuiti a rotazione **festività per festività** (decisione): per ogni festività, chi
+l'ha lavorata più volte negli ultimi 5 anni, o l'ha lavorata l'anno scorso, ha la precedenza per restare a casa.
+Esempio: chi ha fatto Natale l'anno scorso quest'anno a Natale lascia il posto a chi non lo fa da più tempo.
+Non si fa un conteggio unico di tutte le festività: aver lavorato a Ferragosto non dispensa da Natale.
 
 Lo storico comprende anche gli anni passati, inseriti a mano o importati da un file.
 
@@ -143,8 +150,9 @@ Nuova scheda **"Festività a rotazione"** nelle Impostazioni:
 
   Predefinito: giorno e notte del giorno stesso. Volendo, la Vigilia si spunta come festività a sé.
 - **Peso** (decisione: si sceglie dal calendario, festività per festività): **1 = normale**, **2 = importante**,
-  **3 = molto importante**; predefinito 1. Un turno in una festività di peso 3 conta come tre turni festivi
-  normali, sia nel totale sia nella rotazione della singola festività (punto 3.3).
+  **3 = molto importante**; predefinito 1. Il peso dice quanto conta rispettare la rotazione di quella festività
+  rispetto alle altre preferenze: con peso 3 il programma evita molto di più di far rifare la festività a chi l'ha
+  già fatta (punto 3.3).
 - **Anteprima** delle date dell'anno in corso e del prossimo, con Pasqua e Pasquetta calcolate.
 - Nella **griglia della settimana** e nella **stampa** i giorni festivi sono evidenziati con il nome della festività.
 
@@ -204,26 +212,29 @@ Due modi per inserirli, nella nuova pagina **Impostazioni → Storico festività
 
 - **Periodo considerato** (decisione): le festività degli **ultimi 5 anni** prima della settimana da generare
   (costante `ANNI_FESTIVI = 5`, facile da cambiare).
-- **Punti festivi:** ogni turno festivo vale quanto il **peso** della sua festività (1, 2 o 3). Si contano i punti,
-  non i turni, così le festività importanti pesano di più nella rotazione.
-- **Esposizione** di un dipendente = punti festivi "possibili" nel periodo considerato in cui era in servizio
-  (somma dei pesi delle festività):
-  - anni importati: le festività di quell'anno, se era nell'elenco di chi era in servizio;
-  - settimane del programma: le festività in cui era tra i dipendenti della settimana e non in ferie.
-- **Totale equo:** debito = punti festivi fatti (anni importati + programma) + punti già fissati − tasso × esposizione.
-  Un turno in una festività di peso `w` costa `P_FESTIVI × (2 × w × debito + w²)`: è il costo marginale di
-  `(debito + w × c)²`, quindi più la festività pesa, più conta chi l'ha già fatta.
-- **Rotazione della singola festività:** chi ha lavorato **la stessa festività l'anno prima** paga
-  `P_STESSA_FESTIVITA × w` per rifarla (metà se l'ha fatta due anni prima).
+- **Rotazione festività per festività** (decisione): ogni festività è una categoria a sé, con il meccanismo del debito.
+  Non c'è un conteggio unico di tutte le festività. Per la festività `f`, di peso `w`, e il dipendente `p`:
+  - **esposizione** = quante volte, nel periodo considerato, la festività `f` è caduta mentre `p` era in servizio:
+    negli anni importati se era nell'elenco di chi era in servizio, nelle settimane del programma se era tra i
+    dipendenti della settimana e non in ferie;
+  - **tasso** = turni fatti in `f` da tutti ÷ esposizione di tutti, tra i dipendenti idonei quella settimana;
+  - **debito** = turni fatti in `f` (anni importati + programma) + turni già fissati in `f` − tasso × esposizione;
+  - ogni turno in `f` costa `P_FESTIVITA × w × (2 × debito + 1)`: chi ha fatto quella festività più del dovuto
+    paga di più, e il peso rende la rotazione più forte.
+- **Chi l'ha fatta di recente:** chi ha lavorato **la stessa festività l'anno prima** paga in più
+  `P_STESSA_FESTIVITA × w` per rifarla (metà se l'ha fatta due anni prima). Così la rotazione guarda sia a quante
+  volte l'ha fatta in 5 anni sia a quando.
 - **Non più di un turno festivo a testa nella stessa settimana** (es. Natale + Santo Stefano):
-  penalità `P_DOPPIO_FESTIVO`, come per i weekend.
-- **Festivo di domenica:** proposta: conta sia come weekend sia come festivo (domanda aperta D).
+  penalità `P_DOPPIO_FESTIVO`, come per i weekend. È una regola a parte: distribuisce i festivi vicini tra persone
+  diverse, senza fare un conteggio totale nel tempo.
+- **Festivo di domenica** (decisione): conta **sia come weekend sia come festivo**. Il turno entra nella rotazione
+  dei weekend (domenica giorno o domenica notte) e in quella della festività.
 - **Volontari:** i turni festivi coperti dai volontari non entrano nella rotazione (contano solo i turni dei dipendenti).
 - Pesi di partenza, da tarare con la simulazione:
 
   | Penalità | Proposta | Confronto con quelle esistenti |
   |---|---|---|
-  | `P_FESTIVI` | 60 per punto, sul debito | il doppio dei weekend (30): i festivi pesano di più |
+  | `P_FESTIVITA` | 60 × peso, sul debito della festività | da 60 a 180: oltre il doppio dei weekend (30) |
   | `P_STESSA_FESTIVITA` | 500 × peso | da 500 a 1.500: sopra il doppio weekend (300), sotto i tre di fila (5.000) |
   | `P_DOPPIO_FESTIVO` | 300 | come il doppio weekend |
 
@@ -234,8 +245,9 @@ Due modi per inserirli, nella nuova pagina **Impostazioni → Storico festività
 
 ### 3.4 Dove si vede
 
-- Statistiche: colonna **Festivi** con turni e punti negli ultimi 5 anni e il dettaglio per festività, anche nel
-  riepilogo via email; `GET /api/statistiche`: campo `festivi: {turni, punti, per_festivita}`.
+- Statistiche: colonna **Festivi** con i turni degli ultimi 5 anni per ogni festività (e l'ultimo anno in cui
+  l'ha fatta), anche nel riepilogo via email; `GET /api/statistiche`: campo
+  `festivi: {per_festivita: [{festivita, turni, ultimo_anno}]}`.
 - Riepilogo per dipendente: turni festivi del periodo.
 - Pagina **Storico festività**: per ogni anno chi ha lavorato ogni festività, importato o dal programma.
 
@@ -248,8 +260,11 @@ Due modi per inserirli, nella nuova pagina **Impostazioni → Storico festività
 - Importazione: abbinamento dei nomi, righe non abbinate, righe dopo la prima settimana generata ignorate,
   nessun effetto su ore e statistiche delle settimane.
 - Storico: contano solo le festività degli ultimi 5 anni.
-- Generatore: a parità di tutto, chi ha fatto Natale l'anno scorso non lo rifà; chi ha più punti festivi ne riceve
-  meno; una festività di peso 3 conta come tre di peso 1; al massimo un festivo a testa nella settimana quando possibile.
+- Generatore: a parità di tutto, chi ha fatto Natale l'anno scorso non lo rifà; per ogni festività chi l'ha fatta
+  più volte negli ultimi 5 anni ne riceve meno; aver fatto un'altra festività non cambia la rotazione di Natale;
+  con peso più alto la rotazione prevale su preferenze che a peso 1 la batterebbero; al massimo un festivo a testa
+  nella settimana quando possibile.
+- Festivo di domenica: il turno conta sia nei weekend sia nella festività.
 
 ---
 
@@ -258,8 +273,8 @@ Due modi per inserirli, nella nuova pagina **Impostazioni → Storico festività
 Ogni fase è un commit di test (rossi) seguito da un commit di implementazione (verdi), come nella storia del progetto.
 
 1. **Refactor** di `_richieste` in `_rotazioni` con la tabella delle categorie, senza cambiare il comportamento.
-2. **Ascoli a rotazione** + colonna nelle statistiche.
-3. **Assistenze ed Extra a rotazione** + colonna nelle statistiche.
+2. **Ascoli a rotazione**, numero di turni e giorni/notti, + colonna nelle statistiche.
+3. **Assistenze ed Extra a rotazione**, senza doppioni nella settimana, + colonna nelle statistiche.
 4. **Calendario delle festività**: database, API, scheda Impostazioni con turni che contano e peso, giorni
    evidenziati in griglia e stampa (ancora senza effetto sul generatore).
 5. **Storico festività**: tabelle, pagina di inserimento a mano, importazione da file.
@@ -271,9 +286,7 @@ Le fasi 1–3 sono piccole e indipendenti dalle festività: si possono rilasciar
 
 ---
 
-## 5. Decisioni e domande aperte
-
-### Decisioni prese
+## 5. Decisioni prese
 
 | Domanda | Decisione |
 |---|---|
@@ -282,13 +295,12 @@ Le fasi 1–3 sono piccole e indipendenti dalle festività: si possono rilasciar
 | Quanti anni considerare per le festività? | **5 anni** |
 | Festività più importanti? | **Peso scelto dal calendario**, per ogni festività: 1 normale, 2 importante, 3 molto importante |
 | Storico di Ascoli e Assistenze | **Si parte dalla prima settimana generata**, senza dati passati |
+| Ascoli: anche giorni e notti nel tempo? | **Sì, si equilibra tutto**: numero di turni e giorni/notti ad Ascoli |
+| Assistenze: due nella stessa settimana alla stessa persona? | **Si evitano** |
+| Rotazione delle festività | **Festività per festività**: niente conteggio unico di tutte le festività |
+| Festivo di domenica | **Conta sia come weekend sia come festivo** |
 
-### Ancora aperte (se non indicato diversamente, si applica la proposta)
-
-- **A. Ascoli:** oltre al numero di turni, equilibrare nel tempo anche giorni e notti ad Ascoli? (proposta: no, per ora basta l'alternanza nella settimana)
-- **B. Assistenze:** evitare due Assistenze alla stessa persona nella stessa settimana? (proposta: sì)
-- **C. Rotazione delle festività:** sia sul totale sia sulla singola festività? (proposta: sì, entrambe)
-- **D. Festivo di domenica:** conta sia come weekend sia come festivo? (proposta: sì)
+Non restano domande aperte.
 
 ## 6. Cosa mi serve per lo storico delle festività
 
