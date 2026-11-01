@@ -1331,6 +1331,9 @@ function renderFormAggiunta(c, mancanti) {
   const inFerie = new Map((s.ferie || []).filter((x) => x.data === c.data).map((x) => [x.persona_id, x.motivo]));
   // indisponibile solo se la sua indisponibilità tocca le ore di questo turno
   const indisponibili = giorniPersona(s.indisponibilita, c.data, partiTurno(c.fascia, segmentoCella(c)));
+  // festività: chi ha detto che vuole lavorare questo turno (giorno o notte della festività)
+  const vuoleLavorare = new Set((s.festivi_disponibili || [])
+    .filter((x) => x.data === c.data && x.fascia === c.fascia).map((x) => x.persona_id));
   const prog = c.postazione === PROGRAMMATI;  // "autista programmati" vale solo qui
   // l'autista può fare anche il soccorritore; nei Programmati guida anche chi ha "autista programmati"
   const puoRicoprire = (p) => c.ruolo === "soccorritore" || p.qualifica === "autista"
@@ -1356,7 +1359,7 @@ function renderFormAggiunta(c, mancanti) {
     el("option", { value: "" }, "— Seleziona —"),
     dipendenti.map((p) => {
       const ore = oreSettimana.get(p.id);
-      const extra = [inFerie.has(p.id) ? (inFerie.get(p.id) === "malattia" ? "IN MALATTIA" : "IN FERIE") : null, indisponibili.has(p.id) ? "INDISPONIBILE" : null,
+      const extra = [vuoleLavorare.has(p.id) ? "VUOLE LAVORARE" : null, inFerie.has(p.id) ? (inFerie.get(p.id) === "malattia" ? "IN MALATTIA" : "IN FERIE") : null, indisponibili.has(p.id) ? "INDISPONIBILE" : null,
         vietato(p.id, c.postazione, c.fascia, segmentoCella(c)) ? "NON PUÒ" : null,
         p.qualifica === "autista" ? "autista" : (prog && p.autista_programmati ? "autista programmati" : null), ore ? `${formatOre(ore)} h` : null, giaInCella.has(p.id) ? "già qui" : null]
         .filter(Boolean).join(", ");
@@ -1364,6 +1367,8 @@ function renderFormAggiunta(c, mancanti) {
     }));
   const campoDip = el("div", { class: "campo campo-largo", hidden: true },
     el("label", { for: "cella-persona" }, "Dipendente"), select,
+    vuoleLavorare.size ? el("p", { class: "hint" },
+      "“Vuole lavorare”: ha chiesto di lavorare questa festività (si segna in Statistiche → Festività).") : null,
     !dipendenti.length ? el("p", { class: "hint" }, c.ruolo === "autista"
       ? "Nessun dipendente attivo con qualifica autista."
       : "Nessun dipendente attivo. Aggiungilo nella sezione Personale.") : null,

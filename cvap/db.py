@@ -145,6 +145,12 @@ CREATE TABLE IF NOT EXISTS storico_festivi_servizio (  -- chi era in servizio qu
     persona_id INTEGER NOT NULL REFERENCES persone(id),
     PRIMARY KEY (anno, persona_id)
 );
+CREATE TABLE IF NOT EXISTS festivi_disponibili (  -- chi vuole lavorare una festività (cvap/db_festivi_disponibili.py)
+    data TEXT NOT NULL,  -- giorno della festività
+    persona_id INTEGER NOT NULL REFERENCES persone(id),
+    fascia TEXT NOT NULL CHECK (fascia IN ('giorno', 'notte', 'entrambi')),
+    PRIMARY KEY (data, persona_id)
+);
 """
 
 _POSTAZIONI_SEED = (("Acquasanta", 0, 1), ("Venarotta", 0, 2), ("Ascoli", 1, 3))
@@ -367,10 +373,13 @@ def imposta_max_ore(conn: sqlite3.Connection, persona_id: int, max_ore: int | No
 
 
 def elimina_persona(conn: sqlite3.Connection, persona_id: int) -> bool:
-    """Elimina la persona; se ha assegnazioni o è nello storico delle festività la disattiva soltanto."""
+    """Elimina la persona; se ha assegnazioni o è nello storico delle festività la disattiva soltanto.
+
+    In entrambi i casi toglie le festività che voleva lavorare: è una preferenza per il futuro, non storico."""
     if get_persona(conn, persona_id) is None:
         return False
     with conn:
+        conn.execute("DELETE FROM festivi_disponibili WHERE persona_id = ?", (persona_id,))
         usata = conn.execute(
             "SELECT 1 AS si FROM assegnazioni WHERE persona_id = ? UNION ALL "
             "SELECT 1 AS si FROM storico_festivi WHERE persona_id = ? UNION ALL "

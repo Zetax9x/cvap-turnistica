@@ -7,12 +7,20 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field, model_validator
 
-from . import db_festivita, db_storico_festivi
-from .api_comune import DataValida, IdPath, Nome, errore
-from .festivita import OFFSET_PASQUA_MAX, PESO_MAX, PESO_MIN, anteprima, errore_regola
+from . import db, db_festivi_disponibili, db_festivita, db_storico_festivi
+from .api_comune import DataValida, Id, IdPath, Nome, errore
+from .festivita import OFFSET_PASQUA_MAX, PESO_MAX, PESO_MIN, anteprima, date_festive, errore_regola
 
 ANNO_MIN, ANNO_MAX = 2000, 2099
 FESTIVITA_AGGIUNTE_MAX = 100  # aggiunte a mano: bastano e avanzano, e il calendario resta leggibile
+PERIODO_DISPONIBILI_MAX = 3 * 366  # giorni
+
+
+class DisponibileIn(BaseModel):
+    """Chi vuole lavorare una festività: fascia None toglie l'indicazione."""
+    data: DataValida
+    persona_id: Id
+    fascia: Literal["giorno", "notte", "entrambi"] | None
 # campi che non servono alla regola: azzerati, così l'interfaccia può mandare il modulo intero
 _NON_PERTINENTI = {"fissa": ("offset_pasqua", "data"), "pasqua": ("giorno", "mese", "data"),
                    "data": ("giorno", "mese", "offset_pasqua")}
@@ -61,7 +69,27 @@ def crea_router(connessione: Callable) -> APIRouter:
     router = APIRouter()
     Conn = Annotated[sqlite3.Connection, Depends(connessione)]
 
-    # nelle fasi successive (es. /api/festivita/prossime) dichiarare i percorsi fissi PRIMA di quelli con {id}
+    # i percorsi fissi (/api/festivita/disponibili, /prossime, /lavorate) vanno dichiarati PRIMA di quelli con {id}
+
+    @router.get("/api/festivita/disponibili")
+    def disponibili(conn: Conn, dal: DataValida, al: DataValida):
+        if al < dal:
+            raise errore("La data di fine è prima di quella di inizio")
+        if (al - dal).days > PERIODO_DISPONIBILI_MAX:
+            raise errore(f"Il periodo può essere al massimo di {PERIODO_DISPONIBILI_MAX} giorni")
+        return db_festivi_disponibili.elenco(conn, dal, al)
+
+    @router.put("/api/festivita/disponibili")
+    def imposta_disponibile(body: DisponibileIn, conn: Conn):
+        p = db.get_persona(conn, body.persona_id)
+        if p is None:
+            raise HTTPException(404, "Persona non trovata")
+        if p["tipo"] != "dipendente":
+            raise errore("Solo i dipendenti entrano nella rotazione delle festività")
+        if body.data not in date_festive(db_festivita.festivita_attive(conn), body.data.year):
+            raise errore("Quel giorno non è una festività a rotazione: attivala prima in Impostazioni")
+        db_festivi_disponibili.imposta(conn, body.data, body.persona_id, body.fascia)
+        return {"data": body.data.isoformat(), "persona_id": body.persona_id, "fascia": body.fascia}
 
     @router.get("/api/festivita")
     def lista(conn: Conn, anno: Annotated[int | None, Query(ge=ANNO_MIN, le=ANNO_MAX)] = None):

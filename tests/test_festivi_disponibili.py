@@ -6,19 +6,19 @@ Modulo puro (turni di chi è disponibile), generatore con modelli piccoli che il
 import os
 from datetime import date, timedelta
 
-import pytest
-
 os.environ.setdefault("CVAP_DB", ":memory:")  # l'app di modulo non deve creare data/turni.db
 
-from cvap import db, solver  # noqa: E402
+from cvap import solver  # noqa: E402
 from cvap.rotazione_festivi import ContoFestivita, festivi_settimana, turni_disponibili  # noqa: E402
 from cvap.solver import genera  # noqa: E402
 
-from .test_api_festivi import cattura  # noqa: E402,F401  (fixture)
-from .test_api_storico_festivi import attiva, client, crea  # noqa: E402,F401  (client è una fixture)
+from . import test_api_festivi, test_api_storico_festivi  # noqa: E402
+from .test_api_storico_festivi import attiva, crea  # noqa: E402
 from .test_festivita import fest  # noqa: E402
 from .test_solver_festivi import DA_MARTEDI, PERSONE, SEDE, chi_lavora, conti, per_gruppo  # noqa: E402
 
+client = test_api_storico_festivi.client    # fixture (sqlite e libsql)
+cattura = test_api_festivi.cattura          # fixture: argomenti passati al generatore
 NATALE = fest(13, "Natale", giorno=25, mese=12)
 D_NATALE = date(2026, 12, 25)
 GIORNO_NATALE = {(D_NATALE, "giorno")}
@@ -91,7 +91,7 @@ def test_le_regole_restano_valide_ferie():
     assert 1 not in chi_lavora(r, GIORNO_NATALE | NOTTE_NATALE)
 
 
-def test_tra_piu_disponibili_decide_la_rotazione(monkeypatch):
+def test_tra_piu_disponibili_decide_la_rotazione():
     # gli autisti 1 e 2 vogliono il giorno di Natale; 1 l'ha fatto molte volte e l'anno scorso: tocca a 2
     c = conti(POCHE, p1=MOLTE)
     r = genera_con({1: "giorno", 2: "giorno"}, c)
@@ -203,7 +203,7 @@ def test_la_settimana_mostra_chi_vuole_lavorare(client):
     assert client.get("/api/settimane/2026-11-02").json()["festivi_disponibili"] == []
 
 
-def test_la_generazione_passa_i_disponibili(client, cattura):  # noqa: F811
+def test_la_generazione_passa_i_disponibili(client, cattura):
     mario = crea(client, "Mario Rossi")["id"]
     attiva(client, "Natale")
     metti(client, "2027-12-25", mario, "giorno")

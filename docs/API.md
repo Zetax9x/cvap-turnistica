@@ -396,6 +396,41 @@ debito; non c'è un conteggio unico di tutte le festività.
   persone hanno più di un turno festivo (contando la notte della sera prima fatta la settimana precedente). La pagina
   lo mostra in parole semplici nel riquadro dell'esito.
 
+## Chi vuole lavorare una festività
+
+Fase 7 di `docs/PIANO-rotazioni.md` (3.6). Si segna per giorno della festività e dipendente: giorno, notte o entrambi
+(la notte della sera prima conta come notte della festività, se è spuntata nel calendario).
+
+### Database
+```
+festivi_disponibili(data TEXT NOT NULL, persona_id INTEGER NOT NULL REFERENCES persone(id),
+                    fascia TEXT NOT NULL CHECK (fascia IN ('giorno', 'notte', 'entrambi')),
+                    PRIMARY KEY (data, persona_id))
+```
+Repository: `cvap/db_festivi_disponibili.py` (`elenco`, `per_giorno`, `imposta`). `DELETE /persone/{id}` toglie
+sempre le festività che la persona voleva lavorare, sia quando la cancella sia quando la disattiva soltanto (è una
+preferenza per il futuro, non storico).
+
+### API
+- `GET /festivita/disponibili?dal=AAAA-MM-GG&al=AAAA-MM-GG` (entrambe obbligatorie, altrimenti 422) →
+  `[{data, persona_id, nome, fascia}]` in ordine di data e nome. 400 se `al` è prima di `dal` o il periodo supera
+  1098 giorni.
+- `PUT /festivita/disponibili` `{data, persona_id, fascia: "giorno"|"notte"|"entrambi"|null}` → `{data, persona_id,
+  fascia}`; `null` toglie (anche se non c'era). 404 persona inesistente; 400 se non è un dipendente o se quel giorno
+  non è una festività attiva; 422 fascia o data non valide.
+- `GET /settimane/{data}` aggiunge `festivi_disponibili: [{data, fascia, persona_id}]`: i turni festivi della
+  settimana (data di inizio del turno e fascia, solo i turni che contano) che qualcuno vuole lavorare. Nella finestra
+  della cella l'elenco dei dipendenti segna "VUOLE LAVORARE".
+
+### Generatore
+- `FestiviSettimana.disponibili: {(giorno, fascia): frozenset(persone)}` (`rotazione_festivi.turni_disponibili`),
+  riempito da `dati_festivi.festivi_per_generazione`.
+- Ogni turno festivo assegnato a chi lo vuole lavorare riceve lo sconto `P_DISPONIBILE_FESTIVO` (−3.000, × numero di
+  dipendenti come gli altri termini): più forte della rotazione (che arriva a ~1.000-2.000 a peso 3), sotto i tre di
+  fila (5.000) e molto sotto copertura, ore e regole di Ascoli. Tutte le regole restano valide (riposi, ferie,
+  qualifica…). Tra più disponibili decide la rotazione (lo sconto è uguale per tutti). Il conteggio della rotazione
+  non cambia: i turni lavorati volentieri contano come gli altri.
+
 ## Quadro dell'equità (Statistiche → Equità)
 
 `GET /statistiche/equita?dal=AAAA-MM-GG&al=AAAA-MM-GG` (entrambe facoltative; 400 se `dal` > `al`, 422 se una data

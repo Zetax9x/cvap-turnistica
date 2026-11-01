@@ -353,6 +353,7 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
         "postazioni": attive,
         "postazioni_a_richiesta": _a_richiesta(tipo),
         "festivi": festivi_periodo(db_festivita.festivita_attive(conn), giorni[0], giorni[-1]),
+        "festivi_disponibili": dati_festivi.disponibili_settimana(conn, giorni),
         "extra": [{**e, "fine": e["fine"] % 24} for e in db.extra_periodo(conn, giorni[0], giorni[-1])],
         "fabbisogno": [{"data": f.data.isoformat(), "postazione": f.postazione, "fascia": f.fascia,
                         "segmento": f.segmento, "ruolo": f.ruolo, "quantita": f.quantita} for f in fabbisogno],

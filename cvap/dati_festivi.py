@@ -7,12 +7,12 @@ from collections import defaultdict
 from collections.abc import Iterable
 from datetime import date, timedelta
 
-from . import db, db_festivita, db_storico_festivi
+from . import db, db_festivi_disponibili, db_festivita, db_storico_festivi
 from .calendario import lunedi
 from .festivita import turni_festivi
 from .modello import Assegnazione
 from .rotazione_festivi import (ContoFestivita, FestiviSettimana, SettimanaProgramma, conta_festivita,
-                                festivi_settimana, inizio_periodo)
+                                festivi_settimana, inizio_periodo, turni_disponibili)
 from .storico_festivi import limite_storico
 
 
@@ -69,7 +69,21 @@ def festivi_per_generazione(conn: sqlite3.Connection, giorni: list[date],
     if not turni_festivi(festivita, giorni[0], giorni[-1]):
         return FestiviSettimana()
     dipendenti = {p["id"] for p in db.lista_persone(conn) if p["tipo"] == "dipendente"}
-    return festivi_settimana(festivita, giorni, conti_festivita(conn, giorni[0], festivita), contesto, dipendenti)
+    # la notte della domenica può essere la notte della sera prima di un lunedì festivo: un giorno in più
+    disponibili = db_festivi_disponibili.per_giorno(conn, giorni[0], giorni[-1] + timedelta(days=1))
+    return festivi_settimana(festivita, giorni, conti_festivita(conn, giorni[0], festivita), contesto, dipendenti,
+                             disponibili)
+
+
+def disponibili_settimana(conn: sqlite3.Connection, giorni: list[date]) -> list[dict]:
+    """Per la griglia della settimana: [{data, fascia, persona_id}] dei turni festivi che qualcuno vuole lavorare."""
+    festivita = db_festivita.festivita_attive(conn)
+    disponibili = db_festivi_disponibili.per_giorno(conn, giorni[0], giorni[-1] + timedelta(days=1))
+    if not festivita or not disponibili:
+        return []
+    return [{"data": g.isoformat(), "fascia": fascia, "persona_id": pid}
+            for (g, fascia), chi in turni_disponibili(festivita, giorni[0], giorni[-1], disponibili).items()
+            for pid in sorted(chi)]
 
 
 def _riferimento_statistiche(conn) -> date:

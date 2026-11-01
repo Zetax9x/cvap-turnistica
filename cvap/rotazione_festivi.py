@@ -22,6 +22,10 @@ from .festivita import turni_di, data_nell_anno, occorrenze, turni_festivi
 from .modello import Assegnazione
 
 ANNI_FESTIVI = 5
+# pesi del generatore (cvap/solver.py), qui perché li usa anche l'ordine di rotazione in anticipo
+P_FESTIVITA = 60             # x peso della festività, sul debito della festività
+P_STESSA_FESTIVITA = 500     # x peso: l'ha fatta l'anno prima (metà se due anni prima)
+FASCE_DISPONIBILE = ("giorno", "notte", "entrambi")  # chi vuole lavorare una festività (3.6)
 
 
 @dataclass(frozen=True)
@@ -54,6 +58,8 @@ class FestiviSettimana:
     # turni delle festività della settimana fatti prima del lunedì (la notte della sera prima di un lunedì
     # festivo è nella settimana precedente): id -> persona -> turni; contano come già fissati
     fuori_settimana: dict[int, dict[int, int]] = field(default_factory=dict)
+    # chi vuole lavorare ogni turno festivo: (giorno, fascia) -> dipendenti; sconto nel generatore (3.6)
+    disponibili: dict[tuple[date, str], frozenset[int]] = field(default_factory=dict)
 
 
 Conti = dict[int, dict[int, ContoFestivita]]
@@ -168,12 +174,54 @@ def conta_festivita(festivita: Iterable[Mapping], riferimento: date, *, limite: 
     return conti
 
 
+def costo_festivita(debito: float, peso: int, anno: int, ultimo_anno: int | None) -> float:
+    """Costo di rotazione di un turno della festività per una persona, come nel generatore: costo marginale del
+    debito, più un supplemento se l'ha fatta l'anno prima (metà se due anni prima)."""
+    costo = P_FESTIVITA * peso * (2 * debito + 1)
+    if ultimo_anno is not None:
+        costo += P_STESSA_FESTIVITA * peso * {1: 1, 2: 0.5}.get(anno - ultimo_anno, 0)
+    return costo
+
+
+def ordine_rotazione(conti: Mapping[int, ContoFestivita], gruppo: Iterable[int], peso: int, anno: int,
+                     nomi: Mapping[int, str]) -> list[tuple[int, float]]:
+    """(persona, debito) in ordine di precedenza a lavorare la festività: prima il costo più basso nel generatore
+    (debito tra il gruppo e chi l'ha fatta di recente), a parità chi non la fa da più tempo, poi il nome."""
+    vuoto = ContoFestivita()
+    debito = debiti(conti, gruppo)
+
+    def chiave(pid):
+        ultimo = conti.get(pid, vuoto).ultimo_anno
+        return (costo_festivita(debito[pid], peso, anno, ultimo), -1 if ultimo is None else ultimo,
+                nomi.get(pid, "").casefold(), pid)
+    return [(pid, debito[pid]) for pid in sorted(debito, key=chiave)]
+
+
+def turni_disponibili(festivita: Iterable[Mapping], dal: date, al: date,
+                      disponibili: Mapping[date, Mapping[int, str]]) -> dict[tuple[date, str], frozenset[int]]:
+    """(giorno, fascia) -> chi vuole lavorare quel turno festivo, per i turni in [dal, al].
+
+    `disponibili`: giorno della festività -> persona -> 'giorno' | 'notte' | 'entrambi'. La notte della sera prima è
+    una notte della festività; contano solo i turni spuntati per la festività."""
+    festivita = list(festivita)
+    per_id = {f["id"]: f for f in festivita}
+    out: dict[tuple[date, str], frozenset[int]] = {}
+    for (g, fascia), fid in turni_festivi(festivita, dal, al).items():
+        chi = disponibili.get(_occorrenza(per_id[fid], g, fascia), {})
+        persone = frozenset(pid for pid, f in chi.items() if f in (fascia, "entrambi"))
+        if persone:
+            out[(g, fascia)] = persone
+    return out
+
+
 def festivi_settimana(festivita: Iterable[Mapping], giorni: list[date], conti: Mapping[int, dict[int, ContoFestivita]],
-                      contesto: Iterable[Assegnazione] = (), dipendenti: Iterable[int] = ()) -> FestiviSettimana:
+                      contesto: Iterable[Assegnazione] = (), dipendenti: Iterable[int] = (),
+                      disponibili: Mapping[date, Mapping[int, str]] | None = None) -> FestiviSettimana:
     """I turni festivi della settimana (festività attive), con peso, anno e conti di ogni festività.
 
     `contesto`: turni dei giorni prima della settimana; di questi, quelli dei `dipendenti` nella notte della sera
-    prima di una festività della settimana (lunedì festivo) vanno in `fuori_settimana`."""
+    prima di una festività della settimana (lunedì festivo) vanno in `fuori_settimana`. `disponibili`: chi vuole
+    lavorare, per giorno della festività (vedi `turni_disponibili`)."""
     festivita = list(festivita)
     per_id = {f["id"]: f for f in festivita}
     vigilia = giorni[0] - timedelta(days=1)
@@ -191,8 +239,10 @@ def festivi_settimana(festivita: Iterable[Mapping], giorni: list[date], conti: M
         if fid is not None and a.persona_id in dip:
             chi = fuori.setdefault(fid, {})
             chi[a.persona_id] = chi.get(a.persona_id, 0) + 1
+    voglia = turni_disponibili(festivita, giorni[0], giorni[-1], disponibili) if disponibili else {}
     return FestiviSettimana(turni=turni, peso={fid: per_id[fid]["peso"] for fid in ids}, anno=anno,
-                            conti={fid: dict(conti.get(fid, {})) for fid in ids}, fuori_settimana=fuori)
+                            conti={fid: dict(conti.get(fid, {})) for fid in ids}, fuori_settimana=fuori,
+                            disponibili=voglia)
 
 
 def riepilogo_generazione(fs: FestiviSettimana, assegnazioni: Iterable[Assegnazione], dipendenti: Iterable[int],

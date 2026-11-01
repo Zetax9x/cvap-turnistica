@@ -44,7 +44,7 @@ from ortools.sat.python import cp_model
 
 from .modello import (EXTRA, PROGRAMMATI, STANDBY, Assegnazione, Fabbisogno, Persona, Unita, in_conflitto,
                       parti_turno)
-from .rotazione_festivi import ContoFestivita, FestiviSettimana, debiti
+from .rotazione_festivi import ContoFestivita, FestiviSettimana, costo_festivita, debiti
 from .slot import unita_da_coprire
 from .storico import CATEGORIE_RICHIESTA, CATEGORIE_WEEKEND, SEDI_ALTERNATE, StoricoPersona, categoria_weekend
 from .vincoli import (ASCOLI, MAX_CONSECUTIVI, MAX_TURNI_ASCOLI, MAX_TURNI_ASCOLI_EXTREMIS, SCARTO_ORE_MAX,
@@ -74,9 +74,10 @@ P_DOPPIA_RICHIESTA = 300
 P_ASCOLI_STORICO = 30        # rotazione nel tempo del numero di turni ad Ascoli
 P_ASCOLI_GN_STORICO = 100    # per ogni turno di differenza tra giorni e notti ad Ascoli, storico compreso
 # festività (docs/PIANO-rotazioni.md, 3.3): tutte molto sotto copertura, ore e regole di Ascoli
-P_FESTIVITA = 60             # x peso della festività, sul debito della festività
-P_STESSA_FESTIVITA = 500     # x peso: l'ha fatta l'anno prima (metà se due anni prima)
+# P_FESTIVITA (60 x peso, sul debito) e P_STESSA_FESTIVITA (500 x peso, l'anno prima; metà due anni prima) sono in
+# cvap/rotazione_festivi.py, con il costo (`costo_festivita`) usato anche dall'ordine di rotazione in anticipo
 P_DOPPIO_FESTIVO = 300       # per ogni turno festivo oltre il primo nella settimana, come il doppio weekend
+P_DISPONIBILE_FESTIVO = -3_000  # sconto: turno festivo a chi vuole lavorarlo (sopra la rotazione, sotto i tre di fila)
 
 
 @dataclass(frozen=True)
@@ -696,12 +697,13 @@ class _Modello:
         della settimana). Il costo di un turno è costante per (persona, festività): termini lineari semplici."""
         n = self.scala
         turni = self.festivi.turni
+        voglia = self.festivi.disponibili
         if not turni:
             return
         for fid in sorted(set(turni.values())):
             def conta(u, fid=fid):
                 return (u.data, u.fascia) in turni and turni[u.data, u.fascia] == fid
-            vars_di = {p.id: [v for u, v in self._vars_di(p.id, conta)] for p in self.dipendenti}
+            vars_di = {p.id: self._vars_di(p.id, conta) for p in self.dipendenti}
             idonei = [p.id for p in self.dipendenti if vars_di[p.id]]
             if not idonei:
                 continue
@@ -711,12 +713,11 @@ class _Modello:
             fissati.update(self.festivi.fuori_settimana.get(fid, {}))  # notte della sera prima, settimana precedente
             peso, anno = self.festivi.peso[fid], self.festivi.anno[fid]
             for pid, debito in debiti(conti, idonei, fissati).items():
-                costo = P_FESTIVITA * peso * (2 * debito + 1)
-                ultimo = conti.get(pid, ContoFestivita()).ultimo_anno
-                if ultimo is not None:
-                    costo += P_STESSA_FESTIVITA * peso * {1: 1, 2: 0.5}.get(anno - ultimo, 0)
-                for v in vars_di[pid]:
-                    self.obiettivo.append((round(costo * n), v))
+                costo = costo_festivita(debito, peso, anno, conti.get(pid, ContoFestivita()).ultimo_anno)
+                for u, v in vars_di[pid]:
+                    # chi vuole lavorare quel turno lo riceve prima; tra più disponibili decide la rotazione
+                    sconto = P_DISPONIBILE_FESTIVO if pid in voglia.get((u.data, u.fascia), ()) else 0
+                    self.obiettivo.append((round((costo + sconto) * n), v))
         # al massimo un turno festivo a testa nella settimana (es. Natale e Santo Stefano)
         for p in self.dipendenti:
             vars_p = [v for u, v in self._vars_di(p.id, lambda u: (u.data, u.fascia) in turni)]
