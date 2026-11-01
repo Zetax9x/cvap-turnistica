@@ -49,15 +49,20 @@ def conti_festivita(conn: sqlite3.Connection, riferimento: date,
     festivita = db_festivita.festivita_attive(conn) if festivita is None else festivita
     if not festivita:
         return {}
+    return conta_festivita(festivita, riferimento, **dati_conti(conn, inizio_periodo(riferimento), riferimento))
+
+
+def dati_conti(conn: sqlite3.Connection, dal: date, al: date) -> dict:
+    """Gli argomenti di `conta_festivita` letti dal database, validi per ogni riferimento con periodo dentro
+    [dal, al): `conta_festivita` considera da sé solo le festività del suo periodo. Così l'ordine delle prossime
+    festività legge il database una volta sola e fa lo stesso calcolo del generatore."""
     attivi = {p["id"] for p in db.lista_persone(conn) if p["tipo"] == "dipendente" and p["attivo"]}
     prima = db_storico_festivi.prima_generata(conn)
-    dal = inizio_periodo(riferimento)
-    settimane = _settimane_programma(conn, prima, dal, riferimento)
-    malattia = db.giorni_malattia(conn, dal - timedelta(days=1), riferimento) if settimane else set()
-    return conta_festivita(festivita, riferimento, limite=limite_storico(prima, date.today()),
-                           importati=db_storico_festivi.tutti_i_turni(conn),
-                           servizio=db_storico_festivi.servizio_per_anno(conn), dipendenti_attivi=attivi,
-                           settimane=settimane, malattia=malattia)
+    settimane = _settimane_programma(conn, prima, dal, al)
+    malattia = db.giorni_malattia(conn, dal - timedelta(days=1), al) if settimane else set()
+    return {"limite": limite_storico(prima, date.today()), "importati": db_storico_festivi.tutti_i_turni(conn),
+            "servizio": db_storico_festivi.servizio_per_anno(conn), "dipendenti_attivi": attivi,
+            "settimane": settimane, "malattia": malattia}
 
 
 def festivi_per_generazione(conn: sqlite3.Connection, giorni: list[date],

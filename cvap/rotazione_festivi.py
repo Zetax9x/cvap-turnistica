@@ -74,11 +74,14 @@ def inizio_periodo(riferimento: date) -> date:
         return date(anno, 2, 28)
 
 
-def _occorrenza(f: Mapping, giorno_turno: date, fascia: str) -> date:
+def occorrenza(f: Mapping, giorno_turno: date, fascia: str) -> date:
     """Il giorno della festività a cui appartiene un suo turno (la notte della sera prima è del giorno dopo)."""
     if (giorno_turno, fascia) in turni_di(f, giorno_turno) and data_nell_anno(f, giorno_turno.year) == giorno_turno:
         return giorno_turno
     return giorno_turno + timedelta(days=1)
+
+
+_occorrenza = occorrenza
 
 
 def _conto(conti: dict, festivita_id: int, persona_id: int) -> ContoFestivita:

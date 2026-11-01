@@ -431,6 +431,34 @@ preferenza per il futuro, non storico).
   qualifica…). Tra più disponibili decide la rotazione (lo sconto è uguale per tutti). Il conteggio della rotazione
   non cambia: i turni lavorati volentieri contano come gli altri.
 
+## Ordine di rotazione delle prossime festività (Statistiche → Festività)
+
+Fase 8 di `docs/PIANO-rotazioni.md` (3.7). Modulo `cvap/prossime_festivita.py`; scheda `#statistiche/festivita`
+(`static/js/statistiche-festivita.js`), stampabile.
+
+- `GET /festivita/prossime?mesi=12` (1–24, altrimenti 422) → `[{data, festivita_id, nome, peso, conta_giorno,
+  conta_notte, conta_notte_prima, ordine: [{persona_id, nome, qualifica, volte_5_anni, ultimo_anno | null, debito,
+  disponibile: "giorno"|"notte"|"entrambi"|null, assente: "malattia"|"ferie"|"indisponibile"|null}]}]` per le
+  festività attive in [oggi, oggi + mesi), in ordine di data; nell'ordine tutti i dipendenti attivi.
+  - **Stesso calcolo del generatore**: conti con `rotazione_festivi.conta_festivita` sugli ultimi 5 anni fino al
+    lunedì della settimana della festività (come quando la si genera), dati letti una volta da
+    `dati_festivi.dati_conti`; ordine con `rotazione_festivi.ordine_rotazione`: prima il costo di rotazione più basso
+    (`costo_festivita`, lo stesso del generatore: debito tra i dipendenti attivi più il supplemento per chi l'ha fatta
+    l'anno prima o due anni prima), a parità chi non la fa da più tempo (mai prima), poi il nome. Con un solo posto e
+    tutti idonei, il primo dell'ordine riceve il turno (test).
+  - Differenze possibili (per questo è un'indicazione): il generatore calcola il tasso tra chi quella settimana può
+    fare i turni e conta i turni già fissati; poi valgono riposi, ore, Ascoli, posti da autista e soccorritore.
+    `disponibile` non cambia l'ordine: chi vuole lavorare riceve prima i turni della sua fascia.
+  - `assente`: assenze già registrate nei giorni dei turni che contano (la notte della sera prima è del giorno
+    prima): malattia, poi ferie, poi indisponibilità che tocca uno di quei turni.
+- `GET /festivita/lavorate?anno=AAAA` (2000–2099, altrimenti 422) → `{anno, limite, anni: [..], festivita:
+  [{festivita_id, nome, data, attiva, peso, fonte: "importato"|"programma", giorno: [{persona_id, nome}], notte:
+  [...]}]}`: chi ha lavorato ogni festività dell'anno, solo dipendenti. Prima di `limite` (lunedì della prima
+  settimana generata) dallo storico importato, dopo dai turni del programma (festività attive o state attive; la
+  notte della sera prima conta per la festività). Festività: le attive che cadono nell'anno più quelle con dati, in
+  ordine di data. `anni`: anni importati con turni + dalla prima settimana generata a oggi (più recenti prima).
+  Scelta: un endpoint nuovo e semplice invece di `GET /storico-festivi/{anno}`, che non copre gli anni del programma.
+
 ## Quadro dell'equità (Statistiche → Equità)
 
 `GET /statistiche/equita?dal=AAAA-MM-GG&al=AAAA-MM-GG` (entrambe facoltative; 400 se `dal` > `al`, 422 se una data

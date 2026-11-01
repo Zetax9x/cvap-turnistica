@@ -94,6 +94,12 @@ export const api = {
   anteprimaStoricoFestivi: (testo) => richiesta("POST", "/storico-festivi/anteprima", { testo }),
   importaStoricoFestivi: (corpo) => richiesta("POST", "/storico-festivi/importa", corpo),
 
+  // Chi vuole lavorare una festività ({data, persona_id, fascia: "giorno"|"notte"|"entrambi"|null}) e ordine di
+  // rotazione delle prossime festività; chi ha lavorato le festività di un anno (importato o dal programma)
+  impostaDisponibile: (corpo) => richiesta("PUT", "/festivita/disponibili", corpo),
+  prossimeFestivita: (mesi) => richiesta("GET", `/festivita/prossime?${new URLSearchParams({ mesi })}`),
+  festivitaLavorate: (anno) => richiesta("GET", `/festivita/lavorate?${new URLSearchParams({ anno })}`),
+
   impostazioni: () => richiesta("GET", "/impostazioni"),
   salvaImpostazioni: (dati) => richiesta("PUT", "/impostazioni", dati),
 

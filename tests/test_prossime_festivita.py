@@ -15,7 +15,10 @@ from cvap.modello import Assegnazione  # noqa: E402
 from cvap.rotazione_festivi import ContoFestivita, ordine_rotazione  # noqa: E402
 
 from .test_api_festivi import settimana_generata  # noqa: E402
-from .test_api_storico_festivi import attiva, client, crea, salva, turno  # noqa: E402,F401  (client: fixture)
+from . import test_api_storico_festivi  # noqa: E402
+from .test_api_storico_festivi import attiva, crea, salva, turno  # noqa: E402
+
+client = test_api_storico_festivi.client  # fixture (sqlite e libsql)
 
 
 def prossimo_natale() -> date:

@@ -7,9 +7,10 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field, model_validator
 
-from . import db, db_festivi_disponibili, db_festivita, db_storico_festivi
+from . import db, db_festivi_disponibili, db_festivita, db_storico_festivi, prossime_festivita
 from .api_comune import DataValida, Id, IdPath, Nome, errore
 from .festivita import OFFSET_PASQUA_MAX, PESO_MAX, PESO_MIN, anteprima, date_festive, errore_regola
+from .prossime_festivita import MESI_MAX, MESI_MIN
 
 ANNO_MIN, ANNO_MAX = 2000, 2099
 FESTIVITA_AGGIUNTE_MAX = 100  # aggiunte a mano: bastano e avanzano, e il calendario resta leggibile
@@ -90,6 +91,14 @@ def crea_router(connessione: Callable) -> APIRouter:
             raise errore("Quel giorno non è una festività a rotazione: attivala prima in Impostazioni")
         db_festivi_disponibili.imposta(conn, body.data, body.persona_id, body.fascia)
         return {"data": body.data.isoformat(), "persona_id": body.persona_id, "fascia": body.fascia}
+
+    @router.get("/api/festivita/prossime")
+    def prossime(conn: Conn, mesi: Annotated[int, Query(ge=MESI_MIN, le=MESI_MAX)] = 12):
+        return prossime_festivita.prossime(conn, date.today(), mesi)
+
+    @router.get("/api/festivita/lavorate")
+    def lavorate(conn: Conn, anno: Annotated[int, Query(ge=ANNO_MIN, le=ANNO_MAX)]):
+        return prossime_festivita.lavorate_anno(conn, anno, date.today())
 
     @router.get("/api/festivita")
     def lista(conn: Conn, anno: Annotated[int | None, Query(ge=ANNO_MIN, le=ANNO_MAX)] = None):

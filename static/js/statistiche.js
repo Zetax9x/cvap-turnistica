@@ -5,6 +5,7 @@ import { el, clear, etichetta, formatOre, formatSaldo } from "./util.js";
 import * as indisponibilita from "./statistiche-indisponibilita.js";
 import * as perDipendente from "./statistiche-dipendente.js";
 import * as equita from "./statistiche-equita.js";
+import * as festivita from "./statistiche-festivita.js";
 
 const stato = { root: null, righe: [], fuoriTabella: [], ordine: { campo: "nome", dir: 1 }, filtroTipo: "tutti" };
 
@@ -68,7 +69,7 @@ function wk(r, k) { return (r.weekend && r.weekend[k]) || 0; }
 function totWeekend(r) { return ["sab_giorno", "sab_notte", "dom_giorno", "dom_notte"].reduce((s, k) => s + wk(r, k), 0); }
 
 const SCHEDE = [["", "Turni"], ["indisponibilita", "Indisponibilità"], ["dipendente", "Riepilogo per dipendente"],
-  ["equita", "Equità"]];
+  ["equita", "Equità"], ["festivita", "Festività"]];
 
 /** Schede della vista: sono link, così il router a hash gestisce anche avanti/indietro. */
 export function renderSchede(attiva) {
@@ -105,11 +106,12 @@ export function focusTitolo(root) {
   }
 }
 
-// hash: #statistiche, #statistiche/indisponibilita, #statistiche/dipendente oppure #statistiche/equita
+// hash: #statistiche, #statistiche/indisponibilita, #statistiche/dipendente, #statistiche/equita o #statistiche/festivita
 export async function mostra(root, parametro) {
   if (parametro === "indisponibilita") return indisponibilita.mostra(root);
   if (parametro === "dipendente") return perDipendente.mostra(root);
   if (parametro === "equita") return equita.mostra(root);
+  if (parametro === "festivita") return festivita.mostra(root);
   stato.root = root;
   const numero = nuovoCaricamento();
   clear(root).append(renderSchede(""), el("p", { class: "muted loading" }, "Caricamento delle statistiche…"));

@@ -868,6 +868,15 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
 .view-header-riga { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }
 .avviso-notte { background: color-mix(in srgb, #3949ab 14%, var(--surface)); color: var(--text); border-color: #5c6bc0; }
 .solo-stampa { display: none; }
+/* Statistiche → Festività: ordine di rotazione delle prossime festività e storico per anno */
+.festivita-prossima, .festivita-storico { margin-top: 1.5rem; }
+.festivita-prossima h2, .festivita-storico h2 { margin-bottom: .2rem; }
+.tabella-ordine-festivita select { min-width: 9rem; }
+@media print {
+  .festivita-prossima { break-inside: avoid; }
+  .festivita-storico { break-before: page; }
+  .tabella-ordine-festivita, .tabella-festivi-anno { font-size: 9pt; }
+}
 
 @media print {
   .solo-stampa { display: block; }
