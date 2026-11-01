@@ -1,9 +1,10 @@
 // Vista "Impostazioni": data di riferimento della settimana A, scarto ore e parametri dei dipendenti;
-// la scheda "Festività a rotazione" è in festivita.js.
+// le schede "Festività a rotazione" e "Storico festività" sono in festivita.js e storico-festivi.js.
 
 import { api } from "./api.js";
 import { mostraRiepiloghi } from "./riepiloghi.js";
 import { mostra as mostraFestivita, renderSchede, nuovoCaricamento, superato } from "./festivita.js";
+import { mostra as mostraStorico } from "./storico-festivi.js";
 import { el, clear, toast, toastErrore, mondayOf, todayISO, dataLunga, parseISO } from "./util.js";
 
 const SCARTO_PREDEFINITO = 12;
@@ -32,6 +33,7 @@ async function carica(numero = caricamentoScheda) {
 
 export async function mostra(container, parametro) {
   if (parametro === "festivita") return mostraFestivita(container);
+  if (parametro === "storico-festivi") return mostraStorico(container);
   root = container;
   const numero = nuovoCaricamento();
   caricamentoScheda = numero;

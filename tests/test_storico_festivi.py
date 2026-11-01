@@ -322,3 +322,14 @@ def test_doppioni_contati_una_volta():
 def test_file_con_sola_intestazione():
     r = analizza(csv(("Data", "Turno", "Nome")))
     assert r == {"riconosciute": [], "errori": [], "ignorate": [], "non_trovati": [], "doppioni": 0}
+
+
+def test_nome_con_caratteri_di_controllo_e_errore_di_riga():
+    esito = sf.analizza("Data;Turno;Nome\n25/12/2025;giorno;Mar\x01io\n", predefinite(), [], date(2026, 10, 19))
+    assert [e["riga"] for e in esito["errori"]] == [2] and esito["riconosciute"] == []
+
+
+def test_data_con_anno_assurdo_e_errore_di_riga_non_del_file():
+    testo = "Data;Turno;Nome\n01/01/9999;giorno;Mario\n25/12/2025;notte;Mario\n"
+    esito = sf.analizza(testo, predefinite(), [], date(2026, 10, 19))
+    assert [e["riga"] for e in esito["errori"]] == [2] and len(esito["riconosciute"]) == 1

@@ -276,3 +276,55 @@ all'avvio, non attive (`INSERT OR IGNORE` sulla `chiave`).
   e `conta_*` (400 se cambiano nome o giorno).
 - `DELETE /festivita/{id}` → 204 · 404 · 400 sulle predefinite (si possono solo disattivare).
 - `GET /settimane/{data}` aggiunge `festivi: [{data, nome, peso}]` (solo festività attive, in ordine di data).
+
+## Storico festività degli anni passati (Impostazioni)
+
+Fase 5 di `docs/PIANO-rotazioni.md`: chi ha lavorato le festività prima che il programma generasse i turni. Tabelle
+separate dalle assegnazioni: **non toccano ore, settimane, statistiche né generatore** (le userà la fase 6).
+
+- **Limite**: lunedì della prima settimana con turni generati (`origine = 'generato'`); senza settimane generate,
+  domani. Le festività dal limite in poi non si inseriscono: le conta già il programma. `anno_max` = anno del giorno
+  prima del limite; `anno_min` = 2000.
+- `cvap/storico_festivi.py` (puro): `parse_data` (gg/mm/aaaa, aaaa-mm-gg), `parse_fascia`, `limite_storico`,
+  `leggi_csv` (separatore `;` o `,`, BOM, righe vuote saltate; max 5000 righe e 1 MB), `analizza(testo, festivita,
+  persone, limite)`. `cvap/db_storico_festivi.py`: repository; `cvap/api_storico_festivi.py`: router.
+- Solo file **CSV** (da Excel: Salva con nome → CSV UTF-8). Intestazioni senza distinguere maiuscole e accenti:
+  `Anno, Festività, Turno, Nome` oppure `Data, Turno, Nome` (la festività si ricava dal calendario, anche non attiva;
+  con due festività nello stesso giorno si sceglie l'unica attiva, altrimenti errore di riga). Turno: giorno/notte.
+  Alias: "Pasquetta" = Lunedì dell'Angelo. I nomi si abbinano ai soli **dipendenti** (attivi o no) senza distinguere
+  maiuscole e spazi.
+- `notte` = una notte che conta per quella festività (anche quella della sera prima): la stessa persona conta una volta.
+
+### Database
+```
+storico_festivi(id, anno, festivita_id REFERENCES festivita, persona_id REFERENCES persone,
+                fascia 'giorno'|'notte', UNIQUE(anno, festivita_id, persona_id, fascia))
+storico_festivi_servizio(anno, persona_id REFERENCES persone, PRIMARY KEY (anno, persona_id))
+```
+- `DELETE /festivita/{id}` di una festività aggiunta a mano presente nello storico → 400 (con gli anni).
+- `DELETE /persone/{id}` di una persona presente nello storico (turni o servizio) → la disattiva soltanto.
+
+### API
+- `GET /storico-festivi` → `{anno_min, anno_max, limite, anni: [{anno, turni, in_servizio}]}` (anni più recenti prima).
+- `GET /storico-festivi/{anno}` (2000–2099, altrimenti 422; oltre `anno_max` → 400) →
+  `{anno, limite, festivita: [{festivita_id, nome, data, attiva, peso, giorno: [{persona_id, nome}], notte: [...]}],
+  servizio: [{persona_id, nome, attivo}], servizio_salvato}`. Festività = attive che cadono nell'anno prima del limite
+  più quelle presenti nei dati, in ordine di data. Senza servizio salvato: proposta = dipendenti attivi + chi compare.
+- `PUT /storico-festivi/{anno}` `{turni: [{festivita_id, fascia, persona_id}] (max 2000), servizio: [persona_id]
+  (max 500)}` → come il GET. Sostituisce tutto l'anno in una transazione; doppioni tolti; chi lavora entra nel
+  servizio. 400: festività inesistente, che non cade nell'anno o dal limite in poi; persona inesistente o volontario;
+  più di 20 persone in una cella. 422: fascia non valida.
+- `POST /storico-festivi/anteprima` `{testo}` (max 1.000.000 caratteri, altrimenti 422) → `{riconosciute: [{riga,
+  anno, festivita_id, festivita, data, fascia, nome, persona_id|null}], errori: [{riga, messaggio}], ignorate: [{riga,
+  motivo, dettaglio}], non_trovati: [{nome, righe, candidati: [{id, nome, attivo}]}], doppioni,
+  righe_esistenti_per_anno: {"<anno>": n}}` (anni già inseriti e anni del file). Motivi: `oltre_prima_generata`,
+  `festivita_non_nel_calendario`, `data_non_festiva`, `non_cade_nell_anno`. Non salva nulla; file illeggibile → 400.
+- `POST /storico-festivi/importa` `{righe: [{anno, festivita_id, fascia, nome}] (max 5000), abbinamenti: [{nome,
+  azione: persona|nuovo|scarta, persona_id?, qualifica? (soccorritore)}], sostituisci: false}` →
+  `{importati, ignorate, anni, persone_create: [{id, nome}]}`. Il server ricontrolla tutto (righe non valide o dal
+  limite in poi: ignorate e contate). Nome: abbinamento esplicito, altrimenti l'unico dipendente con quel nome;
+  non risolto, volontario o id inesistente → 400 e nulla salvato. `nuovo` crea un dipendente non attivo; `scarta`
+  salta le righe di quel nome. `sostituisci` rimpiazza solo gli anni del file, altrimenti aggiunge senza doppioni.
+  Servizio: per gli anni senza servizio salvato, o sostituiti (il servizio salvato a mano si perde), dipendenti
+  attivi + chi compare; per gli altri si aggiunge chi compare. Massimo 20 persone per cella. `nuovo` con un nome
+  già nel Personale → 400. Una sola transazione.

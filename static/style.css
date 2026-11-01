@@ -1088,6 +1088,38 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
 .festa-orario { display: block; font-weight: 500; text-transform: none; letter-spacing: 0; }
 .campo-stretto { min-width: 5rem; flex: 0 1 6rem; }
 
+/* ---------- Storico festività ---------- */
+.storico-data { display: block; font-weight: 500; font-size: .85rem; }
+.tabella-storico .storico-cella { vertical-align: top; min-width: 14rem; }
+.storico-chip { list-style: none; margin: 0 0 .4rem; padding: 0; display: flex; flex-wrap: wrap; gap: .3rem; }
+.storico-chip .chip { display: inline-flex; flex-wrap: nowrap; padding-right: 3px; }
+.chip-togli { min-height: 28px; min-width: 28px; padding: 0 .4rem; font-size: 1rem; line-height: 1; }
+.storico-vuota { margin: 0 0 .4rem; }
+.storico-aggiungi { max-width: 100%; }
+.storico-servizio { margin-top: 1.2rem; }
+.storico-nota { flex: 1 1 100%; margin: 0; }
+.storico-formato .tabella-esempio { width: auto; margin: .4rem 0 .8rem; }
+.tabella-esempio caption { text-align: left; font-weight: 650; font-size: .9rem; padding-bottom: .3rem; }
+.storico-file-form { margin-top: .8rem; }
+.storico-anteprima h3 { margin-top: 1.2rem; }
+.storico-conteggi { margin: .4rem 0 .8rem; padding-left: 1.2rem; }
+.storico-dettagli { margin: .6rem 0; }
+.storico-dettagli summary { cursor: pointer; font-weight: 650; padding: .3rem 0; }
+.storico-non-trovati { margin-top: 1rem; }
+.storico-scelta {
+  border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .6rem .8rem; margin: .6rem 0;
+  display: flex; flex-wrap: wrap; gap: .5rem 1.4rem; align-items: center;
+}
+.storico-scelta legend { font-weight: 650; padding: 0 .3rem; }
+.storico-opzione { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.storico-opzione .check { margin-left: 0; min-height: 36px; }
+
+@media (max-width: 640px) {
+  .tabella-storico .storico-cella { min-width: 11rem; }
+  .storico-scelta { flex-direction: column; align-items: stretch; }
+  .storico-opzione select { flex: 1 1 100%; }
+}
+
 @media print {
   #view-settimana .griglia thead th.festivo { background: #f5a9b8 !important; }
   .tabella-liberi thead th.festivo { background: var(--festivo) !important; }

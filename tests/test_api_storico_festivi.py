@@ -451,7 +451,8 @@ def test_importa_sostituisci_solo_gli_anni_del_file(client):
     assert cella(anno_(client, 2024), "Natale", "giorno") == {mario}
 
 
-def test_importa_servizio_predefinito_per_gli_anni_nuovi(client):
+def test_importa_non_salva_il_servizio_degli_anni_nuovi_ma_lo_propone(client):
+    """L'elenco "in servizio" di un anno nuovo resta una proposta da confermare a mano, non viene inventato."""
     mario, luigi = crea(client, "Mario Rossi")["id"], crea(client, "Luigi Bianchi")["id"]
     natale = attiva(client, "Natale")
     r = importa(client, [riga(2023, natale, "Mario Rossi"), riga(2023, natale, "Ex Dipendente", "notte")],
@@ -459,8 +460,23 @@ def test_importa_servizio_predefinito_per_gli_anni_nuovi(client):
     assert r.status_code == 200, r.text
     ex = r.json()["persone_create"][0]["id"]
     dati = anno_(client, 2023)
-    assert dati["servizio_salvato"] is True
-    assert servizio(dati) == {mario, luigi, ex}  # dipendenti attivi + chi compare (anche se non attivo)
+    assert dati["servizio_salvato"] is False
+    assert servizio(dati) == {mario, luigi, ex}  # proposta: dipendenti attivi + chi compare (anche se non attivo)
+
+
+def test_importa_conta_salvati_gia_presenti_e_scartati(client):
+    crea(client, "Mario Rossi")
+    natale = attiva(client, "Natale")
+    righe = [riga(2025, natale, "Mario Rossi"), riga(2025, natale, "Ignoto", "notte")]
+    primo = importa(client, righe, [{"nome": "Ignoto", "azione": "scarta"}]).json()
+    assert (primo["importati"], primo["gia_presenti"], primo["scartate"]) == (1, 0, 1)
+    secondo = importa(client, righe[:1]).json()
+    assert (secondo["importati"], secondo["gia_presenti"], secondo["scartate"]) == (0, 1, 0)
+
+
+def test_anteprima_cella_enorme_400_non_500(client):
+    testo = "Data;Turno;Nome\n25/12/2025;giorno;" + "x" * 150_000 + "\n"
+    assert client.post("/api/storico-festivi/anteprima", json={"testo": testo}).status_code == 400
 
 
 def test_importa_servizio_esistente_aggiunge_solo_chi_compare(client):

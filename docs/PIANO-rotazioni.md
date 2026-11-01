@@ -217,6 +217,10 @@ Due modi per inserirli, nella nuova pagina **Impostazioni → Storico festività
 
 ### 3.3 Regole nel generatore
 
+Note dalla fase 5 (storico fatto il 2026-11-01): leggendo lo storico importato contare solo le festività con data
+prima della prima settimana generata (il limite si sposta se si cancellano i turni generati); dove l'elenco "in
+servizio" di un anno non è salvato usare la stessa proposta della pagina (dipendenti attivi + chi compare nei dati).
+
 - **Periodo considerato** (decisione): le festività degli **ultimi 5 anni** prima della settimana da generare
   (costante `ANNI_FESTIVI = 5`, facile da cambiare).
 - **Rotazione festività per festività** (decisione): ogni festività è una categoria a sé, con il meccanismo del debito.

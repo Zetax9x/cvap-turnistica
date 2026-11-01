@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field, model_validator
 
-from . import db_festivita
+from . import db_festivita, db_storico_festivi
 from .api_comune import DataValida, IdPath, Nome, errore
 from .festivita import OFFSET_PASQUA_MAX, PESO_MAX, PESO_MIN, anteprima, errore_regola
 
@@ -101,6 +101,9 @@ def crea_router(connessione: Callable) -> APIRouter:
             raise HTTPException(404, "Festività non trovata")
         if attuale["predefinita"]:
             raise errore("Le festività predefinite non si cancellano: si possono solo disattivare")
+        if anni := db_storico_festivi.anni_con_festivita(conn, festivita_id):
+            elenco = ", ".join(str(a) for a in anni)
+            raise errore(f"{attuale['nome']} è nello storico ({elenco}): disattivala oppure togli prima quei dati")
         db_festivita.elimina_festivita(conn, festivita_id)
         return Response(status_code=204)
 

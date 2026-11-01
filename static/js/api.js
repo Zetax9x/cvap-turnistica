@@ -87,6 +87,13 @@ export const api = {
   aggiornaFestivita: (id, dati) => richiesta("PUT", `/festivita/${enc(id)}`, dati),
   eliminaFestivita: (id) => richiesta("DELETE", `/festivita/${enc(id)}`),
 
+  // Storico festività degli anni prima del programma (il CSV viaggia come testo dentro il JSON)
+  storicoFestivi: () => richiesta("GET", "/storico-festivi"),
+  storicoFestiviAnno: (anno) => richiesta("GET", `/storico-festivi/${enc(anno)}`),
+  salvaStoricoFestiviAnno: (anno, corpo) => richiesta("PUT", `/storico-festivi/${enc(anno)}`, corpo),
+  anteprimaStoricoFestivi: (testo) => richiesta("POST", "/storico-festivi/anteprima", { testo }),
+  importaStoricoFestivi: (corpo) => richiesta("POST", "/storico-festivi/importa", corpo),
+
   impostazioni: () => richiesta("GET", "/impostazioni"),
   salvaImpostazioni: (dati) => richiesta("PUT", "/impostazioni", dati),
 

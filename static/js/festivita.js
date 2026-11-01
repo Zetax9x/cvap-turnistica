@@ -3,7 +3,7 @@
 import { api } from "./api.js";
 import { el, clear, toast, toastErrore, chiediConferma, ddmm } from "./util.js";
 
-const SCHEDE = [["", "Generali"], ["festivita", "Festività a rotazione"]];
+const SCHEDE = [["", "Generali"], ["festivita", "Festività a rotazione"], ["storico-festivi", "Storico festività"]];
 const PESI = [[1, "Normale"], [2, "Importante"], [3, "Molto importante"]];
 const MESI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto",
   "settembre", "ottobre", "novembre", "dicembre"];
@@ -24,7 +24,7 @@ export function renderSchede(attiva) {
     }, titolo)));
 }
 
-// Le due schede disegnano nello stesso contenitore: una risposta arrivata dopo un cambio di scheda si scarta.
+// Le schede disegnano nello stesso contenitore: una risposta arrivata dopo un cambio di scheda si scarta.
 let ultimoCaricamento = 0;
 export function nuovoCaricamento() { return ++ultimoCaricamento; }
 export function superato(numero) { return numero !== ultimoCaricamento; }

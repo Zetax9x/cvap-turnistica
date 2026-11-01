@@ -129,6 +129,21 @@ CREATE TABLE IF NOT EXISTS festivita (  -- calendario delle festività a rotazio
     peso INTEGER NOT NULL DEFAULT 1,  -- 1 normale, 2 importante, 3 molto importante
     attiva INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS storico_festivi (  -- anni passati: chi ha lavorato ogni festività (cvap/storico_festivi.py)
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    anno INTEGER NOT NULL,
+    festivita_id INTEGER NOT NULL REFERENCES festivita(id),
+    persona_id INTEGER NOT NULL REFERENCES persone(id),
+    fascia TEXT NOT NULL CHECK (fascia IN ('giorno', 'notte'))  -- notte: anche la notte della sera prima
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_storico_festivi_unici ON storico_festivi(anno, festivita_id, persona_id, fascia);
+CREATE INDEX IF NOT EXISTS idx_storico_festivi_festivita ON storico_festivi(festivita_id);
+CREATE INDEX IF NOT EXISTS idx_storico_festivi_persona ON storico_festivi(persona_id);
+CREATE TABLE IF NOT EXISTS storico_festivi_servizio (  -- chi era in servizio quell'anno (quota attesa nella rotazione)
+    anno INTEGER NOT NULL,
+    persona_id INTEGER NOT NULL REFERENCES persone(id),
+    PRIMARY KEY (anno, persona_id)
+);
 """
 
 _POSTAZIONI_SEED = (("Acquasanta", 0, 1), ("Venarotta", 0, 2), ("Ascoli", 1, 3))
@@ -344,12 +359,15 @@ def imposta_max_ore(conn: sqlite3.Connection, persona_id: int, max_ore: int | No
 
 
 def elimina_persona(conn: sqlite3.Connection, persona_id: int) -> bool:
-    """Elimina la persona; se ha assegnazioni la disattiva soltanto. False se non esiste."""
+    """Elimina la persona; se ha assegnazioni o è nello storico delle festività la disattiva soltanto."""
     if get_persona(conn, persona_id) is None:
         return False
     with conn:
-        usata = conn.execute("SELECT 1 FROM assegnazioni WHERE persona_id = ? LIMIT 1",
-                             (persona_id,)).fetchone()
+        usata = conn.execute(
+            "SELECT 1 AS si FROM assegnazioni WHERE persona_id = ? UNION ALL "
+            "SELECT 1 AS si FROM storico_festivi WHERE persona_id = ? UNION ALL "
+            "SELECT 1 AS si FROM storico_festivi_servizio WHERE persona_id = ? LIMIT 1",
+            (persona_id, persona_id, persona_id)).fetchone()
         if usata:
             conn.execute("UPDATE persone SET attivo = 0 WHERE id = ?", (persona_id,))
         else:
