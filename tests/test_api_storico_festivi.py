@@ -284,13 +284,17 @@ def test_put_non_valido_non_cambia_nulla(client):
 # --- nessun effetto sul resto ----------------------------------------------------------------------
 
 def test_lo_storico_non_cambia_le_statistiche(client):
+    # dalla fase 6 lo storico entra solo nel campo `festivi` (tests/test_api_festivi.py): il resto non cambia
+    def senza_festivi(stat):
+        return [{k: v for k, v in r.items() if k != "festivi"} for r in stat]
+
     mario, luigi = crea(client, "Mario Rossi")["id"], crea(client, "Luigi Bianchi")["id"]
     genera(client, mario)
     prima = client.get("/api/statistiche").json()
     natale = attiva(client, "Natale")
     assert salva(client, 2025, [turno(natale, mario), turno(natale, luigi, "notte")], [mario, luigi]).status_code == 200
     assert importa(client, [riga(2024, natale, "Mario Rossi")]).status_code == 200
-    assert client.get("/api/statistiche").json() == prima
+    assert senza_festivi(client.get("/api/statistiche").json()) == senza_festivi(prima)
 
 
 # --- anteprima --------------------------------------------------------------------------------------
