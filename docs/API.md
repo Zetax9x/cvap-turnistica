@@ -423,13 +423,30 @@ non è valida). Logica in `cvap/equita.py` (`equita`, registro `ROTAZIONI`), rou
   `ANDAMENTO_PUNTI_MAX = 26` (settimane generate distribuite in modo uniforme nel periodo, sempre con l'ultima).
 
 Risposta: `{settimane: ["AAAA-MM-GG"], rotazioni: [...]}`; ogni rotazione, nell'ordine `ore, giorno_notte,
-sab_giorno, sab_notte, dom_giorno, dom_notte, standby, programmati, assistenze, ascoli, ascoli_giorno_notte, sedi`:
+sab_giorno, sab_notte, dom_giorno, dom_notte, standby, programmati, assistenze, ascoli, ascoli_giorno_notte, sedi`,
+poi `festivita_<id>` per ogni festività attiva (in ordine di id):
 `{chiave, nome, unita ("ore"|"turni"), sopra, sotto (frasi per scarto positivo/negativo), fatti, quota (intestazioni),
-piu_avanti: {persona_id, nome, scarto}|null, piu_indietro: {...}|null, differenza (scarto massimo − minimo),
-tendenza: "si_riduce"|"aumenta"|"stabile"|null, andamento: [{settimana, differenza}], dipendenti: [{persona_id, nome,
+festivita (true per le festività), piu_avanti: {persona_id, nome, scarto}|null, piu_indietro: {...}|null,
+differenza (scarto massimo − minimo), tendenza: "si_riduce"|"aumenta"|"stabile"|null, andamento: [{settimana, differenza}], dipendenti: [{persona_id, nome,
 attivo, partecipa, fatti, quota, scarto}]}`.
 - `andamento`: un valore per settimana generata (al più 26, vedi sopra), con lo storico alla fine di quella settimana.
 - `tendenza`: l'ultimo punto dell'andamento rispetto alla media dei 4 punti prima (entro il 5% = stabile; `null` con
   un solo punto). A pari scarto, `piu_avanti`/`piu_indietro` è il primo in ordine di nome.
 - `dipendenti`: prima chi partecipa, dallo scarto più alto; poi gli altri. Valori arrotondati a 2 decimali.
-- Festività (fase 6): una rotazione in più per festività attiva (vedi il commento in cima a `cvap/equita.py`).
+- **Festività** (fase 9): una rotazione `festivita_<id>` per ogni festività **attiva** (le disattivate non entrano),
+  con il nome della festività, unità "turni", `festivita: true`. `cvap/equita.rotazione_festivita(festivita, conti)`
+  sui conti di `dati_festivi.conti_festivita` (route: `api_equita.rotazioni_festivita`):
+  - stesso debito del generatore (`rotazione_festivi.debiti`): `fatti` = turni nella festività negli ultimi 5 anni
+    (anni importati + programma, solo dipendenti), `quota` = tasso × esposizione, esposizione = volte in cui la
+    festività è caduta mentre era in servizio (anche in ferie o indisponibile; non in malattia). Partecipa chi ha
+    esposizione > 0 tra i dipendenti mostrati, anche senza settimane nel periodo (es. solo anni importati); il tasso
+    è calcolato tra loro (gli ex dipendenti non mostrati non entrano);
+  - **periodo**: gli ultimi 5 anni fino alla fine del periodo, cioè fino al giorno dopo `al`, ma non oltre la fine
+    usata dalle statistiche (dopo l'ultima settimana salvata o l'ultimo turno, almeno domani), così un `al` lontano
+    nel futuro non sposta la finestra oltre i dati; senza `al`, quella delle statistiche (come la colonna Festivi).
+    `dal` non si applica alle festività (cadono una volta l'anno: un periodo breve non ne conterrebbe nessuna);
+  - **niente andamento**: `andamento: []` e `tendenza: null` (un punto per settimana sarebbe una linea piatta quasi
+    sempre: la festività cade una volta l'anno). La pagina scrive "Una volta l'anno" al posto del grafico e "—"
+    come tendenza;
+  - si calcolano anche senza settimane generate nel periodo: la pagina, in quel caso, mostra solo le festività che
+    hanno dati.

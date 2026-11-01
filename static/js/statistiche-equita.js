@@ -50,27 +50,30 @@ function render() {
       + "Fai clic su una riga per vedere tutti i dipendenti.")));
   root.append(renderPeriodo(), el("p", { class: "solo-stampa" }, `Periodo: ${descriviPeriodo()}`));
 
+  // senza settimane generate restano solo le festività con dati (anni importati)
+  const visibili = settimane.length ? rotazioni : rotazioni.filter((r) => r.festivita && r.piu_avanti);
   if (!settimane.length) {
     root.append(el("p", { class: "muted" }, "Nessuna settimana con turni generati nel periodo scelto."));
-    return;
+    if (!visibili.length) return;
+  } else {
+    root.append(el("p", { class: "hint" }, settimane.length === 1
+      ? `1 settimana con turni generati: quella del ${dataLunga(settimane[0])}.`
+      : `${settimane.length} settimane con turni generati, dalla settimana del ${dataLunga(settimane[0])} `
+        + `a quella del ${dataLunga(settimane[settimane.length - 1])}.`));
   }
-  root.append(el("p", { class: "hint" }, settimane.length === 1
-    ? `1 settimana con turni generati: quella del ${dataLunga(settimane[0])}.`
-    : `${settimane.length} settimane con turni generati, dalla settimana del ${dataLunga(settimane[0])} `
-      + `a quella del ${dataLunga(settimane[settimane.length - 1])}.`));
 
-  const tutteAperte = rotazioni.every((r) => stato.aperte.has(r.chiave));
+  const tutteAperte = visibili.every((r) => stato.aperte.has(r.chiave));
   root.append(el("div", { class: "filtri" }, el("button", {
     type: "button", class: "btn btn-ghost eq-tutti",
     onclick: () => {
-      stato.aperte = tutteAperte ? new Set() : new Set(rotazioni.map((r) => r.chiave));
+      stato.aperte = tutteAperte ? new Set() : new Set(visibili.map((r) => r.chiave));
       render();
       const b = stato.root.querySelector(".eq-tutti");
       if (b) b.focus();
     },
   }, tutteAperte ? "Chiudi tutti i dettagli" : "Apri tutti i dettagli")));
 
-  const tbody = el("tbody", {}, rotazioni.map((r) => renderRighe(r)));
+  const tbody = el("tbody", {}, visibili.map((r) => renderRighe(r)));
   root.append(el("div", { class: "table-scroll" }, el("table", { class: "tabella tabella-equita" },
     el("caption", { class: "sr-only" }, "Equità per tipo di turno. Fare clic su una riga per il dettaglio."),
     el("thead", {}, el("tr", {},
@@ -93,6 +96,14 @@ function render() {
     + "Weekend, Standby, Programmati e Assistenze: la parte attesa è in proporzione alle settimane lavorate; "
     + "per Ascoli alle settimane con Ascoli. Chi ha il divieto per una postazione non entra nel suo conto. "
     + "I volontari non compaiono."));
+  if (visibili.some((r) => r.festivita)) {
+    root.append(el("p", { class: "hint" },
+      "Festività: ognuna ha il suo conto, sugli ultimi 5 anni fino alla fine del periodo scelto (la data di inizio "
+      + "non conta), con gli anni passati inseriti a mano e i turni del programma, come fa il generatore. La parte "
+      + "attesa è in proporzione alle volte in cui la festività è caduta mentre la persona era in servizio, anche se "
+      + "in ferie o indisponibile; la malattia non conta. Una festività cade una volta l'anno, quindi non c'è un "
+      + "andamento settimana per settimana."));
+  }
 }
 
 /** "ore" | "turni", al singolare per 1 (1 turno, ma 0,5 turni). */
@@ -170,6 +181,7 @@ function svg(tag, attrs = {}, ...figli) {
 }
 
 function grafico(r) {
+  if (r.festivita) return el("span", { class: "muted" }, "Una volta l'anno");
   const valori = r.andamento.map((p) => p.differenza);
   if (!valori.length) return el("span", { class: "muted" }, "—");
   const massimo = Math.max(...valori, 0) || 1;
@@ -222,8 +234,11 @@ function renderDettaglio(r) {
     contenuto.push(el("p", { class: "muted" }, "Nessun dipendente ha ancora turni di questo tipo nel periodo."));
   }
   if (esclusi.length) {
-    contenuto.push(el("p", { class: "hint" }, "Non entrano nel conto (divieto per la postazione o nessun turno o "
-      + `settimana di questo tipo nel periodo): ${esclusi.map((d) => d.nome).join(", ")}.`));
+    const motivo = r.festivita
+      ? "mai in servizio in questa festività negli ultimi 5 anni"
+      : "divieto per la postazione o nessun turno o settimana di questo tipo nel periodo";
+    contenuto.push(el("p", { class: "hint" },
+      `Non entrano nel conto (${motivo}): ${esclusi.map((d) => d.nome).join(", ")}.`));
   }
   return el("div", { class: "eq-dettaglio" }, contenuto);
 }
