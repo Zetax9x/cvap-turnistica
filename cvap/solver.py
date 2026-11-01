@@ -68,6 +68,8 @@ P_GIORNO_NOTTE_STORICO = 5
 P_WEEKEND = 30
 P_RICHIESTE = 30
 P_DOPPIA_RICHIESTA = 300
+P_ASCOLI_STORICO = 30        # rotazione nel tempo del numero di turni ad Ascoli
+P_ASCOLI_GN_STORICO = 100    # per ogni turno di differenza tra giorni e notti ad Ascoli, storico compreso
 
 
 @dataclass(frozen=True)
@@ -87,7 +89,12 @@ def _rotazione_postazione(postazione: str) -> Rotazione:
                      peso=P_RICHIESTE, doppia=P_DOPPIA_RICHIESTA)
 
 
-ROTAZIONI: tuple[Rotazione, ...] = tuple(_rotazione_postazione(c) for c in CATEGORIE_RICHIESTA)
+ROTAZIONI: tuple[Rotazione, ...] = (
+    *(_rotazione_postazione(c) for c in CATEGORIE_RICHIESTA),
+    # il secondo turno nella settimana è già regolato dal massimo di Ascoli
+    Rotazione(nome=ASCOLI, conta=lambda u: u.postazione == ASCOLI, contatore=lambda st: st.ascoli,
+              esposizione=lambda st: st.settimane_ascoli, peso=P_ASCOLI_STORICO),
+)
 
 
 @dataclass
@@ -531,6 +538,13 @@ class _Modello:
             eccesso = self.model.NewIntVar(0, quanti, "")
             self.model.Add(espr <= eccesso)
             self.obiettivo.append((P_ASCOLI_GIORNO_NOTTE * self.scala, eccesso))
+        # nel tempo: tanti giorni quante notti ad Ascoli, storico compreso (dopo l'alternanza nella settimana)
+        st = self.storico.get(p.id, StoricoPersona())
+        espr = conta["giorno"] - conta["notte"] + (st.ascoli_giorno - st.ascoli_notte)
+        if not isinstance(espr, int):
+            scarto = self.model.NewIntVar(0, quanti + abs(st.ascoli_giorno - st.ascoli_notte), "")
+            self.model.AddAbsEquality(scarto, espr)
+            self.obiettivo.append((P_ASCOLI_GN_STORICO * self.scala, scarto))
 
     def _ascoli_di_fila(self):
         settimana = set(self.giorni)

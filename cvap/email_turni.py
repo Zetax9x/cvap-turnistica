@@ -446,9 +446,15 @@ def _ore_totali(r: dict) -> str:
     return f"{r['ore_totali']} ({' + '.join([str(r.get('ore_lavorate', 0)) + ' lavorate'] + assenze)})"
 
 
+def _ascoli(r: dict) -> str:
+    """Turni ad Ascoli con giorni e notti: "4 (3 / 1)"."""
+    a = r.get("ascoli") or {}
+    return f"{a.get('turni', 0)} ({a.get('giorno', 0)} / {a.get('notte', 0)})"
+
+
 def _sezione_statistiche(righe: list[dict]) -> tuple[str, str]:
     colonne = ["Persona", "Tipo", "Settimane", "Ore totali", "Saldo ore", "Ore giorno / notte",
-               "Acquasanta / Venarotta", "Turni weekend", "Standby", "Programmati"]
+               "Acquasanta / Venarotta", "Turni weekend", "Standby", "Programmati", "Ascoli (giorni / notti)"]
     corpo, txt = [], []
     for r in righe:
         saldo = r.get("saldo_ore", 0)
@@ -457,7 +463,7 @@ def _sezione_statistiche(righe: list[dict]) -> tuple[str, str]:
         valori = [r["nome"], "Dipendente" if r["tipo"] == "dipendente" else "Volontario", r["settimane"],
                   _ore_totali(r), saldo_t, f"{r['ore_giorno']} / {r['ore_notte']}",
                   f"{sedi.get('Acquasanta', 0)} / {sedi.get('Venarotta', 0)}", sum(r["weekend"].values()),
-                  r["standby"], r["programmati"]]
+                  r["standby"], r["programmati"], _ascoli(r)]
         corpo.append("<tr>" + "".join(f'<td style="{_TC}{"text-align:right;" if i >= 2 else ""}">'
                                       f'{"<b>" if i == 0 else ""}{_e(v)}{"</b>" if i == 0 else ""}</td>'
                                       for i, v in enumerate(valori)) + "</tr>")

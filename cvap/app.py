@@ -30,7 +30,7 @@ from .modello import (EXTRA, INTERO_DI, PARTI_TURNO, POSTAZIONI_A_RICHIESTA, PRO
                       turno_ammesso)
 from .storico import (CATEGORIE_WEEKEND, SEDI_ALTERNATE, SettimanaPassata, calcola_storico, categoria_weekend,
                       indisponibilita_per_giorno, solo_generate)
-from .vincoli import (ORE_MAX_SETTIMANA, TESTO_FERIE, TESTO_MALATTIA, differenza_ore, giorni_disponibili,
+from .vincoli import (ASCOLI, ORE_MAX_SETTIMANA, TESTO_FERIE, TESTO_MALATTIA, differenza_ore, giorni_disponibili,
                       media_ore, ore_ferie, valida_settimana)
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
@@ -1006,6 +1006,7 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                 "weekend": dict(st.weekend),
                 "standby": st.richieste[STANDBY], "programmati": st.richieste[PROGRAMMATI],
                 "sedi": dict(st.sedi),
+                "ascoli": {"turni": st.ascoli, "giorno": st.ascoli_giorno, "notte": st.ascoli_notte},
             })
 
         volontari: dict[int, dict] = {}
@@ -1021,6 +1022,7 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                     "saldo_ore": 0, "ore_giorno": 0, "ore_notte": 0,
                     "weekend": {k: 0 for k in CATEGORIE_WEEKEND}, "standby": 0, "programmati": 0,
                     "sedi": {k: 0 for k in SEDI_ALTERNATE},
+                    "ascoli": {"turni": 0, "giorno": 0, "notte": 0},
                 })
                 if a.persona_id not in visti:
                     visti.add(a.persona_id)
@@ -1036,6 +1038,9 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                     v[chiave] += 1
                 if a.postazione in v["sedi"]:
                     v["sedi"][a.postazione] += 1
+                if a.postazione == ASCOLI:
+                    v["ascoli"]["turni"] += 1
+                    v["ascoli"][a.fascia] += 1
         out += volontari.values()
         out.sort(key=lambda r: (r["tipo"] != "dipendente", r["nome"].lower(), r["persona_id"]))
         return out

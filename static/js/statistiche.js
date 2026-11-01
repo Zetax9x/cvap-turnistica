@@ -22,6 +22,7 @@ const COLONNE = [
   { campo: "weekend_tot", titolo: "Tot. weekend", valore: (r) => totWeekend(r) },
   { campo: "standby", titolo: "Standby", valore: (r) => r.standby || 0 },
   { campo: "programmati", titolo: "Programmati", valore: (r) => r.programmati || 0 },
+  { campo: "ascoli", titolo: "Ascoli (G / N)", valore: (r) => asc(r, "turni") },
 ];
 
 function tot(r) { return (r.ore_giorno || 0) + (r.ore_notte || 0); }
@@ -35,6 +36,7 @@ function dettaglioOre(r) {
 
 function sede(r, k) { return (r.sedi && r.sedi[k]) || 0; }
 function totSedi(r) { return sede(r, "Acquasanta") + sede(r, "Venarotta"); }
+function asc(r, k) { return (r.ascoli && r.ascoli[k]) || 0; }
 function wk(r, k) { return (r.weekend && r.weekend[k]) || 0; }
 function totWeekend(r) { return ["sab_giorno", "sab_notte", "dom_giorno", "dom_notte"].reduce((s, k) => s + wk(r, k), 0); }
 
@@ -170,6 +172,7 @@ function render() {
       el("td", { class: "num" }, String(totWeekend(r))),
       el("td", { class: "num" }, String(r.standby || 0)),
       el("td", { class: "num" }, String(r.programmati || 0)),
+      el("td", { class: "num" }, `${asc(r, "turni")} (${asc(r, "giorno")} / ${asc(r, "notte")})`),
     );
   }));
 
@@ -182,5 +185,7 @@ function render() {
   root.append(el("p", { class: "hint" }, "Weekend: numero di turni svolti il sabato e la domenica, di giorno (G) e di notte (N). " +
     "Acquasanta / Venarotta: turni svolti in ciascuna delle due sedi (anche i mezzi turni); il generatore cerca di farne " +
     "fare a ogni dipendente tanti nell'una quanti nell'altra. " +
-    "Standby e Programmati: turni svolti in quelle postazioni; il generatore li distribuisce in modo equo come i weekend."));
+    "Standby e Programmati: turni svolti in quelle postazioni; il generatore li distribuisce in modo equo come i weekend. " +
+    "Ascoli: turni svolti ad Ascoli, tra parentesi quanti di giorno (G) e di notte (N); il generatore li distribuisce " +
+    "in proporzione alle settimane con Ascoli e cerca di far fare a ognuno tanti giorni quante notti."));
 }
