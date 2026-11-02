@@ -297,7 +297,7 @@ input[type="checkbox"] { min-height: 0; width: 1.1rem; height: 1.1rem; accent-co
 }
 .griglia-copertura-critica { border-color: var(--err); color: var(--err); background: var(--err-bg); }
 .griglia-scroll {
-  overflow-x: auto; -webkit-overflow-scrolling: touch;
+  overflow-x: auto; -webkit-overflow-scrolling: touch; position: relative;  /* tiene dentro i testi sr-only */
   border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
 }
 .griglia { width: 100%; min-width: 860px; border-collapse: collapse; table-layout: fixed; }
