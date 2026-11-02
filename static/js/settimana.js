@@ -855,6 +855,14 @@ async function onCambiaIndisponibilita(p, data, menu) {
         .map((x) => ({ data: x.data, parte: x.parte }));
       for (const parte of PARTI_TURNO.filter((x) => scelte.includes(x))) turni.push({ data, parte });
       aggiorna(await api.impostaIndisponibilita(stato.data, p.id, turni));
+      const copertura = await api.coperturaPreventiva(stato.data);
+      if (copertura.solo_dipendenti.stato === "non_copribile") {
+        const conVolontari = copertura.con_volontari.stato === "copribile"
+          ? " Con i volontari già prenotati la settimana è copribile." : "";
+        toast(`Attenzione: con i soli dipendenti la settimana non è copribile.${conVolontari}`, "errore");
+      } else if (copertura.solo_dipendenti.stato === "da_verificare") {
+        toast("Il controllo preventivo non si è concluso in tempo: verifica la settimana.", "avviso");
+      }
     });
     rifocalizza(idFocus);
   } catch (err) {

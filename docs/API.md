@@ -102,6 +102,10 @@ Con `APP_PASSWORD` impostata (`create_app(..., password=...)`) tutte le API tran
     report                // ultimo report di generazione o null
   }
   ```
+- `GET /settimane/{data}/copertura-preventiva` → `{settimana, solo_dipendenti, con_volontari}`. Entrambi gli
+  scenari hanno `{stato: "copribile"|"non_copribile"|"da_verificare", scoperti, messaggio?}` e non salvano turni:
+  impongono la copertura completa rispettando solo i vincoli rigidi. Il primo ignora i volontari; il secondo usa le
+  loro prenotazioni già registrate.
 - `POST /settimane/{data}/assegnazioni` `{data, postazione, fascia, segmento, ruolo, persona_id | nome_volontario}` → 201 settimana aggiornata (stesso payload di GET).
   Con `nome_volontario` (al posto di `persona_id`) il volontario si cerca per nome, senza distinguere maiuscole e spazi;
   se non esiste viene creato (qualifica = ruolo del turno), se era disattivato viene riattivato, se fa l'autista diventa

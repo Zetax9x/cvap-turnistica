@@ -14,11 +14,13 @@ const stato = {
   mostraInattivi: true,
   inModifica: null, // id persona in modifica
   turniDaCoprire: null, // {nome, motivo, turni} dopo aver segnato un'assenza a chi aveva già turni
+  coperturaPreventiva: [], // controlli delle settimane toccate dall'ultima assenza inserita
 };
 
 export async function mostra(root) {
   stato.root = root;
   stato.turniDaCoprire = null;
+  stato.coperturaPreventiva = [];
   if (!stato.persone.length) clear(root).append(el("p", { class: "muted loading" }, "Caricamento del personale…"));
   try {
     [stato.persone, stato.ferie] = await Promise.all([api.persone(), api.ferie()]);
@@ -292,6 +294,7 @@ function renderFerie() {
         const creata = await api.creaFerie({ persona_id: Number(persona.value), dal: dal.value, al: al.value, motivo: motivo.value });
         toast(motivo.value === "malattia" ? "Malattia aggiunta." : "Ferie aggiunte.", "ok");
         stato.turniDaCoprire = await cercaTurni(creata, nome, motivo.value);
+        stato.coperturaPreventiva = await controllaCopertura(creata);
         await ricarica();
         const avviso = document.getElementById("avviso-turni-ferie");
         if (avviso) avviso.focus();
@@ -337,6 +340,7 @@ function renderFerie() {
       "Nei giorni di ferie o di malattia/infortunio il dipendente non riceve turni e ogni giorno conta 6 ore nel confronto tra le ore dei dipendenti. ",
       "Le ore che mancano non vanno recuperate nelle settimane successive. Il motivo serve solo a distinguerle."),
     renderAvvisoTurni(),
+    renderAvvisoCopertura(),
     form,
     correnti.length ? tabella(correnti) : el("p", { class: "muted" }, "Nessuna ferie o malattia in corso o in programma."),
     passate.length ? el("details", { class: "ferie-passate" },
@@ -405,4 +409,62 @@ function renderAvvisoTurni() {
       el("a", { class: "btn btn-small btn-primary", href: `#settimana/${lunedi}` }, `Settimana del ${dataLunga(lunedi)}`),
       el("ul", { class: "avviso-turni-elenco" }, turni.map((t) => el("li", {}, descriviTurno(t))))))),
     chiudi);
+}
+
+function lunedi(data) {
+  const d = new Date(`${data}T12:00:00`);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return d.toISOString().slice(0, 10);
+}
+
+async function controllaCopertura(ferie) {
+  const settimane = new Set();
+  for (let d = ferie.dal; d <= ferie.al;) {
+    settimane.add(lunedi(d));
+    const dopo = new Date(`${d}T12:00:00`);
+    dopo.setDate(dopo.getDate() + 1);
+    d = dopo.toISOString().slice(0, 10);
+  }
+  try {
+    return await Promise.all([...settimane].map(async (settimana) =>
+      ({ settimana, ...(await api.coperturaPreventiva(settimana)) })));
+  } catch (err) {
+    return [{ errore: err && err.message ? err.message : String(err) }];
+  }
+}
+
+function descriviScoperti(scoperti) {
+  return scoperti.slice(0, 3).map((t) =>
+    `${GIORNI_BREVI[indiceGiorno(t.data)]} ${ddmm(t.data)}: ${t.postazione}, ${etichetta("ruolo", t.ruolo)} ${t.fascia}`);
+}
+
+function renderAvvisoCopertura() {
+  const controlli = stato.coperturaPreventiva || [];
+  if (!controlli.length) return null;
+  const chiudi = el("button", {
+    type: "button", class: "btn btn-small", onclick: () => { stato.coperturaPreventiva = []; render(); },
+  }, "Chiudi");
+  if (controlli[0].errore) {
+    return el("div", { class: "banner banner-avviso" },
+      el("p", {}, el("strong", {}, "Assenza registrata, ma controllo preventivo non disponibile. "), controlli[0].errore), chiudi);
+  }
+  const critici = controlli.filter((x) => x.solo_dipendenti && x.solo_dipendenti.stato === "non_copribile");
+  const incerti = controlli.filter((x) => x.solo_dipendenti && x.solo_dipendenti.stato === "da_verificare");
+  if (incerti.length) return el("div", { class: "banner banner-avviso" },
+    el("p", {}, el("strong", {}, "Controllo preventivo da verificare. "),
+      "La simulazione non si è conclusa in tempo: controlla le settimane interessate."), chiudi);
+  if (!critici.length) return el("div", { class: "banner banner-ok" },
+    el("p", {}, el("strong", {}, "Controllo preventivo: "), "con i soli dipendenti le settimane interessate restano copribili."), chiudi);
+  return el("div", { class: "banner banner-errore" },
+    el("p", {}, el("strong", {}, "Controllo preventivo: personale dipendente insufficiente. "),
+      "Le assenze sono state registrate, ma occorre organizzare coperture o volontari."),
+    el("ul", { class: "avviso-turni-settimane" }, critici.map((x) => {
+      const conVolontari = x.con_volontari;
+      const scoperti = descriviScoperti(x.solo_dipendenti.scoperti || []);
+      return el("li", {},
+        el("a", { class: "btn btn-small btn-primary", href: `#settimana/${x.settimana}` }, `Settimana del ${dataLunga(x.settimana)}`),
+        scoperti.length ? el("span", {}, ` ${scoperti.join("; ")}.`) : null,
+        conVolontari && conVolontari.stato === "copribile"
+          ? el("span", { class: "muted" }, " Con i volontari già prenotati risulta copribile.") : null);
+    })), chiudi);
 }

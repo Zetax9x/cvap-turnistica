@@ -104,6 +104,7 @@ export const api = {
   salvaImpostazioni: (dati) => richiesta("PUT", "/impostazioni", dati),
 
   settimana: (data) => richiesta("GET", `/settimane/${enc(data)}`),
+  coperturaPreventiva: (data) => richiesta("GET", `/settimane/${enc(data)}/copertura-preventiva`),
   aggiungiAssegnazione: (data, dati) => richiesta("POST", `/settimane/${enc(data)}/assegnazioni`, dati),
   eliminaAssegnazione: (id) => richiesta("DELETE", `/assegnazioni/${enc(id)}`),
   // Chi può coprire un turno (dipendenti che rispettano le regole, il migliore per primo) e cambio del titolare

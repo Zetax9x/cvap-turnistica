@@ -132,6 +132,7 @@ def genera(
     fabbisogno: Sequence[Fabbisogno] = (),
     scarto_ore_max: int = SCARTO_ORE_MAX,
     festivi: FestiviSettimana | None = None,
+    copertura_rigida: bool = False,
 ) -> Risultato:
     """Genera i turni dei dipendenti.
 
@@ -143,6 +144,8 @@ def genera(
     `scarto_ore_max`: differenza massima ammessa tra chi fa più ore e chi ne fa meno (ferie comprese),
     tra i dipendenti senza massimo ore.
     `festivi`: i turni festivi della settimana con lo storico di ogni festività (cvap/rotazione_festivi.py).
+    `copertura_rigida`: se vero, non ammette posti scoperti. Serve ai controlli preventivi e non
+    modifica il comportamento del generatore normale, che invece segnala i posti scoperti migliori possibili.
     """
     avvio = time.monotonic()
     storico = storico or {}
@@ -164,7 +167,7 @@ def genera(
 
     ferie_di = {p.id: set(ferie.get(p.id, ())) for p in dipendenti}
     m = _Modello(giorni, unita, dipendenti, fissi, contesto, storico, crediti, ferie_di, indisponibili,
-                 scarto_ore_max, festivi)
+                 scarto_ore_max, festivi, copertura_rigida)
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = tempo_max
     solver.parameters.num_search_workers = workers
@@ -175,7 +178,9 @@ def genera(
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         if status == cp_model.INFEASIBLE:
-            msg = ("I turni fissati a mano o le settimane vicine rendono impossibile rispettare "
+            msg = ("Non ci sono abbastanza dipendenti per coprire tutti i turni rispettando le regole rigide."
+                   if copertura_rigida else
+                   "I turni fissati a mano o le settimane vicine rendono impossibile rispettare "
                    "riposi e turni consecutivi. Rimuovi qualche turno fissato.")
         elif status == cp_model.MODEL_INVALID:
             msg = "Errore interno nel modello di generazione: " + m.model.Validate()
@@ -370,7 +375,7 @@ class _Modello:
         return any((u.data, parte) in indisp for parte in parti_turno(u.fascia, u.segmento))
 
     def __init__(self, giorni, unita, dipendenti, fissi, contesto, storico, crediti, ferie, indisponibili,
-                 scarto_ore_max=SCARTO_ORE_MAX, festivi=None):
+                 scarto_ore_max=SCARTO_ORE_MAX, festivi=None, copertura_rigida=False):
         self.model = cp_model.CpModel()
         self.giorni = giorni
         self.unita = unita
@@ -404,7 +409,7 @@ class _Modello:
         for (pid, ui), v in self.x.items():
             self.per_persona[pid].append((unita[ui], v))
 
-        self._copertura()
+        self._copertura(copertura_rigida)
         self._riposo()
         self._consecutivi()
         self._ascoli()
@@ -413,8 +418,9 @@ class _Modello:
         self._weekend()
         self._rotazioni()
         self._festivita()
-        self.model.Minimize(sum(c * e for c, e in self.obiettivo))
-        self._suggerimento_iniziale()
+        if not copertura_rigida:
+            self.model.Minimize(sum(c * e for c, e in self.obiettivo))
+            self._suggerimento_iniziale()
 
     def _suggerimento_iniziale(self):
         """Soluzione greedy valida usata come punto di partenza (hint): velocizza molto CP-SAT."""
@@ -476,7 +482,7 @@ class _Modello:
     def _vars_di(self, pid, filtro=lambda u: True):
         return [(u, v) for u, v in self.per_persona[pid] if filtro(u)]
 
-    def _copertura(self):
+    def _copertura(self, rigida=False):
         per_unita = defaultdict(list)
         for (_, ui), v in self.x.items():
             per_unita[ui].append(v)
@@ -488,6 +494,9 @@ class _Modello:
         for livello in (2, 1, 0):
             peso[livello] = peso[livello + 1] * (quanti[livello + 1] + 1)
         for ui, u in enumerate(self.unita):
+            if rigida:
+                self.model.Add(sum(per_unita[ui]) == 1)
+                continue
             scoperto = self.model.NewBoolVar(f"scoperto_{ui}")
             self.model.Add(sum(per_unita[ui]) + scoperto == 1)
             self.obiettivo.append((peso[_priorita(u)], scoperto))

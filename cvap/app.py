@@ -71,6 +71,7 @@ def worker_generatore() -> int:
 # un solo indirizzo semplice (ASCII, niente virgole, <>, virgolette): mai più destinatari in un campo
 _EMAIL = re.compile(r"^[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$")
 PROVE_PER_ORA = 10  # email di prova al massimo in un'ora (limite salvato nel database: vale anche su Vercel)
+TEMPO_MAX_COPERTURA_PREVENTIVA = 5.0
 
 
 def _email(v):
@@ -520,6 +521,30 @@ def _verifica_modificabile(conn, inizio: date) -> None:
         raise _errore("La settimana è confermata: riaprila per modificarla")
 
 
+def _copertura_preventiva(conn, inizio: date, con_volontari: bool) -> dict:
+    """Verifica senza salvare se tutti i posti possono essere coperti."""
+    from . import solver  # OR-Tools è pesante: serve solo quando si chiede il controllo
+
+    d = _dati_settimana(conn, inizio)
+    fissi = [a for _, a in d.righe if a.origine != "generato"
+             and (con_volontari or d.persone.get(a.persona_id, {}).get("tipo") == "dipendente")]
+    argomenti = dict(
+        fissi=fissi, contesto=d.contesto, ferie=d.ferie, indisponibili=d.indisponibili,
+        fabbisogno=d.fabbisogno, scarto_ore_max=d.scarto_ore_max,
+        tempo_max=TEMPO_MAX_COPERTURA_PREVENTIVA, workers=worker_generatore(),
+    )
+    ris = solver.genera(d.giorni, d.attive, db.dipendenti_attivi(conn), copertura_rigida=True, **argomenti)
+    if ris.stato in ("ottimo", "ammissibile"):
+        return {"stato": "copribile", "scoperti": []}
+    if ris.stato == "nessuna_soluzione":
+        return {"stato": "da_verificare", "scoperti": [], "messaggio": ris.messaggio}
+
+    # La versione normale può lasciare posti scoperti: li usiamo per indicare i punti critici.
+    spiegazione = solver.genera(d.giorni, d.attive, db.dipendenti_attivi(conn), **argomenti)
+    return {"stato": "non_copribile", "scoperti": [_unita_json(u) for u in spiegazione.scoperti],
+            "messaggio": ris.messaggio}
+
+
 # --- app ---------------------------------------------------------------------
 
 def create_app(db_path: str, password: str | None = None, postino=None) -> FastAPI:
@@ -686,6 +711,16 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
     @app.get("/api/settimane/{data}")
     def get_settimana(data: str, conn: Conn):
         return payload_settimana(conn, lunedi(_data(data)))
+
+    @app.get("/api/settimane/{data}/copertura-preventiva")
+    def copertura_preventiva(data: str, conn: Conn):
+        """Capacità della settimana: prima senza volontari, poi con le prenotazioni già registrate."""
+        inizio = lunedi(_data(data))
+        return {
+            "settimana": inizio.isoformat(),
+            "solo_dipendenti": _copertura_preventiva(conn, inizio, con_volontari=False),
+            "con_volontari": _copertura_preventiva(conn, inizio, con_volontari=True),
+        }
 
     @app.post("/api/settimane/{data}/assegnazioni", status_code=201)
     def aggiungi_assegnazione(data: str, body: AssegnazioneIn, conn: Conn):

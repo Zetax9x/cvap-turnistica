@@ -357,6 +357,27 @@ def test_crud_ferie(client):
     assert client.delete(f"/api/ferie/{f['id']}").status_code == 404
 
 
+def test_copertura_preventiva_restituisce_i_due_scenari(client):
+    crea(client, "Autista", qualifica="autista")
+    crea(client, "Soccorritore", qualifica="soccorritore")
+    r = client.get(f"/api/settimane/{LUNEDI_A}/copertura-preventiva")
+    assert r.status_code == 200, r.text
+    dati = r.json()
+    assert dati["settimana"] == LUNEDI_A
+    assert dati["solo_dipendenti"]["stato"] == "non_copribile"
+    assert dati["con_volontari"]["stato"] == "non_copribile"
+    assert dati["solo_dipendenti"]["scoperti"]
+
+
+def test_copertura_preventiva_con_organico_sufficiente(client):
+    staff_14(client)
+    r = client.get(f"/api/settimane/{LUNEDI_A}/copertura-preventiva")
+    assert r.status_code == 200, r.text
+    dati = r.json()
+    assert dati["solo_dipendenti"] == {"stato": "copribile", "scoperti": []}
+    assert dati["con_volontari"] == {"stato": "copribile", "scoperti": []}
+
+
 def test_ferie_non_valide(client):
     p = crea(client, "Mario")
     v = crea(client, "Anna", "volontario", "soccorritore")

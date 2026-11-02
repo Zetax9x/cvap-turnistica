@@ -94,6 +94,12 @@ def test_personale_insufficiente_segnala_i_posti_scoperti_senza_violare_le_regol
     assert tipi <= {"scoperto"}
 
 
+def test_copertura_rigida_dichiara_impossibile_un_organico_insufficiente():
+    r = genera(GIORNI, STAZIONI_A, staff(2, 1), tempo_max=10, copertura_rigida=True)
+    assert r.stato == "impossibile"
+    assert r.assegnazioni == []
+
+
 def test_contesto_settimana_precedente_rispetta_il_riposo(dipendenti_14):
     domenica_prima = LUNEDI_A - timedelta(days=1)
     contesto = [ass(domenica_prima, "Acquasanta", "notte", "autista", p.id) for p in dipendenti_14[:2]]
