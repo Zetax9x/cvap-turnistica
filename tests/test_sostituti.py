@@ -307,3 +307,65 @@ def test_api_sostituisci_rifiuta_chi_non_puo_prendere_il_turno(client):
     for pid in (assente, occupato):
         r = client.post(f"/api/assegnazioni/{aid}/sostituisci", json={"persona_id": pid})
         assert r.status_code == 400 and "non può prendere" in r.json()["detail"]
+
+
+# --- catena: B prende il turno del malato e cede un suo turno a C (un solo passaggio) ------------------
+
+def scenario_catena():
+    """Nessuno copre direttamente il giorno 8-20 di martedì: B ha la notte prima (24 h di fila), C ha un divieto.
+    Ma B può prenderlo cedendo la sua notte a C."""
+    persone = {1: persona(1, "Malato"), 2: persona(2, "B"),
+               3: persona(3, "C", divieti=(Divieto(SEDE, "giorno"),)), 4: persona(4, "Assente")}
+    t = turno(1, giorno=1)
+    notte_b = turno(2, giorno=0, fascia="notte", postazione=ALTRA)
+    return persone, t, notte_b
+
+
+def test_catena_quando_nessuno_copre_direttamente():
+    from cvap.sostituti import catene_sostituzione
+    persone, t, notte_b = scenario_catena()
+    ferie = {1: {GIORNI[1]}, 4: {GIORNI[0], GIORNI[1]}}
+    assert calcola(t, [t, notte_b], persone, ferie=ferie) == [] or all(
+        c.regole for c in calcola(t, [t, notte_b], persone, ferie=ferie))
+    catene = catene_sostituzione(t, [1, 2, 3, 4], giorni=GIORNI, postazioni=[SEDE, ALTRA],
+                                 assegnazioni=[t, notte_b], persone=persone, ferie=ferie)
+    assert [(k.prende.persona_id, k.ceduto, k.copre.persona_id) for k in catene] == [(2, notte_b, 3)]
+    k = catene[0]
+    assert (k.prende.ore, k.prende.ore_dopo) == (12, 12)           # B: scambia un turno, ore normali
+    assert (k.copre.ore_sostituzioni, k.copre.ore_dopo) == (0, 12)  # C: lavora in più, ore extra
+    assert k.prende.regole == k.copre.regole == ()
+
+
+def test_niente_catene_se_c_e_un_sostituto_diretto():
+    from cvap.sostituti import catene_sostituzione
+    persone, t, notte_b = scenario_catena()
+    persone[5] = persona(5, "Libero")
+    catene = catene_sostituzione(t, [2, 3, 5], giorni=GIORNI, postazioni=[SEDE, ALTRA],
+                                 assegnazioni=[t, notte_b], persone=persone, ferie={1: {GIORNI[1]}})
+    assert catene == []
+
+
+def test_api_catena(client):
+    malato, b, c = crea(client, "Malato"), crea(client, "B"), crea(client, "C")
+    client.post("/api/divieti", json={"persona_id": c, "postazione": SEDE, "turno": "giorno"})
+    aid = prenota(client, malato)                                                   # mar 20/10 8-20
+    r = client.post("/api/settimane/2026-10-19/assegnazioni", json={
+        "data": "2026-10-19", "postazione": ALTRA, "fascia": "notte", "segmento": "intero", "ruolo": "autista",
+        "persona_id": b})
+    notte = next(a["id"] for a in r.json()["assegnazioni"] if a["persona_id"] == b)
+    client.post("/api/ferie", json={"persona_id": malato, "dal": "2026-10-20", "al": "2026-10-20",
+                                    "motivo": "malattia"})
+    body = client.get(f"/api/assegnazioni/{aid}/sostituti").json()
+    assert all(x["regole"] for x in body["candidati"])
+    catena = body["catene"][0]
+    assert (catena["prende"]["persona_id"], catena["ceduto"]["id"], catena["copre"]["persona_id"]) == (b, notte, c)
+    # una catena non valida è rifiutata e non tocca nulla
+    sbagliata = client.post(f"/api/assegnazioni/{aid}/catena",
+                            json={"persona_id": c, "ceduto_id": notte, "sostituto_id": b})
+    assert sbagliata.status_code == 400
+    r = client.post(f"/api/assegnazioni/{aid}/catena", json={"persona_id": b, "ceduto_id": notte, "sostituto_id": c})
+    assert r.status_code == 200, r.text
+    turni = sorted((a["persona_id"], a["data"], a["fascia"], a["origine"]) for a in r.json()["assegnazioni"])
+    assert turni == sorted([(b, "2026-10-20", "giorno", "manuale"), (c, "2026-10-19", "notte", "sostituzione")])
+    assert client.post(f"/api/assegnazioni/{aid}/catena",
+                       json={"persona_id": b, "ceduto_id": notte, "sostituto_id": c}).status_code == 404

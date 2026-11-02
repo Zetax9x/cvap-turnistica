@@ -160,7 +160,7 @@ function render() {
   frammento.append(griglie);
 
   const daCoprire = renderTurniDaCoprire(s, {
-    aggiorna, apriTurno: (a) => apriDialog(cellaDi(a)), occupato: () => stato.occupato,
+    aggiorna, ricarica, apriTurno: (a) => apriDialog(cellaDi(a)), occupato: () => stato.occupato,
   });
   if (daCoprire) frammento.append(daCoprire);
   frammento.append(el("div", { class: "pannelli" }, renderViolazioni(s), renderRiepilogo(s)));
@@ -1377,7 +1377,7 @@ function mostraSostituti(s, a, box, btn, confermata) {
     el("p", { class: "hint" }, `Chi può prendere il turno di ${a.persona_nome}:`),
     el("p", { class: "hint" }, "Le ore di una sostituzione sono extra: non contano nelle ore della settimana né nelle statistiche."),
     confermata ? el("p", { class: "hint" }, "Settimana confermata: riaprila per assegnare.") : null,
-    renderSostituti(s, a, { aggiorna, confermata, occupato: () => stato.occupato, dopo }),
+    renderSostituti(s, a, { aggiorna, ricarica, confermata, occupato: () => stato.occupato, dopo }),
     el("button", {
       type: "button", class: "btn btn-small btn-ghost",
       onclick: (e) => stampaSostituti(s, [{ ...a, motivo: motivoAssenza(s, a) }], e.currentTarget),

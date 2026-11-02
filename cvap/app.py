@@ -27,7 +27,7 @@ from .calendario import giorni_settimana, lunedi, postazioni_attive, tipo_settim
 from .festivita import festivi_periodo
 from .rotazione_festivi import riepilogo_generazione
 from .liberi import liberi_settimana
-from .sostituti import candidati_sostituzione
+from .sostituti import Candidato, candidati_sostituzione, catene_sostituzione, prova_catena
 from .riepilogo import GIORNI_MAX as GIORNI_MAX_RIEPILOGO, riepilogo_persona
 from .modello import (EXTRA, INTERO_DI, PARTI_TURNO, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, SEGMENTI, STANDBY,
                       SOSTITUZIONE, TURNI_VIETABILI, Assegnazione, Fabbisogno, Persona, leggi_extra, ore_extra,
@@ -187,6 +187,12 @@ class FerieIn(BaseModel):
 
 class SostituisciIn(BaseModel):
     persona_id: Id
+
+
+class CatenaIn(BaseModel):
+    persona_id: Id    # B: prende il turno da coprire
+    ceduto_id: Id     # il turno di B che passa a C
+    sostituto_id: Id  # C: prende il turno di B come sostituzione (ore extra)
 
 
 class TurnoIndisponibileIn(BaseModel):
@@ -437,6 +443,10 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
         "liberi": liberi,
         "report": riga["report"] if riga else None,
     }
+
+
+def _candidato_json(c: Candidato) -> dict:
+    return {**dataclasses.asdict(c), "regole": list(c.regole), "avvisi": list(c.avvisi)}
 
 
 def _settimana_passata(conn, riga: dict) -> SettimanaPassata:
@@ -742,6 +752,10 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
         d = _dati_settimana(conn, lunedi(a.data))
         candidabili = [pid for pid, p in d.persone.items() if p["tipo"] == "dipendente" and p["attivo"]]
         candidati = candidati_sostituzione(a, candidabili, **d.regole())
+        catene = catene_sostituzione(a, candidabili, **d.regole())
+        id_di = {}
+        for aid, x in d.righe:
+            id_di.setdefault(x, aid)
         titolare = d.persone.get(a.persona_id)
         return {
             "turno": {"id": assegnazione_id, "data": a.data.isoformat(), "postazione": a.postazione,
@@ -749,9 +763,37 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                       "persona_nome": titolare["nome"] if titolare else f"#{a.persona_id}",
                       "ore": a.ore, "origine": a.origine},
             "assenza": d.assenza(a.persona_id, a.data),
-            "candidati": [{**dataclasses.asdict(c), "regole": list(c.regole), "avvisi": list(c.avvisi)}
-                          for c in candidati],
+            "candidati": [_candidato_json(c) for c in candidati],
+            "catene": [{"prende": _candidato_json(k.prende), "copre": _candidato_json(k.copre),
+                        "ceduto": {"id": id_di[k.ceduto], "data": k.ceduto.data.isoformat(),
+                                   "postazione": k.ceduto.postazione, "fascia": k.ceduto.fascia,
+                                   "segmento": k.ceduto.segmento, "ruolo": k.ceduto.ruolo, "ore": k.ceduto.ore}}
+                       for k in catene],
         }
+
+    @app.post("/api/assegnazioni/{assegnazione_id}/catena")
+    def fai_catena(assegnazione_id: IdPath, body: CatenaIn, conn: Conn):
+        """B prende il turno (ore normali) e cede il suo turno `ceduto_id` a C (sostituzione, ore extra)."""
+        with scrittura():
+            a = _assegnazione(conn, assegnazione_id)
+            ceduto = _assegnazione(conn, body.ceduto_id)
+            inizio = lunedi(a.data)
+            _verifica_modificabile(conn, inizio)
+            if lunedi(ceduto.data) != inizio:
+                raise _errore("Il turno ceduto deve essere nella stessa settimana")
+            d = _dati_settimana(conn, inizio)
+            attivi = {pid for pid, p in d.persone.items() if p["tipo"] == "dipendente" and p["attivo"]}
+            catena = None
+            if {body.persona_id, body.sostituto_id} <= attivi and ceduto.persona_id == body.persona_id:
+                catena = prova_catena(a, body.persona_id, ceduto, body.sostituto_id, **d.regole())
+            if catena is None:
+                raise _errore("Questo scambio non rispetta più le regole: ricarica i suggerimenti")
+            fatto = db.sostituisci_assegnazioni(
+                conn, (assegnazione_id, dataclasses.replace(a, persona_id=body.persona_id, origine="manuale")),
+                (body.ceduto_id, dataclasses.replace(ceduto, persona_id=body.sostituto_id, origine=SOSTITUZIONE)))
+            if not fatto:
+                raise HTTPException(409, "I turni sono appena stati modificati da qualcun altro: ricarica la settimana")
+            return payload_settimana(conn, inizio)
 
     @app.post("/api/assegnazioni/{assegnazione_id}/sostituisci")
     def sostituisci(assegnazione_id: IdPath, body: SostituisciIn, conn: Conn):

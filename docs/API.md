@@ -118,6 +118,13 @@ Con `APP_PASSWORD` impostata (`create_app(..., password=...)`) tutte le API tran
   con i messaggi in `regole`: chi non rispetterebbe riposo 11 h, giorni di fila o regole di Ascoli (scelta dell'utente);
   `avvisi` = eccezioni ammesse (es. 3 giorni di fila). Ordine: meno regole violate, meno avvisi, meno ore (`ore_contate` + `ore_sostituzioni`), nome. `ore` = ore di turno che contano,
   `ore_dopo` = ore lavorate davvero dopo la sostituzione. Funziona anche a settimana confermata (sola lettura).
+  `catene: [{prende, ceduto: {id, data, postazione, fascia, segmento, ruolo, ore}, copre}]` (`prende`/`copre` come i candidati):
+  solo se nessun candidato rispetta tutte le regole, catene di un passaggio (scelta dell'utente): B prende il turno (ore normali,
+  `manuale`) e cede un suo turno entro 3 giorni a C (`sostituzione`, ore extra); B e C devono rispettare tutte le regole e B non
+  può scendere sotto il minimo di ore. Massimo 10, ordinate per note, poi ore di C, poi ore di B. `prende.ore` = ore di B prima.
+- `POST /assegnazioni/{id}/catena` `{persona_id, ceduto_id, sostituto_id}` → settimana aggiornata: fa la catena in un'unica
+  transazione dopo averla riverificata. 400 se settimana confermata, turno ceduto in un'altra settimana o catena non più valida ·
+  404 · 409 se uno dei due turni è sparito nel frattempo.
 - `POST /assegnazioni/{id}/sostituisci` `{persona_id}` → settimana aggiornata. Toglie l'assegnazione e la ridà alla persona in
   un'unica transazione con `origine` `sostituzione` (volontari: `volontario`). 400 se settimana confermata, stessa persona, persona
   non attiva, non abilitata al ruolo o già nello stesso turno · 404 · 409 se il turno è sparito nel frattempo.
