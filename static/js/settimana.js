@@ -276,7 +276,7 @@ function renderToolbar(s) {
       el("button", { type: "button", class: "btn", onclick: stampaGriglia }, "Stampa tabellone")));
   const primaria = confermata
     ? el("button", { type: "button", class: "btn btn-primary btn-grande", disabled: dis, onclick: () => apriInvio(stato.data) }, "Invia i turni via email")
-    : generati || s.assegnazioni.length
+    : haGenerati || s.assegnazioni.length
       ? el("button", { type: "button", class: "btn btn-primary btn-grande", disabled: dis, onclick: onConferma }, "Conferma settimana")
       : el("button", { type: "button", class: "btn btn-primary btn-grande", disabled: dis, onclick: onGenera }, "Genera turni");
   return el("div", { class: "toolbar", role: "group", "aria-label": "Azioni settimana" },

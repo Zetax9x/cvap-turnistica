@@ -306,7 +306,7 @@ input[type="checkbox"] { min-height: 0; width: 1.1rem; height: 1.1rem; accent-co
 .griglia tr > :last-child { border-right: 0; }
 .griglia tbody tr:last-child > * { border-bottom: 0; }
 .griglia thead th {
-  position: sticky; top: 68px; z-index: 2; background: var(--surface); padding: .55rem .35rem; font-size: .9rem; text-align: center;
+  background: var(--surface); padding: .55rem .35rem; font-size: .9rem; text-align: center;
   border-top: 0; border-bottom: 2px solid var(--border-strong);
 }
 .giorno-nome { font-weight: 750; }
@@ -315,7 +315,6 @@ input[type="checkbox"] { min-height: 0; width: 1.1rem; height: 1.1rem; accent-co
   width: 140px; text-align: left; padding: .5rem .65rem; background: var(--surface-2);
   position: sticky; left: 0; z-index: 1;
 }
-.griglia thead .col-turno { z-index: 3; }
 .griglia-scorri { display: none; }
 .griglia tbody .col-turno { font-weight: 400; }
 .fascia-label {
@@ -673,7 +672,6 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
   .toolbar-spacer { display: none; }
   .altre-opzioni-menu { left: auto; right: 0; }
   .griglia .col-turno { width: 104px; }
-  .griglia thead th { top: 52px; }
   .griglia-scorri { display: block; margin: 0; padding: .35rem .65rem; font-size: .78rem; color: var(--muted); background: var(--surface-2); }
   .griglia-copertura { font-size: .72rem; }
   .chip { font-size: .8rem; overflow-wrap: break-word; }
