@@ -24,11 +24,32 @@ let caricamentoScheda = 0;  // numero del caricamento della scheda Generali: i s
 const dati = { imp: null, persone: [], divieti: [], postazioni: [] };
 
 /** `numero`: il caricamento della scheda; se nel frattempo si è passati all'altra scheda non si ridisegna. */
-async function carica(numero = caricamentoScheda) {
+async function carica(numero = caricamentoScheda, salvata = null) {
   const risposte = await Promise.all([api.impostazioni(), api.persone(), api.divieti(), api.postazioni()]);
   if (superato(numero)) return;
   [dati.imp, dati.persone, dati.divieti, dati.postazioni] = risposte;
-  render(dati.imp);
+  render(dati.imp, salvata);
+}
+
+/** I campi cambiati e non ancora salvati, da rimettere dopo un ridisegno (tranne nella sezione appena salvata). */
+function raccogliSospesi(salvata) {
+  const sospesi = [];
+  if (!root) return sospesi;
+  for (const avviso of root.querySelectorAll(".modifiche-non-salvate")) {
+    const sezione = avviso.closest('[id^="imp-"]');
+    if (!avviso.textContent || !sezione || sezione.id === salvata) continue;
+    for (const campo of sezione.querySelectorAll("input[id]")) sospesi.push([campo.id, campo.value]);
+  }
+  return sospesi;
+}
+
+function ripristinaSospesi(sospesi) {
+  for (const [id, valore] of sospesi) {
+    const campo = document.getElementById(id);
+    if (!campo) continue;
+    campo.value = valore;
+    campo.dispatchEvent(new Event("input", { bubbles: true }));  // riaccende "Modifiche non salvate"
+  }
 }
 
 export async function mostra(container, parametro) {
@@ -53,7 +74,8 @@ function tipoSettimana(lunedi, riferimento) {
   return ((settimane % 2) + 2) % 2 === 0 ? "A" : "B";
 }
 
-function render(imp) {
+function render(imp, salvata = null) {
+  const sospesi = raccogliSospesi(salvata);
   const input = el("input", { type: "date", id: "rif-a", name: "data_riferimento_a", required: true, value: imp.data_riferimento_a || "" });
   const anteprima = el("p", { class: "hint", "aria-live": "polite" });
   const aggiornaAnteprima = () => {
@@ -81,7 +103,7 @@ function render(imp) {
         const nuovo = await api.salvaImpostazioni({ data_riferimento_a: input.value });
         toast("Impostazioni salvate.", "ok");
         dati.imp = nuovo && nuovo.data_riferimento_a ? nuovo : { ...dati.imp, data_riferimento_a: mondayOf(input.value) };
-        render(dati.imp);
+        render(dati.imp, "imp-alternanza");
       } catch (err) {
         toastErrore(err);
         invia.disabled = false;
@@ -111,6 +133,7 @@ function render(imp) {
     renderDivieti(),
     sezioneRiepiloghi,
   );
+  ripristinaSospesi(sospesi);
 }
 
 /** Le sezioni della pagina, nell'ordine in cui compaiono: [id, etichetta breve]. */
@@ -187,7 +210,7 @@ function renderScarto(imp) {
       try {
         dati.imp = await api.salvaImpostazioni({ scarto_ore_max: n });
         toast("Differenza massima salvata.", "ok");
-        render(dati.imp);
+        render(dati.imp, "imp-scarto");
       } catch (err) {
         toastErrore(err);
         invia.disabled = false;
@@ -241,7 +264,7 @@ function renderMassimiOre() {
       try {
         for (const [p, n] of cambi) await api.impostaParametri(p.id, n);
         toast("Massimi ore salvati.", "ok");
-        await carica();
+        await carica(undefined, "imp-parametri");
       } catch (err) {
         toastErrore(err);
         invia.disabled = false;

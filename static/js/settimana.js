@@ -142,7 +142,10 @@ function renderErrore(err) {
 function render() {
   const s = stato.settimana;
   const frammento = document.createDocumentFragment();
-  frammento.append(renderTestata(s), renderCentroOperativo(s), renderPassi(s), renderToolbar(s));
+  // A settimana confermata i quattro passi sono tutti fatti: non dicono più nulla e spingono giù il tabellone.
+  frammento.append(renderTestata(s), renderCentroOperativo(s));
+  if (s.stato !== "confermata") frammento.append(renderPassi(s));
+  frammento.append(renderToolbar(s));
   const avvisoCoprire = avvisoTurniDaCoprire(s);
   if (avvisoCoprire) frammento.append(avvisoCoprire);
   const report = s.report ? renderReport(s.report) : null;
@@ -205,7 +208,8 @@ function renderTestata(s) {
 function renderCentroOperativo(s) {
   const confermata = s.stato === "confermata";
   const generati = s.assegnazioni.some((a) => a.origine === "generato");
-  const scoperti = contaScoperti(s);
+  // Senza turni tutti i posti risultano "scoperti": non è un problema, è solo che non si è ancora generato.
+  const scoperti = haTurni(s) ? contaScoperti(s) : 0;
   const statoTesto = confermata ? "Settimana confermata" : generati ? "Turni da controllare" : s.assegnazioni.length ? "Turni compilati a mano" : "Pronta per la pianificazione";
   const prossima = confermata ? "Le modifiche sono bloccate: invia i turni via email oppure riapri la settimana se serve una modifica."
     : generati || s.assegnazioni.length ? "Controlla le celle evidenziate e conferma quando il tabellone è pronto."
@@ -215,7 +219,8 @@ function renderCentroOperativo(s) {
     : haTurni(s) ? "Tutti i posti sono coperti" : "Nessun turno ancora compilato";
   return el("section", { class: `centro-operativo${scoperti ? " centro-operativo-critico" : ""}`, "aria-label": "Stato operativo della settimana" },
     el("div", { class: "centro-operativo-stato" },
-      el("span", { class: `badge badge-${confermata ? "confermata" : generati ? "bozza" : "nuova"}` }, statoTesto),
+      // la testata mostra già "Confermata": il badge serve solo per gli altri stati
+      confermata ? null : el("span", { class: `badge badge-${generati ? "bozza" : "nuova"}` }, statoTesto),
       el("strong", { class: scoperti ? "testo-critico" : null }, copertura)),
     el("p", { class: "muted" }, prossima));
 }

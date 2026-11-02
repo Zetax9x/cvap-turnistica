@@ -191,18 +191,26 @@ function render() {
   root.append(el("div", { class: "table-scroll" }, el("table", { class: "tabella tabella-stat" },
     el("caption", { class: "sr-only" }, "Statistiche per persona. Fare clic sulle intestazioni per ordinare."),
     thead, tbody)));
-  root.append(el("p", { class: "hint" }, "Ore totali: ore lavorate più 6 h per ogni giorno di ferie o malattia, " +
-    "come nel confronto delle ore tra dipendenti; sotto, il dettaglio quando ci sono assenze. " +
-    "Le settimane interamente di ferie o malattia non contano."));
-  root.append(el("p", { class: "hint" }, "Sostituzioni (extra): ore dei turni presi al posto di un collega assente dopo la " +
-    "generazione. Sono ore extra: non entrano nelle ore totali, nel saldo né nelle altre colonne."));
-  root.append(el("p", { class: "hint" }, "Weekend: numero di turni svolti il sabato e la domenica, di giorno (G) e di notte (N). " +
-    "Acquasanta / Venarotta: turni svolti in ciascuna delle due sedi (anche i mezzi turni); il generatore cerca di farne " +
-    "fare a ogni dipendente tanti nell'una quanti nell'altra. " +
-    "Standby, Programmati e Assistenze: turni svolti in quelle postazioni (ogni Assistenza conta 1, qualunque sia la " +
-    "durata); il generatore li distribuisce in modo equo come i weekend. " +
-    "Ascoli: turni svolti ad Ascoli, tra parentesi quanti di giorno (G) e di notte (N); il generatore li distribuisce " +
-    "in proporzione alle settimane con Ascoli e cerca di far fare a ognuno tanti giorni quante notti."));
+  root.append(renderLegendaColonne());
+}
+
+/** Le spiegazioni delle colonne: servono la prima volta, non devono stare sempre sotto la tabella. */
+function renderLegendaColonne() {
+  const voce = (titolo, testo) => el("li", {}, el("strong", {}, `${titolo}: `), testo);
+  return el("details", { class: "card info info-ripiegabile" },
+    el("summary", {}, "Come leggere questa tabella"),
+    el("ul", {},
+      voce("Ore totali", "ore lavorate più 6 h per ogni giorno di ferie o malattia, come nel confronto delle ore tra " +
+        "dipendenti; sotto, il dettaglio quando ci sono assenze. Le settimane interamente di ferie o malattia non contano."),
+      voce("Sostituzioni (extra)", "ore dei turni presi al posto di un collega assente dopo la generazione. Sono ore " +
+        "extra: non entrano nelle ore totali, nel saldo né nelle altre colonne."),
+      voce("Weekend", "numero di turni svolti il sabato e la domenica, di giorno (G) e di notte (N)."),
+      voce("Acquasanta / Venarotta", "turni svolti in ciascuna delle due sedi (anche i mezzi turni); il generatore cerca " +
+        "di farne fare a ogni dipendente tanti nell'una quanti nell'altra."),
+      voce("Standby, Programmati e Assistenze", "turni svolti in quelle postazioni (ogni Assistenza conta 1, qualunque " +
+        "sia la durata); il generatore li distribuisce in modo equo come i weekend."),
+      voce("Ascoli", "turni svolti ad Ascoli, tra parentesi quanti di giorno (G) e di notte (N); il generatore li " +
+        "distribuisce in proporzione alle settimane con Ascoli e cerca di far fare a ognuno tanti giorni quante notti.")));
 }
 
 /** Indicatori brevi prima della tabella: orientano l'attenzione, non sono giudizi automatici. */

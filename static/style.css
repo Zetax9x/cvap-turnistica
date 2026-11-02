@@ -1065,7 +1065,7 @@ a.btn { text-decoration: none; }
   .periodo-indisp { display: none !important; }
   /* Statistiche: senza schede né comandi, colori delle celle mantenuti */
   #view-statistiche .schede, #view-statistiche .btn, #view-statistiche .filtri,
-  #view-statistiche .hint, .sort-ind { display: none !important; }
+  #view-statistiche .hint, #view-statistiche .info-ripiegabile, .sort-ind { display: none !important; }
   .tabella-stat, .tabella-indisp-stat { font-size: 8.5pt; }
   .tabella-stat thead th, .tabella-indisp-stat thead th { background: var(--surface-2); }
   .tabella-indisp-stat th.weekend, .tabella-indisp-stat td.weekend.indisp-liv-0 { background: var(--weekend); }
