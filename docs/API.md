@@ -121,7 +121,7 @@ Con `APP_PASSWORD` impostata (`create_app(..., password=...)`) tutte le API tran
   `catene: [{prende, ceduto: {id, data, postazione, fascia, segmento, ruolo, ore}, copre}]` (`prende`/`copre` come i candidati):
   solo se nessun candidato rispetta tutte le regole, catene di un passaggio (scelta dell'utente): B prende il turno (ore normali,
   `manuale`) e cede un suo turno entro 3 giorni a C (`sostituzione`, ore extra); B e C devono rispettare tutte le regole e B non
-  può scendere sotto il minimo di ore. Massimo 10, ordinate per note, poi ore di C, poi ore di B. `prende.ore` = ore di B prima.
+  può scendere sotto il minimo di ore. Solo la migliore (meno note, poi meno ore di C, poi di B). `prende.ore` = ore di B prima.
 - `POST /assegnazioni/{id}/catena` `{persona_id, ceduto_id, sostituto_id}` → settimana aggiornata: fa la catena in un'unica
   transazione dopo averla riverificata. 400 se settimana confermata, turno ceduto in un'altra settimana o catena non più valida ·
   404 · 409 se uno dei due turni è sparito nel frattempo.
