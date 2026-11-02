@@ -13,6 +13,7 @@ const stato = {
   filtroTipo: "tutti",
   mostraInattivi: true,
   inModifica: null, // id persona in modifica
+  nuovaAperta: false, // riquadro "Aggiungi una persona": resta aperto dopo ogni inserimento
   turniDaCoprire: null, // {nome, motivo, turni} dopo aver segnato un'assenza a chi aveva già turni
   coperturaPreventiva: [], // controlli delle settimane toccate dall'ultima assenza inserita
 };
@@ -59,7 +60,11 @@ function render() {
     el("p", { class: "muted" }, "Gli autisti possono coprire sia il ruolo di autista sia quello di soccorritore. ",
       "Con “Autista programmati” un soccorritore può fare l’autista anche nei Programmati.")));
 
-  root.append(renderFormNuova());
+  // L'elenco è ciò che si consulta di più: il modulo sta in un riquadro che si apre solo quando serve.
+  root.append(el("details", {
+    class: "pannello nuova-persona", open: stato.nuovaAperta || !stato.persone.length,
+    ontoggle: (e) => { stato.nuovaAperta = e.target.open; },
+  }, el("summary", {}, "Aggiungi una persona"), renderFormNuova()));
 
   // Filtri
   const conteggi = { tutti: 0, dipendente: 0, volontario: 0 };
@@ -150,7 +155,7 @@ function renderFormNuova() {
       }
     },
   },
-  el("h2", { id: "titolo-nuova", class: "card-title" }, "Nuova persona"),
+  el("h2", { id: "titolo-nuova", class: "sr-only" }, "Nuova persona"),
   el("div", { class: "campi" },
     el("div", { class: "campo campo-largo" }, el("label", { for: "nuova-nome" }, "Nome e cognome"), nome),
     el("div", { class: "campo" }, el("label", { for: "nuova-tipo" }, "Tipo"), tipo),

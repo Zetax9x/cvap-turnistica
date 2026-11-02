@@ -141,16 +141,12 @@ function renderErrore(err) {
 
 function render() {
   const s = stato.settimana;
-  const confermata = s.stato === "confermata";
   const frammento = document.createDocumentFragment();
   frammento.append(renderTestata(s), renderCentroOperativo(s), renderPassi(s), renderToolbar(s));
-  if (confermata) {
-    frammento.append(el("div", { class: "banner banner-info" },
-      "Settimana confermata: le modifiche sono bloccate. Usa “Riapri” per modificarla."));
-  }
   const avvisoCoprire = avvisoTurniDaCoprire(s);
   if (avvisoCoprire) frammento.append(avvisoCoprire);
-  if (s.report) frammento.append(renderReport(s.report));
+  const report = s.report ? renderReport(s.report) : null;
+  if (report) frammento.append(report);
   frammento.append(renderDisponibilita(s));
   if (stato.coperturaPreventiva) frammento.append(renderCoperturaPreventiva(stato.coperturaPreventiva));
   if ((s.postazioni_a_richiesta || []).length) frammento.append(renderRichieste(s));
@@ -211,7 +207,7 @@ function renderCentroOperativo(s) {
   const generati = s.assegnazioni.some((a) => a.origine === "generato");
   const scoperti = contaScoperti(s);
   const statoTesto = confermata ? "Settimana confermata" : generati ? "Turni da controllare" : s.assegnazioni.length ? "Turni compilati a mano" : "Pronta per la pianificazione";
-  const prossima = confermata ? "Invia i turni via email oppure riapri la settimana se serve una modifica."
+  const prossima = confermata ? "Le modifiche sono bloccate: invia i turni via email oppure riapri la settimana se serve una modifica."
     : generati || s.assegnazioni.length ? "Controlla le celle evidenziate e conferma quando il tabellone è pronto."
       : "Segna eventuali assenze e genera una prima proposta di turni.";
   const copertura = scoperti
@@ -343,6 +339,8 @@ function renderReport(r) {
     ? FRASI_TECNICHE.reduce((testo, frase) => testo.replace(frase, ""), r.messaggio || "").trim()
     : r.messaggio || "";
   const classe = !riuscita ? "errore" : scoperti.length || note ? "avviso" : "ok";
+  // "Tutto coperto" lo dice già il riepilogo in alto: il riquadro serve solo se c'è altro da leggere.
+  if (classe === "ok" && !(riuscita && testoFestivi(r.festivi))) return null;
   const titolo = !riuscita ? "Turni non generati"
     : scoperti.length ? `Turni generati: ${scoperti.length === 1 ? "1 posto scoperto" : `${scoperti.length} posti scoperti`}`
     : note ? "Turni generati: da controllare" : "Turni generati: tutti i posti coperti";

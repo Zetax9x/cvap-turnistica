@@ -441,6 +441,9 @@ input[type="checkbox"] { min-height: 0; width: 1.1rem; height: 1.1rem; accent-co
 .card.info ul { margin: 0; padding-left: 1.2rem; }
 .card.info li { margin: .25rem 0; }
 .info-ripiegabile summary { cursor: pointer; font-weight: 700; }
+.nuova-persona > summary { cursor: pointer; font-weight: 700; }
+.nuova-persona[open] > summary { margin-bottom: .75rem; }
+.nuova-persona > .card { margin: 0; padding: 0; border: 0; box-shadow: none; background: transparent; max-width: none; }
 .info-ripiegabile[open] summary { margin-bottom: .5rem; }
 
 /* Impostazioni: salti alle sezioni e avviso di modifiche non ancora salvate */
