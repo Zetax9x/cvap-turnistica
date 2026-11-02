@@ -9,6 +9,8 @@ ORIGINE=${CVAP_BACKUP:-/opt/cvap/backup}
 DESTINAZIONE=${CVAP_GDRIVE:-gdrive:CVAP-Turnistica-backup}
 GIORNI=${CVAP_GDRIVE_GIORNI:-90}
 
+# la cartella lassù va creata subito: senza file da copiare rclone non la crea e la pulizia fallirebbe
+rclone mkdir "$DESTINAZIONE"
 # solo i file recenti: quelli già copiati restano lassù, rclone non li ricarica
 rclone copy "$ORIGINE" "$DESTINAZIONE" --include 'turni-*.db' --include 'prima-aggiornamento-*.db' --max-age 3d
 rclone delete "$DESTINAZIONE" --min-age "${GIORNI}d"
