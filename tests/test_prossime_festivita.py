@@ -4,6 +4,7 @@
 L'ordine usa lo stesso calcolo del generatore: con un solo posto libero, chi è primo nell'ordine riceve il turno.
 """
 import os
+from copy import deepcopy
 from datetime import date, timedelta
 
 import pytest
@@ -85,6 +86,110 @@ def test_prossime_festivita_ordine_e_dettagli(client):
                                  "ultimo_anno": y - 3, "debito": 1.0, "disponibile": None, "assente": None}
     assert per_nome["Dario"]["qualifica"] == "soccorritore" and per_nome["Dario"]["ultimo_anno"] is None
     assert per_nome["Anna"]["debito"] == 0.0 and per_nome["Anna"]["volte_5_anni"] == 1
+
+
+def test_prossime_ordini_per_fascia_con_conteggi_e_precedenze_separati(client):
+    anno = prossimo_natale().year
+    anna, bruno = (crea(client, nome)["id"] for nome in ("Anna", "Bruno"))
+    natale = attiva(client, "Natale")
+    for y in (anno - 2, anno - 1):
+        assert salva(client, y, [turno(natale, anna), turno(natale, bruno, "notte")],
+                     [anna, bruno]).status_code == 200
+    prima = {y: client.get(f"/api/storico-festivi/{y}").json() for y in (anno - 2, anno - 1)}
+
+    voce = next(v for v in prossime(client) if v["festivita_id"] == natale)
+    assert [p["nome"] for p in voce["ordine"]] == ["Anna", "Bruno"]
+    assert all((p["volte_5_anni"], p["debito"]) == (2, 0.0) for p in voce["ordine"])
+    ordini = voce["ordini_per_fascia"]
+    assert set(ordini) == {"giorno", "notte"}
+    assert [p["nome"] for p in ordini["giorno"]] == ["Bruno", "Anna"]
+    assert [p["nome"] for p in ordini["notte"]] == ["Anna", "Bruno"]
+    for fascia, lavoratore in (("giorno", "Anna"), ("notte", "Bruno")):
+        per_nome = {p["nome"]: p for p in ordini[fascia]}
+        assert per_nome[lavoratore]["volte_5_anni"] == 2
+        assert per_nome[lavoratore]["ultimo_anno"] == anno - 1
+        assert per_nome[lavoratore]["debito"] == 1.0
+        altro = next(p for p in ordini[fascia] if p["nome"] != lavoratore)
+        assert (altro["volte_5_anni"], altro["ultimo_anno"], altro["debito"]) == (0, None, -1.0)
+        assert all(set(p) == set(voce["ordine"][0]) for p in ordini[fascia])
+    assert {y: client.get(f"/api/storico-festivi/{y}").json() for y in prima} == prima
+
+
+@pytest.mark.parametrize("giorno,notte,notte_prima,fascia", [
+    (True, False, False, "giorno"),
+    (False, True, False, "notte"),
+    (False, False, True, "notte"),
+])
+def test_prossime_ordini_per_fascia_solo_fasce_configurate(client, giorno, notte, notte_prima, fascia):
+    crea(client, "Anna")
+    natale = attiva(client, "Natale")
+    f = next(f for f in client.get("/api/festivita").json() if f["id"] == natale)
+    campi = ("nome", "regola", "giorno", "mese", "offset_pasqua", "data", "peso", "attiva")
+    r = client.put(f"/api/festivita/{natale}", json={
+        **{k: f[k] for k in campi}, "conta_giorno": giorno, "conta_notte": notte,
+        "conta_notte_prima": notte_prima,
+    })
+    assert r.status_code == 200, r.text
+    voce = next(v for v in prossime(client) if v["festivita_id"] == natale)
+    assert set(voce["ordini_per_fascia"]) == {fascia}
+    assert voce["ordini_per_fascia"][fascia] == voce["ordine"]
+
+
+def test_prossime_ordini_per_fascia_assenze_separate_e_disponibilita_comune(client):
+    d = prossimo_natale()
+    anna = crea(client, "Anna")["id"]
+    natale = attiva(client, "Natale")
+    assert client.put("/api/festivita/disponibili", json={
+        "data": d.isoformat(), "persona_id": anna, "fascia": "notte",
+    }).status_code == 200
+    assert client.put(f"/api/settimane/{d.isoformat()}/indisponibilita", json={
+        "persona_id": anna, "turni": [{"data": d.isoformat(), "parte": "notte"}],
+    }).status_code == 200
+
+    voce = next(v for v in prossime(client) if v["festivita_id"] == natale)
+    assert voce["ordine"][0]["assente"] == "indisponibile"
+    assert voce["ordini_per_fascia"]["giorno"][0]["assente"] is None
+    assert voce["ordini_per_fascia"]["notte"][0]["assente"] == "indisponibile"
+    assert all(voce["ordini_per_fascia"][f][0]["disponibile"] == "notte" for f in ("giorno", "notte"))
+
+
+def test_prossime_ordini_per_fascia_importati_e_programma_riusano_dati_senza_mutarli(client, monkeypatch):
+    anna, bruno = (crea(client, nome)["id"] for nome in ("Anna", "Bruno"))
+    natale = attiva(client, "Natale")
+    attiva(client, "Santo Stefano")
+    settimana_generata(client, date(2025, 10, 13), [anna, bruno], [(date(2025, 10, 13), "giorno", anna)])
+    for y in (2023, 2024):
+        righe = [turno(natale, bruno, "notte")]
+        if y == 2024:
+            righe.append(turno(natale, anna))
+        assert salva(client, y, righe, [anna, bruno]).status_code == 200
+    # L'anno del programma documenta l'esposizione anche alla fascia notte,
+    # pur avendo unicamente un turno di giorno: non va eliminata la settimana.
+    settimana_generata(client, date(2025, 12, 22), [anna, bruno], [(date(2025, 12, 25), "giorno", anna)])
+    letture = []
+    originale = dati_festivi.dati_conti
+
+    def leggi(*args):
+        dati = originale(*args)
+        letture.append((dati, deepcopy(dati)))
+        return dati
+
+    monkeypatch.setattr(dati_festivi, "dati_conti", leggi)
+    conn = db.apri(client.percorso_db)
+    try:
+        voci = prossime_festivita.prossime(conn, date(2026, 11, 1), 14)
+    finally:
+        conn.close()
+    assert len(letture) == 1  # una lettura per tutte le festività, riferimenti e fasce
+    assert letture[0][0] == letture[0][1]
+    assert len(voci) == 4
+    for voce in (v for v in voci if v["festivita_id"] == natale):
+        assert all((p["volte_5_anni"], p["debito"]) == (2, 0.0) for p in voce["ordine"])
+        for fascia, chi in (("giorno", anna), ("notte", bruno)):
+            per_id = {p["persona_id"]: p for p in voce["ordini_per_fascia"][fascia]}
+            altro = bruno if chi == anna else anna
+            assert (per_id[chi]["volte_5_anni"], per_id[chi]["debito"]) == (2, 1.0)
+            assert (per_id[altro]["volte_5_anni"], per_id[altro]["debito"]) == (0, -1.0)
 
 
 @pytest.mark.parametrize("giorno,notte,notte_prima,conteggi,primo", [

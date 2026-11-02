@@ -65,9 +65,10 @@ per la pianificazione): considera tutta la settimana insieme, non un turno alla 
   precedenza), la malattia no. Un festivo di domenica conta anche come weekend.
 - **Chi vuole lavorare una festività**: in Statistiche → Festività si segna "vuole lavorarla" (giorno, notte o
   entrambi): riceve prima quei turni, nel rispetto delle regole; i turni contano comunque nella sua rotazione.
-- **Ordine in anticipo**: Statistiche → Festività mostra, per le festività dei prossimi 12 mesi, i dipendenti in
-  ordine di precedenza a lavorarle (stesso calcolo del generatore), stampabile; sotto, chi ha lavorato ogni
-  festività negli anni passati.
+- **Ordine in anticipo**: Statistiche → Festività mostra le festività dei prossimi 12 mesi come righe da aprire.
+  Dentro ogni festività si aprono le sezioni Giorno e Notte, con conteggi e precedenze separati per le fasce
+  abilitate. **Stampa festività** stampa tutte le fasce di quella festività, anche se chiuse; sotto resta lo storico
+  di chi ha lavorato ogni festività negli anni passati.
 - **Quadro dell'equità**: Statistiche → Equità mostra per ogni rotazione (ore, giorni/notti, weekend, Standby,
   Programmati, Assistenze, Ascoli, sedi, ogni festività) chi ha fatto più e meno della sua parte, la tendenza e il
   dettaglio per dipendente.

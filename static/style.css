@@ -847,7 +847,7 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
 }
 
 /* ---------- Statistiche: schede e indisponibilità per giorno ---------- */
-.schede { display: flex; gap: .25rem; border-bottom: 1px solid var(--border); margin-bottom: 1rem; }
+.schede { display: flex; flex-wrap: wrap; gap: .25rem; border-bottom: 1px solid var(--border); margin-bottom: 1rem; }
 .scheda {
   padding: .5rem .9rem; border: 1px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0;
   color: var(--muted); text-decoration: none; font-weight: 600; margin-bottom: -1px;
@@ -870,12 +870,64 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
 .solo-stampa { display: none; }
 /* Statistiche → Festività: ordine di rotazione delle prossime festività e storico per anno */
 .festivita-prossima, .festivita-storico { margin-top: 1.5rem; }
-.festivita-prossima h2, .festivita-storico h2 { margin-bottom: .2rem; }
+.festivita-storico h2 { margin-bottom: .2rem; }
+.festivita-prossima {
+  min-width: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+}
+.festivita-prossima > summary, .festivita-fascia > summary {
+  min-height: var(--tap); display: flex; align-items: center; gap: .65rem;
+  padding: .8rem 1rem; cursor: pointer; list-style: none; border-radius: inherit;
+}
+.festivita-prossima > summary::-webkit-details-marker,
+.festivita-fascia > summary::-webkit-details-marker { display: none; }
+.festivita-prossima > summary::before, .festivita-fascia > summary::before {
+  content: "▸"; content: "▸" / ""; flex: 0 0 .75rem; color: var(--muted);
+}
+.festivita-prossima[open] > summary::before, .festivita-fascia[open] > summary::before {
+  content: "▾"; content: "▾" / "";
+}
+.festivita-prossima > summary:hover { background: var(--surface-2); }
+.festivita-prossima > summary:focus-visible, .festivita-fascia > summary:focus-visible {
+  outline: 3px solid var(--focus); outline-offset: -3px;
+}
+.festivita-prossima > summary h2 { font-size: 1.05rem; overflow-wrap: anywhere; }
+.festivita-contenuto { min-width: 0; padding: 0 1rem 1rem; }
+.festivita-contenuto > p { margin: .35rem 0 .85rem; }
+.festivita-fasce { display: grid; gap: .65rem; min-width: 0; }
+.festivita-fascia { min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.festivita-fascia-giorno > summary { background: #fff3c4; color: var(--text); }
+.festivita-fascia-notte > summary { background: #dfeafa; color: var(--text); }
+.festivita-fascia-contenuto { min-width: 0; padding: .6rem; }
+.festivita-fascia-contenuto > p { margin: .3rem 0; }
+.festivita-fascia .table-scroll { max-width: 100%; }
+.festivita-azioni { margin-top: .85rem; }
 .tabella-ordine-festivita select { min-width: 9rem; }
+@media (max-width: 640px) {
+  .festivita-prossima > summary, .festivita-fascia > summary { padding: .75rem; }
+  .festivita-contenuto { padding: 0 .65rem .75rem; }
+  .festivita-fascia-contenuto { padding: .35rem; }
+}
 @media print {
   .festivita-prossima { break-inside: avoid; }
   .festivita-storico { break-before: page; }
   .tabella-ordine-festivita, .tabella-festivi-anno { font-size: 9pt; }
+  body.stampa-festivita .view:not(#view-statistiche),
+  body.stampa-festivita #view-statistiche > :not(.festivita-da-stampare) { display: none !important; }
+  body.stampa-festivita .festivita-da-stampare {
+    display: block !important; margin: 0; border: 0; break-inside: auto;
+  }
+  body.stampa-festivita .festivita-da-stampare > summary {
+    display: block; padding: 0 0 3mm;
+  }
+  body.stampa-festivita .festivita-da-stampare > summary h2 { font-size: 15pt; }
+  body.stampa-festivita .festivita-da-stampare summary::before { display: none; }
+  body.stampa-festivita .festivita-contenuto { padding: 0; }
+  body.stampa-festivita .festivita-fasce { display: block; }
+  body.stampa-festivita .festivita-fascia { margin: 0 0 5mm; break-inside: auto; }
+  body.stampa-festivita .festivita-fascia > summary { display: block; padding: 2mm; }
+  body.stampa-festivita .festivita-fascia-contenuto { padding: 0; }
+  body.stampa-festivita .tabella-ordine-festivita { width: 100%; }
+  body.stampa-festivita .tabella-ordine-festivita tr { break-inside: avoid; }
 }
 
 @media print {

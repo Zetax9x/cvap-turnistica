@@ -85,21 +85,44 @@ def prossime(conn: sqlite3.Connection, oggi: date, mesi: int) -> list[dict]:
     riferimenti = sorted({lunedi(d) for d, _ in voci})
     dati = _solo_turni_festivi(festivita, dati_festivi.dati_conti(conn, inizio_periodo(riferimenti[0]),
                                                                   riferimenti[-1]))
-    conti = {r: conta_festivita(festivita, r, **_nel_periodo(dati, r)) for r in riferimenti}
+    dati_per_riferimento = {r: _nel_periodo(dati, r) for r in riferimenti}
+    conti = {r: conta_festivita(festivita, r, **dati_per_riferimento[r]) for r in riferimenti}
+    festivita_per_fascia = {
+        "giorno": {f["id"]: {**f, "conta_notte": False, "conta_notte_prima": False}
+                   for f in festivita if f["conta_giorno"]},
+        "notte": {f["id"]: {**f, "conta_giorno": False}
+                  for f in festivita if f["conta_notte"] or f["conta_notte_prima"]},
+    }
+    # Stessi dati e stessa esposizione dell'aggregato; solo le fasce del conto
+    # cambiano. Anche una settimana senza turni della singola fascia resta nei dati.
+    conti_per_fascia = {
+        fascia: {r: conta_festivita(gruppo.values(), r, **dati_per_riferimento[r]) for r in riferimenti}
+        for fascia, gruppo in festivita_per_fascia.items() if gruppo
+    }
     disponibili = db_festivi_disponibili.per_giorno(conn, festivita, oggi, fine)
     assente = _assenze(conn, oggi - timedelta(days=1), fine)
-    out = []
-    for d, f in voci:
-        conto = conti[lunedi(d)].get(f["id"], {})
+
+    def elenco_ordine(f: dict, d: date, conto: dict) -> list[dict]:
         ordine = []
         for pid, debito in ordine_rotazione(conto, persone, f["peso"], d.year, nomi):
             c = conto.get(pid, ContoFestivita())
             ordine.append({"persona_id": pid, "nome": nomi[pid], "qualifica": persone[pid]["qualifica"],
                            "volte_5_anni": c.turni, "ultimo_anno": c.ultimo_anno, "debito": round(debito, 2),
                            "disponibile": disponibili.get(d, {}).get(pid), "assente": assente(pid, f, d)})
+        return ordine
+
+    out = []
+    for d, f in voci:
+        riferimento = lunedi(d)
+        ordine = elenco_ordine(f, d, conti[riferimento].get(f["id"], {}))
+        ordini_per_fascia = {
+            fascia: elenco_ordine(gruppo[f["id"]], d, conti_per_fascia[fascia][riferimento].get(f["id"], {}))
+            for fascia, gruppo in festivita_per_fascia.items() if f["id"] in gruppo
+        }
         out.append({"data": d.isoformat(), "festivita_id": f["id"], "nome": f["nome"], "peso": f["peso"],
                     "conta_giorno": f["conta_giorno"], "conta_notte": f["conta_notte"],
-                    "conta_notte_prima": f["conta_notte_prima"], "ordine": ordine})
+                    "conta_notte_prima": f["conta_notte_prima"], "ordine": ordine,
+                    "ordini_per_fascia": ordini_per_fascia})
     return out
 
 

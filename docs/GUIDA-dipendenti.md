@@ -51,10 +51,13 @@ responsabile: la segna come **"vuole lavorarla"**, per il giorno, la notte o tut
 
 ## Dove vedere l'ordine
 
-Il responsabile può stampare in anticipo, per esempio già in autunno per Natale, la pagina **Statistiche →
-Festività**: per ogni festività dei prossimi mesi c'è l'elenco dei dipendenti **nell'ordine in cui tocca
-lavorarla**, con quante volte l'ha fatta negli ultimi 5 anni, l'ultimo anno in cui l'ha fatta, chi vuole lavorarla
-e chi ha già ferie o indisponibilità registrate.
+In **Statistiche → Festività** le festività dei prossimi mesi sono righe da aprire. Apri una festività, poi
+**Giorno** o **Notte**: trovi l'elenco dei dipendenti **nell'ordine in cui tocca lavorare quella fascia**, quante
+volte l'hanno fatta negli ultimi 5 anni, l'ultimo anno, chi vuole lavorarla e chi ha già ferie o indisponibilità
+registrate. Sono mostrate soltanto le fasce scelte dal responsabile per quella festività.
+
+Con **Stampa festività** il responsabile può stampare in anticipo, per esempio già in autunno per Natale,
+l'intera festività: nella stessa stampa ci sono tutte le sue fasce, anche quelle chiuse sullo schermo.
 
 È un'indicazione: chi lavora davvero dipende anche dalle regole e dai posti da autista e da soccorritore.
 
