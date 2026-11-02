@@ -545,7 +545,9 @@ function renderGriglia(s, postazione) {
   const violazioni = indiceViolazioni(s);
   const confermata = s.stato === "confermata";
   const speciale = aRichiesta(postazione);
-  const mancanti = contaScopertiPostazione(s, postazione);
+  // Senza turni ogni posto risulta scoperto: non è un allarme, la settimana è solo da compilare.
+  const daCompilare = !haTurni(s);
+  const mancanti = daCompilare ? 0 : contaScopertiPostazione(s, postazione);
 
   const thead = el("thead", {}, el("tr", {},
     el("th", { scope: "col", class: "col-turno" }, "Turno"),
@@ -573,8 +575,8 @@ function renderGriglia(s, postazione) {
   return el("section", { class: `griglia-blocco${speciale ? " griglia-speciale" : ""}`, "aria-labelledby": idTitolo },
     el("h2", { id: idTitolo, class: "griglia-titolo" }, postazione,
       speciale ? el("span", { class: "griglia-sottotitolo muted" }, " · solo i turni richiesti") : null,
-      el("span", { class: `griglia-copertura${mancanti ? " griglia-copertura-critica" : ""}` },
-        mancanti ? `${mancanti} ${mancanti === 1 ? "scoperto" : "scoperti"}` : "coperto")),
+      el("span", { class: `griglia-copertura${mancanti ? " griglia-copertura-critica" : ""}${daCompilare ? " griglia-copertura-neutra" : ""}` },
+        daCompilare ? "da compilare" : mancanti ? `${mancanti} ${mancanti === 1 ? "scoperto" : "scoperti"}` : "coperto")),
     el("div", { class: "griglia-scroll" },
       el("p", { class: "griglia-scorri" }, "Scorri orizzontalmente per vedere tutti i giorni"),
       el("table", { class: "griglia" }, thead, tbody)));

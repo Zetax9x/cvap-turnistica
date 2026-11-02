@@ -140,7 +140,7 @@ main:focus { outline: none; }
 .btn-danger { color: var(--err); border-color: var(--err); }
 .btn-danger:hover:not(:disabled) { background: var(--err-bg); }
 .dialog-conferma .btn-danger { background: var(--err); color: var(--surface); }
-.btn-ghost { border-color: transparent; background: transparent; }
+.btn-ghost { border-color: var(--border-strong); background: transparent; }  /* bordo leggero: deve sembrare cliccabile */
 .btn-grande { min-height: var(--tap); padding: .5rem 1.25rem; font-size: 1.02rem; }
 .btn-small { min-height: 32px; padding: .2rem .7rem; font-size: .88rem; }
 .btn-filter { border-radius: 999px; }
@@ -240,6 +240,7 @@ input[type="checkbox"] { min-height: 0; width: 1.1rem; height: 1.1rem; accent-co
 .altre-opzioni > summary {
   list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: .35rem;
   min-height: 40px; padding: .4rem .9rem; border-radius: var(--radius-sm); font-weight: 600; color: var(--muted);
+  border: 1px solid var(--border-strong);
 }
 .altre-opzioni > summary::-webkit-details-marker { display: none; }
 .altre-opzioni > summary::after { content: "▾"; content: "▾" / ""; font-size: .8em; }
@@ -296,6 +297,7 @@ input[type="checkbox"] { min-height: 0; width: 1.1rem; height: 1.1rem; accent-co
   color: var(--ok); background: var(--ok-bg); font-size: .78rem; font-weight: 750; white-space: nowrap;
 }
 .griglia-copertura-critica { border-color: var(--err); color: var(--err); background: var(--err-bg); }
+.griglia-copertura-neutra { border-color: var(--border-strong); color: var(--muted); background: var(--surface-2); }
 .griglia-scroll {
   overflow-x: auto; -webkit-overflow-scrolling: touch; position: relative;  /* tiene dentro i testi sr-only */
   border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
@@ -449,6 +451,8 @@ input[type="checkbox"] { min-height: 0; width: 1.1rem; height: 1.1rem; accent-co
 /* Impostazioni: salti alle sezioni e avviso di modifiche non ancora salvate */
 .indice-sezioni { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin: 0 0 1rem; }
 [id^="imp-"] { scroll-margin-top: 84px; }
+/* date e numeri alla loro misura: un campo largo come la scheda fa pensare che serva scrivere molto */
+#view-impostazioni .campo input[type="date"], #view-impostazioni .campo input[type="number"] { max-width: 16rem; }
 .modifiche-non-salvate {
   margin-right: auto; align-self: center; padding: .1rem .6rem; border: 1px solid var(--warn-border);
   border-radius: 999px; background: var(--warn-bg); color: var(--warn); font-size: .85rem; font-weight: 700;
@@ -497,6 +501,15 @@ tr.in-modifica input[type="text"] { width: 100%; min-width: 10rem; }
   border-collapse: separate; border-spacing: 0; overflow: hidden;
 }
 .tabella-persone tbody tr:last-child > *, .tabella-stat tbody tr:last-child > * { border-bottom: 0; }
+/* tabella larga: il nome resta in vista mentre si scorre verso destra */
+.tabella-stat { overflow: visible; }  /* con overflow:hidden la colonna fissa non seguirebbe lo scorrimento */
+.tabella-stat thead th:first-child { border-top-left-radius: var(--radius); }
+.tabella-stat thead th:last-child { border-top-right-radius: var(--radius); }
+.tabella-stat tbody tr:last-child > :first-child { border-bottom-left-radius: var(--radius); }
+.tabella-stat tbody tr:last-child > :last-child { border-bottom-right-radius: var(--radius); }
+.tabella-stat thead th:first-child, .tabella-stat tbody th:first-child { position: sticky; left: 0; z-index: 1; }
+.tabella-stat thead th:first-child { z-index: 2; background: var(--surface-2); }
+.tabella-stat tbody th:first-child { background: var(--surface); }
 
 .sort-btn {
   font: inherit; font-weight: 700; color: inherit; background: none; border: 0; padding: 0;
