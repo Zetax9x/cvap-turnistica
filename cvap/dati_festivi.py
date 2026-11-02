@@ -10,7 +10,7 @@ from datetime import date, timedelta
 from . import db, db_festivi_disponibili, db_festivita, db_storico_festivi
 from .calendario import lunedi
 from .festivita import turni_festivi
-from .modello import Assegnazione
+from .modello import Assegnazione, ore_extra
 from .rotazione_festivi import (ContoFestivita, FestiviSettimana, SettimanaProgramma, conta_festivita,
                                 festivi_settimana, inizio_periodo, turni_disponibili)
 from .storico_festivi import limite_storico
@@ -29,7 +29,8 @@ def _settimane_programma(conn, prima: date | None, dal: date, al: date) -> list[
     inizio = max(prima, lunedi(dal))
     turni = defaultdict(list)
     for _, a in db.assegnazioni_periodo(conn, inizio, al - timedelta(days=1)):
-        turni[lunedi(a.data)].append(a)
+        if not ore_extra(a):  # le sostituzioni non valgono per la rotazione delle festività
+            turni[lunedi(a.data)].append(a)
     if not turni:
         return []
     righe = {date.fromisoformat(r["inizio"]): r for r in db.lista_settimane(conn, prima_di=al)}

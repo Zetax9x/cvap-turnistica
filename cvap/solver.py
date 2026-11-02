@@ -43,7 +43,7 @@ from itertools import combinations
 from ortools.sat.python import cp_model
 
 from .modello import (EXTRA, PROGRAMMATI, STANDBY, Assegnazione, Fabbisogno, Persona, Unita, in_conflitto,
-                      parti_turno)
+                      ore_extra, parti_turno)
 from .rotazione_festivi import ContoFestivita, FestiviSettimana, costo_festivita, debiti
 from .slot import unita_da_coprire
 from .storico import CATEGORIE_RICHIESTA, CATEGORIE_WEEKEND, SEDI_ALTERNATE, StoricoPersona, categoria_weekend
@@ -194,7 +194,7 @@ def genera(
             assegnazioni.append(Assegnazione(u.data, u.postazione, u.fascia, u.segmento, u.ruolo, chi[0], "generato"))
         else:
             scoperti.append(u)
-    assegnazioni = riequilibra_sedi(assegnazioni, dipendenti, storico or {}, fissi)
+    assegnazioni = riequilibra_sedi(assegnazioni, dipendenti, storico or {}, [a for a in fissi if not ore_extra(a)])
 
     ore = _ore_fisse(dipendenti, fissi)
     for a in assegnazioni:
@@ -213,7 +213,8 @@ def genera(
     note += _nota_minimo(giorni, fissi + assegnazioni, dipendenti, ferie)
     nomi = {p.id: p.nome for p in dipendenti}
     in_extremis = [nomi[pid] for pid, n in Counter(a.persona_id for a in fissi + assegnazioni
-                                                   if a.postazione == ASCOLI and a.persona_id in nomi).items()
+                                                   if a.postazione == ASCOLI and a.persona_id in nomi
+                                                   and not ore_extra(a)).items()
                    if n == MAX_TURNI_ASCOLI_EXTREMIS]  # oltre lo segnalano già i problemi dei turni fissati
     if in_extremis:
         note.append(f"{MAX_TURNI_ASCOLI_EXTREMIS} turni ad Ascoli (in extremis): " + ", ".join(in_extremis) + ".")
@@ -355,9 +356,10 @@ def _priorita(u: Unita) -> int:
 
 
 def _ore_fisse(dipendenti, fissi) -> dict[int, int]:
+    """Ore dei turni fissati per dipendente; le sostituzioni sono ore extra e non contano."""
     ore = {p.id: 0 for p in dipendenti}
     for a in fissi:
-        if a.persona_id in ore:
+        if a.persona_id in ore and not ore_extra(a):
             ore[a.persona_id] += a.ore
     return ore
 
@@ -386,7 +388,9 @@ class _Modello:
         self.fissi_di: dict[int, list[Assegnazione]] = defaultdict(list)
         for a in fissi + contesto:
             self.fissi_di[a.persona_id].append(a)
-        self.fissi_settimana = [a for a in fissi]
+        # per ore ed equità (weekend, Ascoli, sedi, festività): le sostituzioni sono extra e non contano;
+        # per riposi e sovrapposizioni restano in fissi_di
+        self.fissi_settimana = [a for a in fissi if not ore_extra(a)]
 
         self.x: dict[tuple[int, int], cp_model.IntVar] = {}
         for ui, u in enumerate(unita):

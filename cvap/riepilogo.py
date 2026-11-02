@@ -3,7 +3,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 
 from .email_turni import orario_turno
-from .modello import EXTRA, PARTI_TURNO, Assegnazione
+from .modello import EXTRA, PARTI_TURNO, Assegnazione, ore_extra
 from .storico import categoria_weekend
 from .vincoli import ORE_FERIE_GIORNO
 
@@ -42,6 +42,9 @@ def riepilogo_persona(persona: dict, dal: date, al: date, assegnazioni: list[Ass
         })
         d += timedelta(days=1)
 
+    # le sostituzioni restano nell'elenco dei giorni ma sono ore extra: fuori dai totali, contate a parte
+    sostituzioni = [a for a in assegnazioni if ore_extra(a)]
+    assegnazioni = [a for a in assegnazioni if not ore_extra(a)]
     weekend = {k: 0 for k in ("sab_giorno", "sab_notte", "dom_giorno", "dom_notte")}
     postazioni: dict[str, dict] = {}
     for a in assegnazioni:
@@ -69,6 +72,8 @@ def riepilogo_persona(persona: dict, dal: date, al: date, assegnazioni: list[Ass
         "giorni": giorni,
         "riepilogo": {
             "turni": len(assegnazioni),
+            "turni_sostituzioni": len(sostituzioni),
+            "ore_sostituzioni": sum(a.ore for a in sostituzioni),
             "ore_lavorate": ore_lavorate,
             "ore_giorno": sum(a.ore for a in assegnazioni if a.fascia == "giorno"),
             "ore_notte": sum(a.ore for a in assegnazioni if a.fascia == "notte"),

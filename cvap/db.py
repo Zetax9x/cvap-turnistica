@@ -526,6 +526,15 @@ def elimina_assegnazione(conn: sqlite3.Connection, assegnazione_id: int) -> None
         conn.execute("DELETE FROM assegnazioni WHERE id = ?", (assegnazione_id,))
 
 
+def sostituisci_assegnazione(conn: sqlite3.Connection, assegnazione_id: int, nuova: Assegnazione) -> int | None:
+    """Toglie un'assegnazione e mette `nuova` al suo posto in un'unica transazione; restituisce il nuovo id,
+    o None (senza cambiare nulla) se l'assegnazione non c'è più, ad es. tolta nel frattempo da un altro."""
+    with conn:
+        if conn.execute("DELETE FROM assegnazioni WHERE id = ?", (assegnazione_id,)).rowcount != 1:
+            return None
+        return _inserisci(conn, nuova)
+
+
 def elimina_generati(conn: sqlite3.Connection, dal: date, al: date) -> None:
     with conn:
         conn.execute("DELETE FROM assegnazioni WHERE origine = 'generato' AND data >= ? AND data <= ?",
@@ -599,6 +608,20 @@ def _ferie_dict(r) -> dict:
 def lista_ferie(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute("SELECT * FROM ferie ORDER BY dal, persona_id, id").fetchall()
     return [_ferie_dict(r) for r in rows]
+
+
+def get_ferie(conn: sqlite3.Connection, ferie_id: int) -> dict | None:
+    r = conn.execute("SELECT * FROM ferie WHERE id = ?", (ferie_id,)).fetchone()
+    return _ferie_dict(r) if r else None
+
+
+def assegnazioni_persona(conn: sqlite3.Connection, persona_id: int, dal: date,
+                         al: date) -> list[tuple[int, Assegnazione]]:
+    """Turni di una persona che iniziano tra `dal` e `al` (inclusi), come coppie (id, Assegnazione)."""
+    rows = conn.execute(
+        "SELECT * FROM assegnazioni WHERE persona_id = ? AND data >= ? AND data <= ? ORDER BY data, fascia, id",
+        (persona_id, dal.isoformat(), al.isoformat())).fetchall()
+    return [(r["id"], _a_assegnazione(r)) for r in rows]
 
 
 def ferie_sovrapposte(conn: sqlite3.Connection, persona_id: int, dal: date, al: date) -> bool:

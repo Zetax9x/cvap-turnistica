@@ -122,7 +122,8 @@ function giorniPersona(s, persona) {
             el("span", { class: "turno-sep" }, " · "),
             el("span", { class: "turno-postazione" }, a.postazione),
             el("span", { class: "turno-sep" }, " · "),
-            el("span", { class: "turno-ruolo" }, etichetta("ruolo", a.ruolo)))))));
+            el("span", { class: "turno-ruolo" }, etichetta("ruolo", a.ruolo))),
+          a.origine === "sostituzione" ? el("span", { class: "chip-tag", title: "Sostituzione: ore extra" }, "extra") : null))));
       }
       if (ferie.has(g)) return badgeAssenza(ferie.get(g));
       return el("span", { class: "muted" }, indisp.has(g) ? `Indisponibile: ${etichettaParti(indisp.get(g)).toLowerCase()}` : "Riposo");

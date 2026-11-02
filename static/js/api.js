@@ -106,6 +106,9 @@ export const api = {
   settimana: (data) => richiesta("GET", `/settimane/${enc(data)}`),
   aggiungiAssegnazione: (data, dati) => richiesta("POST", `/settimane/${enc(data)}/assegnazioni`, dati),
   eliminaAssegnazione: (id) => richiesta("DELETE", `/assegnazioni/${enc(id)}`),
+  // Chi può coprire un turno (dipendenti che rispettano le regole, il migliore per primo) e cambio del titolare
+  sostituti: (id) => richiesta("GET", `/assegnazioni/${enc(id)}/sostituti`),
+  sostituisci: (id, personaId) => richiesta("POST", `/assegnazioni/${enc(id)}/sostituisci`, { persona_id: personaId }),
   genera: (data, tempoMax) =>
     richiesta("POST", `/settimane/${enc(data)}/genera`, tempoMax ? { tempo_max: tempoMax } : {}),
   conferma: (data) => richiesta("POST", `/settimane/${enc(data)}/conferma`),
@@ -126,6 +129,8 @@ export const api = {
   ferie: () => richiesta("GET", "/ferie"),
   creaFerie: (dati) => richiesta("POST", "/ferie", dati),
   eliminaFerie: (id) => richiesta("DELETE", `/ferie/${enc(id)}`),
+  // Turni già assegnati alla persona nei giorni di quell'assenza: [{id, data, postazione, fascia, segmento, ruolo, settimana, ore}]
+  turniFerie: (id) => richiesta("GET", `/ferie/${enc(id)}/turni`),
 
   statistiche: () => richiesta("GET", "/statistiche"),
   statisticheFestivi: () => richiesta("GET", "/statistiche/festivi"),

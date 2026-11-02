@@ -64,13 +64,46 @@ def test_esclude_divieti_qualifica_e_indisponibili():
     assert ids(out) == [6]
 
 
-def test_esclude_chi_supererebbe_tre_di_fila_o_il_massimo_ore():
-    persone = {1: persona(1, "Malato"), 2: persona(2, "Tre giorni"), 3: persona(3, "Tetto", max_ore_settimana=12),
+def test_chi_violerebbe_riposo_o_giorni_di_fila_e_proposto_con_avviso():
+    persone = {1: persona(1, "Malato"), 2: persona(2, "Tre giorni"), 3: persona(3, "Poco riposo"),
                4: persona(4, "Libero")}
-    t = turno(1, giorno=3)
-    gia = [turno(2, giorno=g, postazione=ALTRA) for g in (0, 1, 2)] + [turno(3, giorno=5)]
+    t = turno(1, giorno=3, fascia="notte")                                    # 20-8
+    gia = [turno(2, giorno=g, fascia="notte", postazione=ALTRA) for g in (0, 1, 2)]  # con questa: 4 notti di fila
+    gia.append(turno(3, giorno=3, segmento="mattina", postazione=ALTRA))      # 8-14: solo 6 h di riposo
     out = calcola(t, [t, *gia], persone)
+    assert ids(out) == [4, 2, 3] or ids(out) == [4, 3, 2]
+    regole = {c.persona_id: " ".join(c.regole) for c in out}
+    assert regole[4] == ""
+    assert "di fila" in regole[2]
+    assert "riposo" in regole[3]
+
+
+def test_mai_chi_lavorerebbe_piu_di_12_ore_di_fila():
+    persone = {1: persona(1, "Malato"), 2: persona(2, "Notte prima"), 3: persona(3, "Standby prima"),
+               4: persona(4, "Libero")}
+    t = turno(1, giorno=1)                                                    # 8-20
+    notte = turno(2, giorno=0, fascia="notte")                                # 20-8: 24 h senza staccare
+    standby = Assegnazione(GIORNI[1], "Standby", "giorno", "standby_mattina", "soccorritore", 3)  # 7-14: si sovrappone
+    out = calcola(t, [t, notte, standby], persone)
     assert ids(out) == [4]
+
+
+def test_le_ore_delle_sostituzioni_non_contano_nei_limiti_di_ore():
+    persone = {1: persona(1, "Malato"), 2: persona(2, "Tetto", max_ore_settimana=12), 3: persona(3, "Vuoto")}
+    t = turno(1, giorno=6)
+    gia = [turno(2, giorno=0)]                       # già al suo massimo di 12 h
+    out = calcola(t, [t, *gia], persone, ferie={1: {GIORNI[6]}})
+    tetto = next(c for c in out if c.persona_id == 2)
+    assert tetto.regole == tetto.avvisi == ()        # niente "oltre il massimo", niente differenza ore
+    assert (tetto.ore, tetto.ore_sostituzioni, tetto.ore_dopo) == (12, 0, 24)
+
+
+def test_le_sostituzioni_gia_fatte_sono_extra():
+    persone = {1: persona(1, "Malato"), 2: persona(2, "Ha sostituito")}
+    t = turno(1, giorno=3)
+    extra = Assegnazione(GIORNI[0], SEDE, "giorno", "intero", "soccorritore", 2, "sostituzione")
+    out = calcola(t, [t, extra], persone)
+    assert (out[0].ore, out[0].ore_sostituzioni, out[0].ore_contate, out[0].ore_dopo) == (0, 12, 0, 24)
 
 
 def test_ordina_per_ore_e_mette_in_fondo_chi_ha_avvisi():
@@ -79,10 +112,11 @@ def test_ordina_per_ore_e_mette_in_fondo_chi_ha_avvisi():
     t = turno(1, giorno=3)
     gia = [turno(2, giorno=g, postazione=ALTRA) for g in (5, 6)]
     gia += [turno(4, giorno=1, postazione=ALTRA), turno(4, giorno=2, postazione=ALTRA)]  # con il 3: tre di fila
-    out = calcola(t, [t, *gia], persone)
+    out = calcola(t, [t, *gia], persone, scarto_ore_max=72)  # qui non conta la differenza ore
     assert ids(out) == [3, 2, 4]
     poche = out[0]
     assert (poche.nome, poche.ore, poche.ore_dopo, poche.avvisi) == ("Poche ore", 0, 12, ())
+    assert out[1].avvisi == () and out[2].regole == ()   # 3 di fila è un'eccezione ammessa: solo una nota
     assert any("di fila" in a for a in out[2].avvisi)
 
 
@@ -93,15 +127,6 @@ def test_le_ferie_contano_nelle_ore_per_l_ordine():
     # 12 h contate per entrambi: a pari ore conta il nome
     assert ids(out) == [2, 3]
     assert (out[0].ore, out[0].ore_contate) == (0, 12)
-
-
-def test_superare_la_differenza_ore_e_un_avviso_non_un_esclusione():
-    persone = {1: persona(1, "Malato"), 2: persona(2, "Pieno"), 3: persona(3, "Vuoto")}
-    t = turno(1, giorno=6)
-    gia = [turno(2, giorno=g) for g in (0, 2, 4)]   # 36 h; con il turno 48 h, Vuoto resta a 0
-    out = calcola(t, [t, *gia], persone, ferie={1: {GIORNI[6]}})
-    pieno = next(c for c in out if c.persona_id == 2)
-    assert any("Differenza" in a for a in pieno.avvisi)
 
 
 def test_turno_che_non_e_nella_settimana_da_errore():
@@ -144,7 +169,7 @@ def test_api_sostituti_di_chi_va_in_malattia(client):
     assert body["turno"]["id"] == aid and body["turno"]["persona_nome"] == "Malato"
     assert [c["persona_id"] for c in body["candidati"]] == [libero]
     assert body["candidati"][0] == {"persona_id": libero, "nome": "Libero", "qualifica": "autista", "ore": 0,
-                                    "ore_contate": 0, "ore_dopo": 12, "avvisi": []}
+                                    "ore_sostituzioni": 0, "ore_contate": 0, "ore_dopo": 12, "regole": [], "avvisi": []}
 
 
 def test_api_sostituisci_scambia_la_persona(client):
@@ -153,7 +178,7 @@ def test_api_sostituisci_scambia_la_persona(client):
     r = client.post(f"/api/assegnazioni/{aid}/sostituisci", json={"persona_id": libero})
     assert r.status_code == 200, r.text
     turni = [(a["persona_id"], a["data"], a["origine"]) for a in r.json()["assegnazioni"]]
-    assert turni == [(libero, "2026-10-20", "manuale")]
+    assert turni == [(libero, "2026-10-20", "sostituzione")]
 
 
 def test_api_sostituisci_rifiuta_casi_non_validi(client):
@@ -193,3 +218,92 @@ def test_api_turni_coinvolti_da_un_assenza(client):
     assert r.status_code == 200, r.text
     assert [(t["data"], t["settimana"], t["postazione"]) for t in r.json()] == [("2026-10-20", "2026-10-19", SEDE)]
     assert client.get("/api/ferie/9999/turni").status_code == 404
+
+
+# --- le ore delle sostituzioni sono extra: fuori da limiti, storico e statistiche -------------------
+
+def test_validatore_non_conta_le_sostituzioni_nelle_ore():
+    from cvap.vincoli import valida_settimana
+    persone = {1: persona(1, "A", max_ore_settimana=12), 2: persona(2, "B")}
+    turni = [turno(1, giorno=0), turno(2, giorno=0, ruolo="autista"),
+             Assegnazione(GIORNI[2], SEDE, "giorno", "intero", "soccorritore", 1, "sostituzione"),
+             Assegnazione(GIORNI[4], SEDE, "giorno", "intero", "soccorritore", 1, "sostituzione")]
+    codici = {v.codice for v in valida_settimana(GIORNI, [], turni, persone)}
+    assert not codici & {"ore_max", "ore"}           # 36 h lavorate da A, ma 24 sono extra
+
+
+def test_storico_non_conta_le_sostituzioni():
+    from cvap.storico import SettimanaPassata, calcola_storico
+    turni = [turno(1, giorno=0), Assegnazione(GIORNI[5], SEDE, "giorno", "intero", "soccorritore", 1, "sostituzione")]
+    s = SettimanaPassata(media_ore=12, dipendenti=[1], assegnazioni=turni)
+    st = calcola_storico([s])[1]
+    assert (st.ore_lavorate, st.saldo_ore, st.weekend["sab_giorno"], st.ore_sostituzioni) == (12, 0, 0, 12)
+
+
+def test_api_ore_extra_in_settimana_statistiche_e_riepilogo(client, tmp_path):
+    malato, libero = crea(client, "Malato"), crea(client, "Libero")
+    aid = prenota(client, malato, data="2026-10-24")      # sabato
+    prenota(client, libero, data="2026-10-19")
+    s = client.post(f"/api/assegnazioni/{aid}/sostituisci", json={"persona_id": libero}).json()
+    r = next(x for x in s["riepilogo"] if x["persona_id"] == libero)
+    assert (r["ore"], r["ore_sostituzioni"], r["turni_weekend"]) == (12, 12, 0)
+    # statistiche: la settimana conta se ha turni generati; qui la si segna come generata a mano
+    from cvap import db
+    conn = db.connetti(str(tmp_path / "t.db"))
+    with conn:
+        conn.execute("UPDATE assegnazioni SET origine = 'generato' WHERE origine = 'manuale'")
+        conn.execute("INSERT OR REPLACE INTO settimane(inizio, stato, dipendenti) VALUES (?, 'bozza', ?)",
+                     ("2026-10-19", f"[{malato}, {libero}]"))
+    conn.close()
+    st = next(x for x in client.get("/api/statistiche").json() if x["persona_id"] == libero)
+    assert (st["ore_lavorate"], st["ore_sostituzioni"], st["weekend"]["sab_giorno"]) == (12, 12, 0)
+    rp = client.get(f"/api/statistiche/persona/{libero}?dal=2026-10-19&al=2026-10-25").json()["riepilogo"]
+    assert (rp["ore_lavorate"], rp["turni"], rp["ore_sostituzioni"], rp["turni_sostituzioni"]) == (12, 1, 12, 1)
+    assert rp["weekend"]["sab_giorno"] == 0
+
+
+def test_mai_chi_staccherebbe_solo_un_ora():
+    # Standby 7-19 e poi la notte 20-8: un'ora di pausa non interrompe il lavoro (25 h di fila)
+    persone = {1: persona(1, "Malato"), 2: persona(2, "Standby"), 3: persona(3, "Libero")}
+    t = turno(1, giorno=2, fascia="notte")
+    standby = Assegnazione(GIORNI[2], "Standby", "giorno", "standby", "soccorritore", 2)
+    assert ids(calcola(t, [t, standby], persone)) == [3]
+
+
+def test_ore_di_fila():
+    from cvap.sostituti import ore_di_fila
+    giorno, notte = turno(1, giorno=0), turno(1, giorno=0, fascia="notte")
+    assert ore_di_fila([], giorno) == 12
+    assert ore_di_fila([giorno], notte) == 24
+    assert ore_di_fila([turno(1, giorno=1)], notte) == 24          # notte 20-8 e giorno dopo 8-20
+    assert ore_di_fila([turno(1, giorno=2)], notte) == 12
+
+
+def test_il_generatore_non_conta_le_ore_delle_sostituzioni():
+    from cvap.solver import _ore_fisse
+    extra = Assegnazione(LUN, SEDE, "giorno", "intero", "soccorritore", 1, "sostituzione")
+    assert _ore_fisse([persona(1, "A")], [extra, turno(1, giorno=2)]) == {1: 12}
+
+
+def test_sostituzione_su_turno_sparito_non_crea_doppioni(tmp_path):
+    from cvap import db
+    conn = db.connetti(str(tmp_path / "x.db"))
+    pid = db.crea_persona(conn, "A", "dipendente", "autista")["id"]
+    aid = db.crea_assegnazione(conn, turno(pid))
+    db.elimina_assegnazione(conn, aid)
+    assert db.sostituisci_assegnazione(conn, aid, turno(pid, giorno=1)) is None
+    assert db.assegnazioni_periodo(conn, LUN, GIORNI[-1]) == []
+    conn.close()
+
+
+def test_api_sostituisci_rifiuta_chi_non_puo_prendere_il_turno(client):
+    malato, assente, occupato = crea(client, "Malato"), crea(client, "Assente"), crea(client, "Occupato")
+    aid = prenota(client, malato)
+    r = client.post("/api/settimane/2026-10-19/assegnazioni", json={
+        "data": "2026-10-20", "postazione": ALTRA, "fascia": "giorno", "segmento": "intero", "ruolo": "autista",
+        "persona_id": occupato})
+    assert r.status_code == 201, r.text
+    client.post("/api/ferie", json={"persona_id": assente, "dal": "2026-10-20", "al": "2026-10-20"})
+    for pid in (assente, occupato):
+        r = client.post(f"/api/assegnazioni/{aid}/sostituisci", json={"persona_id": pid})
+        assert r.status_code == 400 and "non può prendere" in r.json()["detail"]

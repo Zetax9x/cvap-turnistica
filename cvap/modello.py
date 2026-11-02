@@ -12,7 +12,10 @@ FASCE = ("giorno", "notte")
 SEGMENTI = ("intero", "mattina", "pomeriggio", "standby", "standby_mattina", "standby_pomeriggio",
             "prog_mattina", "prog_pomeriggio")
 RUOLI = ("autista", "soccorritore")
-ORIGINI = ("volontario", "generato", "manuale")
+# "sostituzione": turno preso dopo la generazione al posto di chi è assente (malattia, ferie…). Le sue ore sono
+# extra: non contano nei limiti di ore della settimana, nello storico né nelle statistiche (che le mostrano a parte)
+SOSTITUZIONE = "sostituzione"
+ORIGINI = ("volontario", "generato", "manuale", SOSTITUZIONE)
 PARTI_TURNO = ("mattina", "pomeriggio", "notte")  # le parti della giornata in cui un dipendente può essere indisponibile
 
 ORE_RIPOSO_MIN = 11
@@ -249,6 +252,11 @@ class Assegnazione(Unita):
     @property
     def unita(self) -> Unita:
         return Unita(self.data, self.postazione, self.fascia, self.segmento, self.ruolo)
+
+
+def ore_extra(a: Assegnazione) -> bool:
+    """True per le sostituzioni: ore extra, fuori da limiti di ore, storico e statistiche."""
+    return a.origine == SOSTITUZIONE
 
 
 def in_conflitto(a: Unita, b: Unita) -> bool:

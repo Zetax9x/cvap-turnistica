@@ -14,7 +14,7 @@ from datetime import date, timedelta
 from . import dati_festivi, db, db_festivi_disponibili, db_festivita, db_storico_festivi
 from .calendario import lunedi
 from .festivita import data_nell_anno, occorrenze, turni_di, turni_festivi
-from .modello import parti_turno
+from .modello import ore_extra, parti_turno
 from .rotazione_festivi import ContoFestivita, conta_festivita, inizio_periodo, occorrenza, ordine_rotazione
 from .storico_festivi import limite_storico
 
@@ -160,7 +160,7 @@ def lavorate_anno(conn: sqlite3.Connection, anno: int, oggi: date) -> dict:
         for _, a in db.assegnazioni_periodo(conn, max(dal, prima - timedelta(days=1)), al):
             fid = mappa.get((a.data, a.fascia))
             p = persone.get(a.persona_id)
-            if fid is None or p is None or p["tipo"] != "dipendente":
+            if fid is None or p is None or p["tipo"] != "dipendente" or ore_extra(a):
                 continue
             d = occorrenza(per_id[fid], a.data, a.fascia)
             if d.year == anno and d >= limite:
