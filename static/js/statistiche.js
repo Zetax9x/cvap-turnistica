@@ -135,7 +135,8 @@ function valore(r, col) {
 }
 
 function ordina(righe) {
-  const col = COLONNE.find((c) => c.campo === stato.ordine.campo) || COLONNE[0];
+  const col = COLONNE.find((c) => c.campo === stato.ordine.campo)
+    || { campo: stato.ordine.campo, valore: (r) => r[stato.ordine.campo] };
   const dir = stato.ordine.dir;
   return righe.slice().sort((a, b) => {
     const va = valore(a, col);
@@ -166,6 +167,7 @@ function render() {
     root.append(el("p", { class: "muted" }, "Nessun dato disponibile: genera o compila almeno una settimana."));
     return;
   }
+  root.append(renderSintesi(righe));
 
   const thead = el("thead", {}, el("tr", {}, COLONNE.map((c) => {
     const attiva = stato.ordine.campo === c.campo;
@@ -236,4 +238,30 @@ function render() {
     "più volte o l'anno prima lascia il posto agli altri. Ferie e indisponibilità in una festività contano come riposo " +
     "goduto: la volta dopo si ha la precedenza a lavorarla. I volontari non entrano nella rotazione (–). " +
     "Le festività tolte dal calendario restano nel totale, segnate come “non più nel calendario”."));
+}
+
+/** Indicatori brevi prima della tabella: orientano l'attenzione, non sono giudizi automatici. */
+function renderSintesi(righe) {
+  const dipendenti = righe.filter((r) => r.tipo === "dipendente");
+  if (!dipendenti.length) return null;
+  const totaleOre = dipendenti.reduce((somma, r) => somma + (Number(r.ore_totali) || 0), 0);
+  const piuSaldo = dipendenti.reduce((scelto, r) => Math.abs(Number(r.saldo_ore) || 0) > Math.abs(Number(scelto.saldo_ore) || 0) ? r : scelto);
+  const estremi = (valore) => dipendenti.reduce((ris, r) => {
+    const n = Number(valore(r)) || 0;
+    return { min: Math.min(ris.min, n), max: Math.max(ris.max, n) };
+  }, { min: Infinity, max: -Infinity });
+  const weekend = estremi(totWeekend);
+  const notti = estremi((r) => r.ore_notte);
+  const ordina = (campo) => () => { stato.ordine = { campo, dir: -1 }; render(); };
+  const indicatore = (titolo, valore, nota, campo) => el("button", {
+    type: "button", class: "stat-sintesi-voce", onclick: ordina(campo),
+    title: `Ordina la tabella per ${titolo.toLowerCase()}`,
+  }, el("span", { class: "stat-sintesi-titolo" }, titolo), el("strong", {}, valore), el("span", { class: "stat-sintesi-nota" }, nota));
+  return el("section", { class: "stat-sintesi", "aria-label": "Sintesi dell'equità" },
+    el("p", { class: "stat-sintesi-intro" }, "Panoramica dipendenti · seleziona un indicatore per ordinare il dettaglio."),
+    el("div", { class: "stat-sintesi-griglia" },
+      indicatore("Ore complessive", `${formatOre(totaleOre)} h`, `${dipendenti.length} dipendenti`, "ore_totali"),
+      indicatore("Scostamento ore maggiore", formatSaldo(Number(piuSaldo.saldo_ore) || 0), piuSaldo.nome, "saldo_ore"),
+      indicatore("Turni weekend", `${weekend.min} – ${weekend.max}`, "minimo – massimo", "weekend_tot"),
+      indicatore("Ore notturne", `${formatOre(notti.min)} – ${formatOre(notti.max)} h`, "minimo – massimo", "ore_notte")));
 }

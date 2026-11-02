@@ -506,6 +506,20 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
 }
 .rapporto-giorno { display: block; height: 100%; background: #f0b323; /* giorno */ }
 
+/* La sintesi non sostituisce la tabella: offre quattro ingressi rapidi al dato da approfondire. */
+.stat-sintesi { margin: .8rem 0 1rem; }
+.stat-sintesi-intro { margin: 0 0 .45rem; color: var(--muted); font-size: .9rem; }
+.stat-sintesi-griglia { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .65rem; }
+.stat-sintesi-voce {
+  display: flex; flex-direction: column; align-items: flex-start; gap: .15rem; min-width: 0; padding: .75rem .8rem;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); text-align: left;
+  font: inherit; cursor: pointer; box-shadow: var(--shadow);
+}
+.stat-sintesi-voce:hover { border-color: var(--primary); background: var(--primary-soft); }
+.stat-sintesi-titolo { color: var(--muted); font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+.stat-sintesi-voce strong { font-size: 1.2rem; font-variant-numeric: tabular-nums; }
+.stat-sintesi-nota { color: var(--muted); font-size: .82rem; overflow-wrap: anywhere; }
+
 /* ---------- Form ---------- */
 
 .campi { display: flex; flex-wrap: wrap; gap: .85rem 1rem; align-items: flex-end; }
@@ -666,6 +680,7 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
   .tabella-stat tbody th { white-space: nowrap; }
   .tabella .azioni { white-space: normal; }
   .tabella .azioni .btn { margin: .15rem 0 .15rem .3rem; }
+  .stat-sintesi-griglia { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
   /* Personale: ogni persona è una scheda, con i comandi sotto */
   .tabella-persone thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
