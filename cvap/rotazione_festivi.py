@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from .festivita import turni_di, data_nell_anno, occorrenze, turni_festivi
-from .modello import Assegnazione
+from .modello import Assegnazione, ore_extra
 
 ANNI_FESTIVI = 5
 # pesi del generatore (cvap/solver.py), qui perché li usa anche l'ordine di rotazione in anticipo
@@ -252,7 +252,7 @@ def festivi_settimana(festivita: Iterable[Mapping], giorni: list[date], conti: M
     fuori: dict[int, dict[int, int]] = {}
     for a in contesto:
         fid = prima.get((a.data, a.fascia))
-        if fid is not None and a.persona_id in dip:
+        if fid is not None and a.persona_id in dip and not ore_extra(a):  # le sostituzioni non contano
             chi = fuori.setdefault(fid, {})
             chi[a.persona_id] = chi.get(a.persona_id, 0) + 1
     voglia = turni_disponibili(festivita, giorni[0], giorni[-1], disponibili) if disponibili else {}

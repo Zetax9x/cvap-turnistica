@@ -177,7 +177,7 @@ export const ETICHETTE = {
     standby: "Turno intero", standby_mattina: "Mattina 7–14", standby_pomeriggio: "Pomeriggio 14–19",
     prog_mattina: "Mattina 7–14", prog_pomeriggio: "Pomeriggio 14–20",
   },
-  origine: { volontario: "Volontario", manuale: "Fissato", generato: "Generato" },
+  origine: { volontario: "Volontario", manuale: "Fissato", generato: "Generato", sostituzione: "Sostituzione (extra)" },
   stato: { nuova: "Nuova", bozza: "Bozza", confermata: "Confermata" },
   statoReport: {
     ottimo: "Soluzione ottima",

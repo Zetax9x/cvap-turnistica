@@ -119,6 +119,8 @@ function renderGiorni(d) {
         el("span", { class: "riep-orario" }, el("span", { "aria-hidden": "true" }, t.fascia === "notte" ? "☾ " : "☀ "), t.orario),
         el("span", { class: "riep-postazione" }, t.postazione),
         el("span", { class: "riep-ruolo" }, t.ruolo),
+        t.origine === "sostituzione"
+          ? el("span", { class: "riep-extra", title: "Sostituzione: ore extra, fuori dai totali" }, "Sostituzione · extra") : null,
         t.festivita ? el("span", { class: "riep-festivo" }, `Festivo: ${t.festivita}`) : null));
     }
     if (g.assenza) contenuto.push(badgeAssenza(g.assenza));
@@ -127,11 +129,13 @@ function renderGiorni(d) {
         `Indisponibile: ${g.indisponibile.map((p) => PARTI[p] || p).join(", ")}`));
     }
     if (!contenuto.length) contenuto.push(el("span", { class: "muted riep-riposo" }, "Riposo"));
-    const ore = g.turni.reduce((s, t) => s + t.ore, 0);
+    const ore = g.turni.filter((t) => t.origine !== "sostituzione").reduce((s, t) => s + t.ore, 0);
+    const extra = g.turni.filter((t) => t.origine === "sostituzione").reduce((s, t) => s + t.ore, 0);
     return el("tr", { class: i >= 5 ? "weekend" : null },
       el("th", { scope: "row", class: "riep-data" }, el("b", {}, GIORNI_BREVI[i]), ` ${ddmm(g.data)}/${g.data.slice(0, 4)}`),
       el("td", {}, contenuto),
-      el("td", { class: "num" }, ore ? `${formatOre(ore)} h` : ""));
+      el("td", { class: "num" }, ore ? `${formatOre(ore)} h` : "",
+        extra ? el("span", { class: "ore-extra riep-ore-extra" }, `+${formatOre(extra)} h extra`) : null));
   });
   return el("div", { class: "table-scroll" }, el("table", { class: "tabella tabella-riepilogo" },
     el("caption", { class: "sr-only" }, `Turni di ${d.nome} giorno per giorno`),
@@ -153,6 +157,8 @@ function renderTotali(r) {
       voce("Ore lavorate", `${formatOre(r.ore_lavorate)} h`, `${formatOre(r.ore_giorno)} h giorno · ${formatOre(r.ore_notte)} h notte`),
       voce("Ferie e malattia", assenze || "nessuna", r.ore_ferie_malattia ? `${formatOre(r.ore_ferie_malattia)} h accreditate` : null),
       voce("Ore totali", `${formatOre(r.ore_totali)} h`, "lavorate + 6 h per giorno di ferie o malattia"),
+      voce("Sostituzioni (extra)", r.turni_sostituzioni ? `${formatOre(r.ore_sostituzioni || 0)} h` : "nessuna",
+        r.turni_sostituzioni ? `${r.turni_sostituzioni} ${r.turni_sostituzioni === 1 ? "turno" : "turni"} al posto di un collega assente: non contano negli altri totali` : null),
       voce("Turni nel weekend", String(w.sab_giorno + w.sab_notte + w.dom_giorno + w.dom_notte),
         `sab ${w.sab_giorno} G / ${w.sab_notte} N · dom ${w.dom_giorno} G / ${w.dom_notte} N`),
       voce("Turni festivi", String(r.turni_festivi || 0),

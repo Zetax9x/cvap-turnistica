@@ -336,6 +336,15 @@ input[type="checkbox"] { min-height: 0; width: 1.1rem; height: 1.1rem; accent-co
 .chip-volontario { background: var(--vol-bg); border-color: var(--vol-border); color: var(--vol-text); }
 .chip-manuale { background: var(--man-bg); border-color: var(--man-border); color: var(--man-text); }
 .chip-generato { background: var(--gen-bg); border-color: var(--gen-border); color: var(--gen-text); }
+/* sostituzione dopo la generazione: ore extra, arancione acceso */
+.chip-sostituzione { background: #ffe2b8; border-color: #e07800; color: #6b3500; }
+.ore-extra { color: #a14d00; font-weight: 700; white-space: nowrap; }
+.riep-extra {
+  display: inline-block; font-size: .78rem; font-weight: 800; text-transform: uppercase; letter-spacing: .03em;
+  background: #ffe2b8; color: #6b3500; border: 1px solid #e07800; border-radius: 999px; padding: 0 .5rem;
+}
+.riep-ore-extra { display: block; font-size: .85rem; }
+.chip-sostituzione .chip-tag { opacity: 1; font-weight: 800; color: #a14d00; }
 .chip-nome { font-weight: 650; }
 .chip-seg { font-size: .76rem; font-variant-numeric: tabular-nums; opacity: .9; }
 .chip-tag { font-size: .68rem; text-transform: uppercase; letter-spacing: .03em; opacity: .85; }
@@ -679,7 +688,7 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
     color-scheme: light;
   }
   body { font-size: 10pt; background: #fff; }
-  .app-header, .skip-link, .toolbar, .week-nav, .passi, .pannelli, .report, .banner, .disponibilita, .richieste,
+  .app-header, .skip-link, .toolbar, .week-nav, .passi, .pannelli, .turni-da-coprire, .report, .banner, .disponibilita, .richieste,
   .toast-area, .overlay, dialog, #view-personale, #view-impostazioni { display: none !important; }
   main { padding: 0; max-width: none; }
   .week-header { margin-bottom: 4mm; }
@@ -710,6 +719,52 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
 .viol-gruppo summary::after { content: "▾"; content: "▾" / ""; margin-left: auto; color: var(--muted); }
 .viol-gruppo[open] summary::after { content: "▴"; content: "▴" / ""; }
 .viol-sotto { margin: .4rem 0 0; padding-left: 1.2rem; max-height: 220px; overflow-y: auto; font-size: .85rem; }
+
+/* ---------- Turni da coprire (assenti con turni già assegnati) e sostituti suggeriti ---------- */
+.banner-avviso { background: var(--warn-bg); border-color: var(--warn-border); border-left-width: 5px; }
+.banner-avviso .btn { margin-left: .25rem; }
+.turni-da-coprire { margin-top: 1.75rem; border-left: 5px solid var(--warn-border); }
+.turni-da-coprire + .pannelli { margin-top: 1.25rem; }
+.coprire-intro { margin: -.25rem 0 .75rem; }
+.coprire-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: .75rem; }
+.coprire-voce {
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .7rem .85rem;
+}
+.coprire-turno { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .9rem; margin-bottom: .5rem; }
+.coprire-assente { display: inline-flex; align-items: center; gap: .35rem; }
+.sostituti-attesa, .sostituti-nessuno, .sostituti-errore { margin: 0; }
+.sostituti-nessuno { color: var(--warn); font-weight: 600; }
+.sostituti-errore { color: var(--err); }
+.candidati { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; }
+.candidato {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .4rem .8rem;
+  background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--accent);
+  border-radius: var(--radius-sm); padding: .4rem .6rem;
+}
+.candidato-con-avvisi { border-left-color: #e07800; background: #fff1dc; }
+.candidato-con-avvisi .badge-avviso { background: #ffd79a; color: #6b3500; border-color: #e07800; }
+.coprire-nota-extra {
+  margin: 0 0 .75rem; padding: .35rem .6rem; border-radius: var(--radius-sm); font-size: .9rem; font-weight: 600;
+  background: #ffe2b8; color: #6b3500; border-left: 4px solid #e07800;
+}
+.candidato-dati { display: flex; flex-wrap: wrap; align-items: baseline; gap: .1rem .6rem; min-width: 0; }
+.candidato-nome { font-weight: 700; }
+.candidato-qualifica { font-size: .85rem; }
+.candidato-ore { font-size: .9rem; }
+.candidato-avvisi { flex-basis: 100%; font-size: .84rem; color: #8a4200; font-weight: 600; }
+.candidato-note { flex-basis: 100%; font-size: .84rem; }
+.candidato-assegna { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.candidato-assegna:hover:not(:disabled) { background: #007a35; border-color: #007a35; }
+.candidati-altri { margin-top: .4rem; }
+.candidati-altri > summary { cursor: pointer; font-size: .9rem; color: var(--primary); font-weight: 600; margin-bottom: .35rem; }
+.lista-assegnati .sostituti-dialog { flex-basis: 100%; margin-top: .35rem; }
+.lista-assegnati li > .btn + .btn { margin-left: 0; }
+.sostituti-dialog > .hint { margin: 0 0 .35rem; }
+.avviso-turni-ferie p { margin: 0 0 .5rem; }
+.avviso-turni-settimane { list-style: none; margin: 0 0 .6rem; padding: 0; display: grid; gap: .5rem; }
+.avviso-turni-elenco { margin: .3rem 0 0; padding-left: 1.2rem; font-size: .9rem; }
+.btn-primary:visited { color: var(--primary-text); }
+a.btn { text-decoration: none; }
 
 /* ---------- Disponibilità e ferie ---------- */
 .disponibilita { margin-bottom: 1rem; }
@@ -972,7 +1027,7 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
   #view-settimana .cella-non-richiesta, #view-settimana .cella-non-richiesta.weekend { background: #f3f3f3 !important; }
   #view-settimana .griglia th, #view-settimana .griglia td { border-color: #555; }
   #view-settimana .griglia-titolo { border-left: 0; padding-left: 0; }
-  #view-settimana .chip-generato, #view-settimana .chip-manuale { background: none; border: 0; color: #000; }
+  #view-settimana .chip-generato, #view-settimana .chip-manuale, #view-settimana .chip-sostituzione { background: none; border: 0; color: #000; }
   #view-settimana .chip-manuale .chip-nome { text-decoration: none; }
   #view-settimana .chip-tag { display: none; }
   #view-settimana .chip-viol-errore { outline: 0; }
@@ -1243,4 +1298,32 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
   .tabella-equita th, .tabella-equita td { padding: 1.3mm 1.2mm; border-bottom: 1px solid #bbb; }
   .tabella-equita-dettaglio { min-width: 0; page-break-inside: avoid; }
   .eq-tend, .eq-barra, .eq-barra-valore, .eq-grafico { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
+/* ---------- Stampa "Chi può sostituire": foglio a parte, si vede solo in stampa ---------- */
+.stampa-sostituti { display: none; }
+.coprire-azioni { margin: 0 0 .75rem; }
+
+@page verticale { size: A4 portrait; margin: 12mm; }
+@media print {
+  body.stampa-sostituti-attiva > *:not(#stampa-sostituti) { display: none !important; }
+  body.stampa-sostituti-attiva .stampa-sostituti { display: block !important; page: verticale; color: #000; }
+  .stampa-sostituti h1 { font-size: 16pt; margin: 0 0 5mm; padding-bottom: 2mm; border-bottom: 3px solid #009541; }
+  .sost-blocco {
+    break-inside: avoid; page-break-inside: avoid; margin: 0 0 5mm; padding: 2.5mm 3.5mm;
+    border: 1px solid #9aa3af; border-left: 4px solid #009541; border-radius: 2mm; background: #fff;
+  }
+  .sost-blocco h2 { font-size: 12.5pt; margin: 0 0 1mm; }
+  .sost-assente { margin: 0 0 2mm; font-size: 11pt; }
+  .sost-candidati { margin: 0; padding-left: 7mm; font-size: 11pt; }
+  .sost-candidati > li { padding: 1mm 1.5mm; margin-bottom: 1mm; border-radius: 1.5mm; }
+  .sost-nome { font-size: 12pt; font-weight: 800; }
+  .sost-ore { color: #1b2330; }
+  .sost-fuori-regola { background: #fff1dc; border-left: 3px solid #e07800; }
+  .sost-avvisi { font-size: 10pt; color: #6b3500; margin-top: .5mm; }
+  .sost-avvisi ul { margin: .5mm 0 0; padding-left: 5mm; }
+  .sost-note { font-size: 9.5pt; color: #4b5563; margin-top: .5mm; }
+  .sost-nessuno { margin: 0; font-weight: 700; color: #7a4a00; background: #ffeec2; padding: 1.5mm 2mm; border-radius: 1.5mm; }
+  .sost-errore { margin: 0; color: #b3121f; font-weight: 700; }
+  .sost-nota { font-size: 10pt; font-weight: 600; margin-top: 4mm; padding: 2mm 3mm; background: #ffe2b8; border-left: 4px solid #e07800; }
 }

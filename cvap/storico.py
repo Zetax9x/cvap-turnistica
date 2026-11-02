@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 
 from datetime import date
 
-from .modello import EXTRA, PARTI_TURNO, POSTAZIONI_A_RICHIESTA, Assegnazione
+from .modello import EXTRA, PARTI_TURNO, POSTAZIONI_A_RICHIESTA, Assegnazione, ore_extra
 from .vincoli import ASCOLI, ORE_FERIE_GIORNO
 
 CATEGORIE_WEEKEND = ("sab_giorno", "sab_notte", "dom_giorno", "dom_notte")
@@ -32,6 +32,7 @@ class StoricoPersona:
     ascoli_giorno: int = 0     # di cui di giorno
     ascoli_notte: int = 0      # di cui di notte
     settimane_ascoli: int = 0  # settimane con Ascoli in cui era presente: la base della quota attesa
+    ore_sostituzioni: int = 0  # ore extra delle sostituzioni: fuori da tutti gli altri conteggi
 
     @property
     def ore_lavorate(self) -> int:
@@ -56,6 +57,19 @@ class SettimanaPassata:
     giorni_ferie: dict[int, int] = field(default_factory=dict)  # id -> giorni di assenza (ferie o malattia)
     giorni_malattia: dict[int, int] = field(default_factory=dict)  # id -> quanti di quei giorni per malattia
     max_ore: dict[int, int] = field(default_factory=dict)  # id -> massimo ore a settimana
+    # id -> ore extra delle sostituzioni, tenute fuori da `assegnazioni` (vedi `senza_sostituzioni`)
+    ore_sostituzioni: dict[int, int] = field(default_factory=dict)
+
+
+def senza_sostituzioni(assegnazioni) -> tuple[list[Assegnazione], dict[int, int]]:
+    """Separa le sostituzioni (ore extra, fuori dallo storico) dagli altri turni: (turni, ore extra per persona)."""
+    turni, extra = [], {}
+    for a in assegnazioni:
+        if ore_extra(a):
+            extra[a.persona_id] = extra.get(a.persona_id, 0) + a.ore
+        else:
+            turni.append(a)
+    return turni, extra
 
 
 def dalla_prima_generata(settimane: list[SettimanaPassata]) -> list[SettimanaPassata]:
@@ -87,11 +101,16 @@ def solo_generate(settimane: list[SettimanaPassata]) -> list[SettimanaPassata]:
 def calcola_storico(settimane: list[SettimanaPassata]) -> dict[int, StoricoPersona]:
     storico: dict[int, StoricoPersona] = {}
     for s in dalla_prima_generata(settimane):
+        turni, extra = senza_sostituzioni(s.assegnazioni)
+        for pid, h in s.ore_sostituzioni.items():
+            extra[pid] = extra.get(pid, 0) + h
+        for pid, h in extra.items():
+            storico.setdefault(pid, StoricoPersona()).ore_sostituzioni += h
         # in ferie tutta la settimana: la settimana non conta per lui
         presenti = {pid for pid in s.dipendenti if s.giorni_ferie.get(pid, 0) < 7}
         ore = {pid: 0 for pid in presenti}
         # una settimana "con Ascoli" ha almeno un turno ad Ascoli: non dipende dalla data di riferimento A/B
-        con_ascoli = any(a.postazione == ASCOLI for a in s.assegnazioni)
+        con_ascoli = any(a.postazione == ASCOLI for a in turni)
         for pid in presenti:
             st = storico.setdefault(pid, StoricoPersona())
             st.settimane += 1
@@ -100,7 +119,7 @@ def calcola_storico(settimane: list[SettimanaPassata]) -> dict[int, StoricoPerso
             malattia = s.giorni_malattia.get(pid, 0)
             st.ore_malattia += ORE_FERIE_GIORNO * malattia
             st.ore_ferie += ORE_FERIE_GIORNO * (s.giorni_ferie.get(pid, 0) - malattia)
-        for a in s.assegnazioni:
+        for a in turni:
             if a.persona_id not in presenti:
                 continue
             st = storico[a.persona_id]

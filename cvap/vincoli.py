@@ -1,5 +1,8 @@
 """Validazione di una settimana di turni: copertura, qualifiche, riposo, turni consecutivi, ore, assenze.
 
+Le sostituzioni (`ore_extra`) valgono per copertura, riposo e turni di fila, ma non per le regole sulle ore
+né per i conteggi di Ascoli.
+
 Usato per controllare sia l'output del generatore sia le modifiche manuali.
 """
 from collections import Counter, defaultdict
@@ -8,8 +11,8 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from itertools import combinations
 
-from .modello import (ORE_RIPOSO_MIN, PARTI_TURNO, Assegnazione, Fabbisogno, Persona, orario, parti_turno,
-                      per_segmento, si_sovrappongono, turno_ammesso)
+from .modello import (ORE_RIPOSO_MIN, PARTI_TURNO, Assegnazione, Fabbisogno, Persona, orario, ore_extra,
+                      parti_turno, per_segmento, si_sovrappongono, turno_ammesso)
 from .slot import unita_da_coprire
 
 MAX_CONSECUTIVI = 3       # oltre è vietato
@@ -279,7 +282,7 @@ def _ascoli_di_fila(pid, nome, turni, settimana):
 def _ascoli_giorno_notte(assegnazioni, persone):
     """Ad Ascoli giorno e notte alternati: avviso se una fascia supera l'altra di 2 o più turni
     (anche mezzo turno conta). Vale solo per i dipendenti."""
-    conta = Counter((a.persona_id, a.fascia) for a in assegnazioni if a.postazione == ASCOLI)
+    conta = Counter((a.persona_id, a.fascia) for a in assegnazioni if a.postazione == ASCOLI and not ore_extra(a))
     out = []
     for pid in sorted({pid for pid, _ in conta}):
         p = persone.get(pid)
@@ -304,7 +307,7 @@ def _sequenze(date_ordinate: list[date]):
 
 def _ascoli(assegnazioni, persone):
     # ogni posto conta come un turno, anche mezzo turno; vale solo per i dipendenti
-    conta = Counter(a.persona_id for a in assegnazioni if a.postazione == ASCOLI)
+    conta = Counter(a.persona_id for a in assegnazioni if a.postazione == ASCOLI and not ore_extra(a))
     out = []
     for pid, n in conta.items():
         p = persone.get(pid)
@@ -326,7 +329,7 @@ def differenza_ore(giorni, assegnazioni, persone, ferie) -> dict | None:
            if p.dipendente and p.max_ore_settimana is None
            and giorni_disponibili(giorni, ferie.get(p.id, set()))}
     for a in assegnazioni:
-        if a.persona_id in ore:
+        if a.persona_id in ore and not ore_extra(a):
             ore[a.persona_id] += a.ore
     if len(ore) < 2:
         return None
@@ -350,11 +353,18 @@ def massimo_ore(p: Persona) -> int:
     return ORE_MAX_SETTIMANA if p.max_ore_settimana is None else min(ORE_MAX_SETTIMANA, p.max_ore_settimana)
 
 
-def sotto_minimo(giorni, assegnazioni, persone, ferie) -> list[dict]:
-    """Dipendenti presenti (non in ferie tutta la settimana) con ore lavorate + ferie sotto il minimo."""
+def ore_lavorate(assegnazioni) -> Counter:
+    """Ore lavorate per persona che contano nei limiti della settimana: le sostituzioni (ore extra) no."""
     lavorate = Counter()
     for a in assegnazioni:
-        lavorate[a.persona_id] += a.ore
+        if not ore_extra(a):
+            lavorate[a.persona_id] += a.ore
+    return lavorate
+
+
+def sotto_minimo(giorni, assegnazioni, persone, ferie) -> list[dict]:
+    """Dipendenti presenti (non in ferie tutta la settimana) con ore lavorate + ferie sotto il minimo."""
+    lavorate = ore_lavorate(assegnazioni)
     out = []
     for p in persone.values():
         giorni_ferie = ferie.get(p.id, set())
@@ -368,9 +378,7 @@ def sotto_minimo(giorni, assegnazioni, persone, ferie) -> list[dict]:
 
 
 def _ore(giorni, assegnazioni, persone, ferie, scarto_ore_max=SCARTO_ORE_MAX):
-    lavorate = Counter()
-    for a in assegnazioni:
-        lavorate[a.persona_id] += a.ore
+    lavorate = ore_lavorate(assegnazioni)
     out = []
     for p in persone.values():
         if not (p.dipendente and giorni_disponibili(giorni, ferie.get(p.id, set()))):

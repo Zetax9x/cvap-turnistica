@@ -1,7 +1,10 @@
 // Vista "Personale": elenco, aggiunta, modifica in linea, disattivazione/eliminazione, ferie.
 
 import { api } from "./api.js";
-import { el, clear, toast, toastErrore, chiediConferma, etichetta, dataEstesa, todayISO, badgeAssenza } from "./util.js";
+import {
+  el, clear, toast, toastErrore, chiediConferma, etichetta, dataEstesa, todayISO, badgeAssenza,
+  GIORNI_BREVI, ddmm, indiceGiorno, orarioTurno, dataLunga,
+} from "./util.js";
 
 const stato = {
   root: null,
@@ -10,10 +13,12 @@ const stato = {
   filtroTipo: "tutti",
   mostraInattivi: true,
   inModifica: null, // id persona in modifica
+  turniDaCoprire: null, // {nome, motivo, turni} dopo aver segnato un'assenza a chi aveva già turni
 };
 
 export async function mostra(root) {
   stato.root = root;
+  stato.turniDaCoprire = null;
   if (!stato.persone.length) clear(root).append(el("p", { class: "muted loading" }, "Caricamento del personale…"));
   try {
     [stato.persone, stato.ferie] = await Promise.all([api.persone(), api.ferie()]);
@@ -283,9 +288,13 @@ function renderFerie() {
       if (!persona.value || !dal.value || !al.value) { toast("Indica dipendente, dal e al.", "avviso"); return; }
       invia.disabled = true;
       try {
-        await api.creaFerie({ persona_id: Number(persona.value), dal: dal.value, al: al.value, motivo: motivo.value });
+        const nome = nomi.get(Number(persona.value)) || "Il dipendente";
+        const creata = await api.creaFerie({ persona_id: Number(persona.value), dal: dal.value, al: al.value, motivo: motivo.value });
         toast(motivo.value === "malattia" ? "Malattia aggiunta." : "Ferie aggiunte.", "ok");
+        stato.turniDaCoprire = await cercaTurni(creata, nome, motivo.value);
         await ricarica();
+        const avviso = document.getElementById("avviso-turni-ferie");
+        if (avviso) avviso.focus();
       } catch (err) {
         toastErrore(err);
         invia.disabled = false;
@@ -327,6 +336,7 @@ function renderFerie() {
     el("p", { class: "muted" },
       "Nei giorni di ferie o di malattia/infortunio il dipendente non riceve turni e ogni giorno conta 6 ore nel confronto tra le ore dei dipendenti. ",
       "Le ore che mancano non vanno recuperate nelle settimane successive. Il motivo serve solo a distinguerle."),
+    renderAvvisoTurni(),
     form,
     correnti.length ? tabella(correnti) : el("p", { class: "muted" }, "Nessuna ferie o malattia in corso o in programma."),
     passate.length ? el("details", { class: "ferie-passate" },
@@ -340,9 +350,59 @@ async function eliminaFerie(f, nome) {
   if (!ok) return;
   try {
     await api.eliminaFerie(f.id);
+    stato.turniDaCoprire = null;
     toast(f.motivo === "malattia" ? "Malattia eliminata." : "Ferie eliminate.", "ok");
     await ricarica();
   } catch (err) {
     toastErrore(err);
   }
+}
+
+// ---------------------------------------------------------------- turni da coprire dopo un'assenza
+
+/** Turni che la persona aveva già nei giorni dell'assenza appena segnata (null se nessuno). */
+async function cercaTurni(ferie, nome, motivo) {
+  if (!ferie || ferie.id === undefined) return null;
+  try {
+    const turni = await api.turniFerie(ferie.id);
+    return turni && turni.length ? { nome, motivo, turni } : null;
+  } catch (err) {
+    return { nome, motivo, turni: [], errore: err && err.message ? err.message : String(err) };
+  }
+}
+
+function raggruppaPerSettimana(turni) {
+  const gruppi = new Map();
+  for (const t of turni) {
+    if (!gruppi.has(t.settimana)) gruppi.set(t.settimana, []);
+    gruppi.get(t.settimana).push(t);
+  }
+  return [...gruppi.entries()].sort(([a], [b]) => a.localeCompare(b));
+}
+
+function descriviTurno(t) {
+  return `${GIORNI_BREVI[indiceGiorno(t.data)]} ${ddmm(t.data)} · ${t.postazione} · ${orarioTurno(t.fascia, t.segmento)} · ${etichetta("ruolo", t.ruolo)}`;
+}
+
+function renderAvvisoTurni() {
+  const info = stato.turniDaCoprire;
+  if (!info) return null;
+  const chiudi = el("button", {
+    type: "button", class: "btn btn-small", onclick: () => { stato.turniDaCoprire = null; render(); },
+  }, "Chiudi");
+  // riceve il focus appena compare (così il lettore di schermo lo legge): niente role="alert" in più
+  const attributi = { id: "avviso-turni-ferie", class: "banner banner-avviso avviso-turni-ferie", tabindex: "-1" };
+  if (info.errore) {
+    return el("div", attributi,
+      el("p", {}, el("strong", {}, `Non sono riuscito a controllare se ${info.nome} ha turni in quei giorni. `), info.errore),
+      el("p", {}, "Controlla le settimane interessate nella sezione Settimana."), chiudi);
+  }
+  const n = info.turni.length;
+  return el("div", attributi,
+    el("p", {}, el("strong", {}, `${info.nome} ha ${n === 1 ? "1 turno" : `${n} turni`} in quei giorni. `),
+      `Vai alla settimana per scegliere chi ${n === 1 ? "lo copre" : "li copre"}: trovi i suggerimenti nel riquadro “Turni da coprire”.`),
+    el("ul", { class: "avviso-turni-settimane" }, raggruppaPerSettimana(info.turni).map(([lunedi, turni]) => el("li", {},
+      el("a", { class: "btn btn-small btn-primary", href: `#settimana/${lunedi}` }, `Settimana del ${dataLunga(lunedi)}`),
+      el("ul", { class: "avviso-turni-elenco" }, turni.map((t) => el("li", {}, descriviTurno(t))))))),
+    chiudi);
 }

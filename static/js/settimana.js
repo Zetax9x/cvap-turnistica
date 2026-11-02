@@ -3,6 +3,9 @@
 import { api } from "./api.js";
 import { apriInvio, apriProva } from "./email.js";
 import {
+  renderTurniDaCoprire, avvisoTurniDaCoprire, renderSostituti, azzeraSostituti, stampaSostituti, annullaStampaSostituti,
+} from "./sostituti.js";
+import {
   el, clear, toast, toastErrore, chiediConferma, addDays, mondayOf, todayISO, ddmm, dataLunga,
   dataEstesa, indiceGiorno, GIORNI_BREVI, etichetta, formatOre, formatSaldo, orarioTurno,
   PARTI_TURNO, SCELTE_INDISPONIBILITA, partiTurno, valoreParti, etichettaParti, badgeAssenza,
@@ -74,6 +77,7 @@ document.addEventListener("focusout", (e) => {
 
 export async function mostra(root, parametro) {
   stato.root = root;
+  azzeraSostituti();  // i suggerimenti dipendono anche da settimane vicine, persone e divieti
   let data = parametro && /^\d{4}-\d{2}-\d{2}$/.test(parametro) ? parametro : null;
   if (!data) {
     try { data = sessionStorage.getItem(CHIAVE_SETTIMANA); } catch { data = null; }
@@ -140,6 +144,8 @@ function render() {
     frammento.append(el("div", { class: "banner banner-info" },
       "Settimana confermata: le modifiche sono bloccate. Usa “Riapri” per modificarla."));
   }
+  const avvisoCoprire = avvisoTurniDaCoprire(s);
+  if (avvisoCoprire) frammento.append(avvisoCoprire);
   if (s.report) frammento.append(renderReport(s.report));
   frammento.append(renderDisponibilita(s));
   if ((s.postazioni_a_richiesta || []).length) frammento.append(renderRichieste(s));
@@ -153,6 +159,10 @@ function render() {
   griglie.append(renderGrigliaExtra(s));
   frammento.append(griglie);
 
+  const daCoprire = renderTurniDaCoprire(s, {
+    aggiorna, apriTurno: (a) => apriDialog(cellaDi(a)), occupato: () => stato.occupato,
+  });
+  if (daCoprire) frammento.append(daCoprire);
   frammento.append(el("div", { class: "pannelli" }, renderViolazioni(s), renderRiepilogo(s)));
   if (haTurni(s)) frammento.append(renderStampaLiberi(s));
   clear(stato.root).append(frammento);
@@ -259,6 +269,8 @@ function renderLegenda(conSpeciali) {
     el("li", {}, el("span", { class: "chip chip-volontario" }, "Nome"), " volontario"),
     el("li", {}, el("span", { class: "chip chip-manuale" }, "Nome"), " fissato manualmente"),
     el("li", {}, el("span", { class: "chip chip-generato" }, "Nome"), " generato"),
+    el("li", {}, el("span", { class: "chip chip-sostituzione" }, "Nome", el("span", { class: "chip-tag" }, "extra")),
+      " sostituzione (ore extra)"),
     el("li", {}, el("span", { class: "scoperto" }, "scoperto"), " posto da coprire"),
     conSpeciali ? el("li", {}, el("span", { class: "non-richiesto", "aria-hidden": "true" }, "—"), " turno non richiesto") : null,
   );
@@ -353,6 +365,13 @@ function perSegmento(postazione) {
 function chiaveCella(c) {
   const base = `${c.data}|${c.postazione}|${c.fascia}|${c.ruolo}`;
   return perSegmento(c.postazione) ? `${base}|${c.segmento}` : base;
+}
+
+/** Cella della griglia a cui appartiene un'assegnazione. */
+function cellaDi(a) {
+  const c = { data: a.data, postazione: a.postazione, fascia: a.fascia, ruolo: a.ruolo };
+  if (perSegmento(a.postazione)) c.segmento = a.segmento;
+  return c;
 }
 
 function assegnazioniCella(s, c) {
@@ -558,6 +577,7 @@ function renderCella(s, cella, scopertiReport, violazioni, confermata, tag = "td
       el("span", { class: "chip-nome" }, a.persona_nome),
       seg ? el("span", { class: "chip-seg" }, etichetta("segmento", a.segmento)) : null,
       a.origine === "manuale" ? el("span", { class: "chip-tag" }, "fissato") : null,
+      a.origine === "sostituzione" ? el("span", { class: "chip-tag" }, "extra") : null,
       viol ? el("span", { class: "chip-alert", "aria-hidden": "true" }, "!") : null,
     ));
     descr.push(`${a.persona_nome}${seg ? ` ${etichetta("segmento", a.segmento)}` : ""} (${etichetta("origine", a.origine)})`);
@@ -699,6 +719,8 @@ function renderRiepilogo(s) {
         assenze ? el("span", { class: "muted riepilogo-assenze" }, ` (${assenze})`) : null),
       el("td", {}, etichetta("tipo", r.tipo)),
       el("td", { class: "num" }, formatOre(r.ore)),
+      el("td", { class: "num" }, r.ore_sostituzioni
+        ? el("span", { class: "ore-extra" }, `+${formatOre(r.ore_sostituzioni)} h`) : el("span", { class: "muted" }, "—")),
       el("td", { class: "num" }, formatOre(r.ore_giorno)),
       el("td", { class: "num" }, formatOre(r.ore_notte)),
       el("td", { class: "num" }, formatOre(r.turni_weekend)),
@@ -713,7 +735,8 @@ function renderRiepilogo(s) {
     el("thead", {}, el("tr", {},
       el("th", { scope: "col" }, "Persona"),
       el("th", { scope: "col" }, "Tipo"),
-      el("th", { scope: "col", class: "num" }, "Ore"),
+      el("th", { scope: "col", class: "num", title: "Ore dei turni, senza le sostituzioni" }, "Ore"),
+      el("th", { scope: "col", class: "num", title: "Ore delle sostituzioni fatte dopo la generazione: sono extra e non contano nelle ore della settimana" }, "Extra"),
       el("th", { scope: "col", class: "num" }, "Giorno"),
       el("th", { scope: "col", class: "num" }, "Notte"),
       el("th", { scope: "col", class: "num" }, "Turni weekend"),
@@ -1083,10 +1106,12 @@ function renderStampaLiberi(s) {
 // Se "afterprint" non arriva (alcuni browser) la classe resta: la stampa normale la toglie comunque.
 function stampaGriglia() {
   document.body.classList.remove("stampa-liberi-attiva");
+  annullaStampaSostituti();
   window.print();
 }
 
 function stampaLiberi() {
+  annullaStampaSostituti();
   document.body.classList.add("stampa-liberi-attiva");
   window.addEventListener("afterprint", () => document.body.classList.remove("stampa-liberi-attiva"), { once: true });
   window.print();
@@ -1283,14 +1308,7 @@ function renderDialog() {
       ? el("p", { class: "scoperto-text" }, prog && cop.richiesti > 1 ? "Nessuno: posti scoperti." : "Nessuno: posto scoperto.")
       : el("p", { class: "muted" }, "Nessuno."));
   } else {
-    esistenti.append(el("ul", { class: "lista-assegnati" }, lista.map((a) => el("li", {},
-      el("span", { class: `chip chip-${a.origine}` }, el("span", { class: "chip-nome" }, a.persona_nome)),
-      el("span", { class: "muted" }, `${etichetta("segmentoLungo", a.segmento)} · ${etichetta("origine", a.origine)}${a.ore ? ` · ${formatOre(a.ore)} h` : ""}`),
-      el("button", {
-        type: "button", class: "btn btn-small btn-danger", disabled: confermata,
-        "aria-label": `Rimuovi ${a.persona_nome}`,
-        onclick: (e) => onEliminaAssegnazione(a, e.currentTarget),
-      }, "Rimuovi")))));
+    esistenti.append(el("ul", { class: "lista-assegnati" }, lista.map((a) => rigaAssegnato(s, a, confermata))));
   }
   const mancanti = cop.mancanti;
   if (lista.length && mancanti.length) {
@@ -1322,6 +1340,54 @@ function renderDialog() {
   }
   d.append(el("div", { class: "dialog-actions" },
     el("button", { type: "button", class: "btn", onclick: () => d.close() }, "Chiudi")));
+}
+
+function rigaAssegnato(s, a, confermata) {
+  const idBox = `sostituti-cella-${a.id}`;
+  const box = el("div", { id: idBox, class: "sostituti-dialog", hidden: true });
+  const li = el("li", {},
+    el("span", { class: `chip chip-${a.origine}` }, el("span", { class: "chip-nome" }, a.persona_nome)),
+    el("span", { class: "muted" }, `${etichetta("segmentoLungo", a.segmento)} · ${etichetta("origine", a.origine)}${a.ore ? ` · ${formatOre(a.ore)} h` : ""}`),
+    el("button", {
+      type: "button", class: "btn btn-small", "aria-expanded": "false", "aria-controls": idBox,
+      "aria-label": `Sostituisci ${a.persona_nome}`,
+      onclick: (e) => mostraSostituti(s, a, box, e.currentTarget, confermata),
+    }, "Sostituisci"),
+    el("button", {
+      type: "button", class: "btn btn-small btn-danger", disabled: confermata,
+      "aria-label": `Rimuovi ${a.persona_nome}`,
+      onclick: (e) => onEliminaAssegnazione(a, e.currentTarget),
+    }, "Rimuovi"),
+    box);
+  return li;
+}
+
+/** Apre o chiude, sotto l'assegnato, l'elenco di chi può prendere il suo turno. */
+function mostraSostituti(s, a, box, btn, confermata) {
+  const apri = box.hidden;
+  btn.setAttribute("aria-expanded", apri ? "true" : "false");
+  box.hidden = !apri;
+  clear(box);
+  if (!apri) return;
+  const dopo = () => {
+    const titolo = dialogCella && dialogCella.open && dialogCella.querySelector("#cella-titolo");
+    if (titolo) { titolo.setAttribute("tabindex", "-1"); titolo.focus(); }
+  };
+  box.append(
+    el("p", { class: "hint" }, `Chi può prendere il turno di ${a.persona_nome}:`),
+    el("p", { class: "hint" }, "Le ore di una sostituzione sono extra: non contano nelle ore della settimana né nelle statistiche."),
+    confermata ? el("p", { class: "hint" }, "Settimana confermata: riaprila per assegnare.") : null,
+    renderSostituti(s, a, { aggiorna, confermata, occupato: () => stato.occupato, dopo }),
+    el("button", {
+      type: "button", class: "btn btn-small btn-ghost",
+      onclick: (e) => stampaSostituti(s, [{ ...a, motivo: motivoAssenza(s, a) }], e.currentTarget),
+    }, "Stampa chi può sostituire"));
+}
+
+/** "ferie" | "malattia" se chi ha il turno quel giorno è assente, altrimenti null. */
+function motivoAssenza(s, a) {
+  const f = (s.ferie || []).find((x) => x.persona_id === a.persona_id && x.data === a.data);
+  return f ? f.motivo : null;
 }
 
 function renderFormAggiunta(c, mancanti) {

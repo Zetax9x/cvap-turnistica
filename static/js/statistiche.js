@@ -15,6 +15,7 @@ const COLONNE = [
   { campo: "settimane", titolo: "Settimane" },
   { campo: "ore_totali", titolo: "Ore totali" },
   { campo: "saldo_ore", titolo: "Saldo ore" },
+  { campo: "ore_sostituzioni", titolo: "Sostituzioni (extra)", valore: (r) => r.ore_sostituzioni || 0 },
   { campo: "rapporto", titolo: "Giorno / Notte", valore: (r) => (tot(r) ? r.ore_giorno / tot(r) : -1) },
   { campo: "sedi", titolo: "Acquasanta / Venarotta", valore: (r) => (totSedi(r) ? sede(r, "Acquasanta") / totSedi(r) : -1) },
   { campo: "sab_giorno", titolo: "Sab G", valore: (r) => wk(r, "sab_giorno") },
@@ -192,6 +193,8 @@ function render() {
       el("td", { class: "num" }, formatOre(r.settimane)),
       el("td", { class: "num" }, formatOre(r.ore_totali), dettaglioOre(r)),
       el("td", { class: `num saldo ${saldo > 0 ? "saldo-pos" : saldo < 0 ? "saldo-neg" : ""}` }, formatSaldo(saldo)),
+      el("td", { class: "num" }, r.ore_sostituzioni
+        ? el("span", { class: "ore-extra" }, `${formatOre(r.ore_sostituzioni)} h`) : el("span", { class: "muted" }, "0")),
       el("td", { class: "num cella-rapporto" },
         el("span", { class: "rapporto-testo" }, `${formatOre(r.ore_giorno)} / ${formatOre(r.ore_notte)}`),
         t ? el("span", {
@@ -218,6 +221,8 @@ function render() {
   root.append(el("p", { class: "hint" }, "Ore totali: ore lavorate più 6 h per ogni giorno di ferie o malattia, " +
     "come nel confronto delle ore tra dipendenti; sotto, il dettaglio quando ci sono assenze. " +
     "Le settimane interamente di ferie o malattia non contano."));
+  root.append(el("p", { class: "hint" }, "Sostituzioni (extra): ore dei turni presi al posto di un collega assente dopo la " +
+    "generazione. Sono ore extra: non entrano nelle ore totali, nel saldo né nelle altre colonne."));
   root.append(el("p", { class: "hint" }, "Weekend: numero di turni svolti il sabato e la domenica, di giorno (G) e di notte (N). " +
     "Acquasanta / Venarotta: turni svolti in ciascuna delle due sedi (anche i mezzi turni); il generatore cerca di farne " +
     "fare a ogni dipendente tanti nell'una quanti nell'altra. " +

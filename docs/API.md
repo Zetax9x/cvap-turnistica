@@ -110,6 +110,20 @@ Con `APP_PASSWORD` impostata (`create_app(..., password=...)`) tutte le API tran
   400 se: settimana confermata, data fuori settimana, postazione non attiva quella settimana, fascia/segmento non validi,
   persona non abilitata al ruolo, posto già occupato (segmento sovrapposto). Le altre regole (riposo, ore…) appaiono come `violazioni`.
 - `DELETE /assegnazioni/{id}` → 204 · 400 se settimana confermata
+- `GET /assegnazioni/{id}/sostituti` → `{turno: {id, data, postazione, fascia, segmento, ruolo, persona_id, persona_nome, ore, origine},
+  assenza: null|"ferie"|"malattia", candidati: [{persona_id, nome, qualifica, ore, ore_sostituzioni, ore_contate, ore_dopo,
+  regole: [testo], avvisi: [testo]}]}` · 404. Dipendenti attivi che possono prendere il turno al posto di chi lo ha (`cvap/sostituti.py`): ognuno si
+  prova con `valida_settimana` prima/dopo, dando il turno come sostituzione (ore extra). Esclusi: qualifica, divieto, ferie/malattia,
+  indisponibile, sovrapposizione e chi lavorerebbe più di 12 h senza staccare (pause sotto 2 h non contano). Proposti ma in fondo,
+  con i messaggi in `regole`: chi non rispetterebbe riposo 11 h, giorni di fila o regole di Ascoli (scelta dell'utente);
+  `avvisi` = eccezioni ammesse (es. 3 giorni di fila). Ordine: meno regole violate, meno avvisi, meno ore (`ore_contate` + `ore_sostituzioni`), nome. `ore` = ore di turno che contano,
+  `ore_dopo` = ore lavorate davvero dopo la sostituzione. Funziona anche a settimana confermata (sola lettura).
+- `POST /assegnazioni/{id}/sostituisci` `{persona_id}` → settimana aggiornata. Toglie l'assegnazione e la ridà alla persona in
+  un'unica transazione con `origine` `sostituzione` (volontari: `volontario`). 400 se settimana confermata, stessa persona, persona
+  non attiva, non abilitata al ruolo o già nello stesso turno · 404 · 409 se il turno è sparito nel frattempo.
+  **Sostituzioni = ore extra**: valgono per copertura, riposo e turni di fila, ma non per ore massime/minime, differenza ore,
+  conteggi di Ascoli, storico del generatore (saldo, weekend, sedi, festività…) e statistiche, che le mostrano a parte
+  (`ore_sostituzioni` in `riepilogo` della settimana, in `/statistiche` e nel riepilogo per dipendente con `turni_sostituzioni`).
 - `POST /settimane/{data}/genera` `{tempo_max?: number}` → settimana aggiornata con `report = {stato, messaggio, scoperti: [{data, postazione, fascia, segmento, ruolo}], media_ore, durata_s, qualita, qualita_precedente, festivi}` (`festivi`: vedi "Festività nel generatore"). `qualita = {punteggio, limite_inferiore, gap_pct, soluzioni, tempo_migliore_s, durata_s, tempo_max, workers}` (punteggio = somma delle penalità, più basso è meglio; `gap_pct` = distanza dall'ottimo, 0 = ottimo dimostrato); `qualita_precedente` è la `qualita` della generazione precedente della stessa settimana (`null` se assente). I processi del risolutore (`workers`) li sceglie `app.worker_generatore()`: `CVAP_WORKER` (1–64) se impostata, altrimenti i core utilizzabili, al massimo 8.
   Cancella le assegnazioni `generato` della settimana, poi chiama `solver.genera` con: dipendenti attivi, `fissi` = volontario+manuale,
   `contesto` = assegnazioni dei 3 giorni prima e dopo la settimana, `storico` = `calcola_storico` su tutte le settimane precedenti presenti in `settimane`.
@@ -121,7 +135,9 @@ Con `APP_PASSWORD` impostata (`create_app(..., password=...)`) tutte le API tran
 - `GET /ferie` → `[{id, persona_id, dal, al, motivo}]` · `POST /ferie` `{persona_id, dal, al, motivo?}` → 201
   (`motivo`: `ferie` predefinito o `malattia`; altro → 422)
   (400 se dal > al, periodo > 366 giorni, sovrapposto ad altre ferie o malattia della persona o persona non dipendente · 404) ·
-  `DELETE /ferie/{id}` → 204 · 404
+  `DELETE /ferie/{id}` → 204 · 404 ·
+  `GET /ferie/{id}/turni` → `[{id, data, postazione, fascia, segmento, ruolo, settimana, ore}]`: turni della persona che iniziano
+  nei giorni dell'assenza (`settimana` = lunedì), da far coprire · 404
 - `GET /statistiche` → `[{persona_id, nome, tipo, qualifica, settimane, ore_totali, ore_lavorate, ore_ferie, ore_malattia, saldo_ore, ore_giorno, ore_notte, weekend: {sab_giorno, sab_notte, dom_giorno, dom_notte}, standby, programmati, assistenze, sedi: {Acquasanta, Venarotta}, ascoli: {turni, giorno, notte}, festivi: {turni, per_festivita: [{festivita, turni, ultimo_anno}]}}]` (`festivi`: vedi "Festività nel generatore") (`ore_totali` = ore contate: lavorate + 6 h per giorno di ferie/malattia, nelle settimane non interamente di assenza; sedi = turni, anche mezzi, in ciascuna delle due sedi; il generatore le pareggia per ogni dipendente)
   solo sulle settimane con turni generati (`storico.solo_generate`; volontari: solo totali, saldo 0).
   Il generatore invece usa come storico tutte le settimane dalla prima generata in poi.
