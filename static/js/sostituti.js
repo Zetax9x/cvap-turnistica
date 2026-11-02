@@ -210,7 +210,11 @@ function riprova(box, s, a, opzioni, nelPannello) {
 
 function riempi(box, a, risposta, opzioni, nelPannello) {
   const candidati = (risposta && risposta.candidati) || [];
+  const catene = (risposta && risposta.catene) || [];
   clear(box);
+  // le catene esistono solo se nessuno lo copre direttamente rispettando le regole: vengono prima
+  if (catene.length) box.append(renderCatene(a, catene, opzioni));
+  if (!candidati.length && catene.length) return;
   if (!candidati.length) {
     box.append(el("p", { class: "sostituti-nessuno" },
       "Nessun dipendente può coprirlo: cerca un volontario.",
@@ -221,17 +225,76 @@ function riempi(box, a, risposta, opzioni, nelPannello) {
     return;
   }
   const voce = (c) => renderCandidato(a, c, opzioni);
+  if (catene.length) box.append(el("p", { class: "catene-oppure" }, "Oppure, senza rispettare tutte le regole:"));
   box.append(el("ul", { class: "candidati" }, candidati.slice(0, PRIMI).map(voce)));
-  if (candidati.length > PRIMI) box.append(renderAltri(a, candidati, voce));
+  if (candidati.length > PRIMI) box.append(renderAltri(`c${a.id}`, candidati, voce));
 }
 
-function renderAltri(a, candidati, voce) {
+/** Gli elementi dopo i primi PRIMI, sotto "Mostra tutti" (aperto o chiuso come l'utente l'ha lasciato). */
+function renderAltri(chiave, elementi, voce) {
   return el("details", {
-    class: "candidati-altri", open: cache.aperti.has(a.id),
-    ontoggle: (e) => { if (e.currentTarget.open) cache.aperti.add(a.id); else cache.aperti.delete(a.id); },
+    class: "candidati-altri", open: cache.aperti.has(chiave),
+    ontoggle: (e) => { if (e.currentTarget.open) cache.aperti.add(chiave); else cache.aperti.delete(chiave); },
   },
-  el("summary", {}, `Mostra tutti (${candidati.length})`),
-  el("ul", { class: "candidati" }, candidati.slice(PRIMI).map(voce)));
+  el("summary", {}, `Mostra tutti (${elementi.length})`),
+  el("ul", { class: "candidati" }, elementi.slice(PRIMI).map(voce)));
+}
+
+// ---------------------------------------------------------------- scambio a catena
+
+/** Es. "gio 19/11 · Venarotta · Notte 20–8". */
+function descriviCeduto(t) {
+  return `${GIORNI_BREVI[indiceGiorno(t.data)].toLowerCase()} ${ddmm(t.data)} · ${t.postazione} · ${orarioTurno(t.fascia, t.segmento)}`;
+}
+
+/** "B prende questo turno e lascia il suo turno di ... a C (ore extra)." */
+function fraseCatena(k) {
+  return [el("strong", {}, k.prende.nome), " prende questo turno e lascia il suo turno di ",
+    descriviCeduto(k.ceduto), " a ", el("strong", {}, k.copre.nome), " (ore extra)."];
+}
+
+function oreCatena(k) {
+  const b = k.prende;
+  const c = k.copre;
+  const extraC = Number(c.ore_sostituzioni) || 0;
+  const dopoB = Number(b.ore_dopo) === Number(b.ore) ? `resta ${formatOre(b.ore)} h` : `poi ${formatOre(b.ore_dopo)} h`;
+  return `${b.nome}: ${formatOre(b.ore)} h di turno, ${dopoB} · ${c.nome}: ${formatOre(c.ore)} h di turno`
+    + `${extraC ? ` (+${formatOre(extraC)} h extra)` : ""}, con questo turno lavora ${formatOre(c.ore_dopo)} h (extra)`;
+}
+
+function noteCatena(k) {
+  return [...(k.prende.avvisi || []), ...(k.copre.avvisi || [])];
+}
+
+function renderCatene(a, catene, opzioni) {
+  const voce = (k) => renderCatena(a, k, opzioni);
+  return el("div", { class: "catene" },
+    el("p", { class: "catene-titolo" }, el("strong", {}, "Scambio a catena")),
+    el("p", { class: "hint catene-intro" }, "Nessuno può coprirlo direttamente rispettando le regole, ma si può fare uno scambio:"),
+    el("ul", { class: "candidati" }, catene.slice(0, PRIMI).map(voce)),
+    catene.length > PRIMI ? renderAltri(`k${a.id}`, catene, voce) : null);
+}
+
+function renderCatena(a, k, opzioni) {
+  const note = noteCatena(k);
+  return el("li", { class: "candidato catena" },
+    el("div", { class: "candidato-dati" },
+      el("span", { class: "catena-frase" }, fraseCatena(k)),
+      el("span", { class: "candidato-ore" }, oreCatena(k)),
+      note.length ? el("span", { class: "muted candidato-note" }, `Nota: ${note.join("; ")}`) : null),
+    el("button", {
+      type: "button", class: "btn btn-small btn-primary candidato-assegna", disabled: bloccato(opzioni),
+      title: opzioni.confermata ? "Settimana confermata: riaprila per assegnare" : null,
+      "aria-label": `Fai lo scambio: ${k.prende.nome} prende il turno di ${a.persona_nome}, ${k.copre.nome} prende quello di ${k.prende.nome}`,
+      onclick: (e) => onCatena(a, k, e.currentTarget, opzioni),
+    }, "Fai lo scambio"));
+}
+
+function onCatena(a, k, btn, opzioni) {
+  const corpo = { persona_id: k.prende.persona_id, ceduto_id: k.ceduto.id, sostituto_id: k.copre.persona_id };
+  return eseguiCambio(() => api.catena(a.id, corpo),
+    `Scambio fatto: ${k.prende.nome} copre il turno di ${a.persona_nome}, ${k.copre.nome} prende quello di ${k.prende.nome} (ore extra).`,
+    btn, opzioni);
 }
 
 /** Es. "36 h di turno questa settimana (+12 h extra) · con questo turno lavora 48 h". */
@@ -275,14 +338,20 @@ function bloccaAssegna(blocca) {
   }
 }
 
-async function onAssegna(a, c, btn, opzioni) {
+function onAssegna(a, c, btn, opzioni) {
+  return eseguiCambio(() => api.sostituisci(a.id, c.persona_id),
+    `${c.nome} copre il turno di ${a.persona_nome} (${dataEstesa(a.data)}): sono ore extra.`, btn, opzioni);
+}
+
+/** Esegue un cambio (assegna o scambio) uno alla volta, poi ridisegna la settimana con la risposta. */
+async function eseguiCambio(chiamata, messaggio, btn, opzioni) {
   if (assegnando || bloccato(opzioni)) return;
   assegnando = true;
   bloccaAssegna(true);
   try {
-    const settimana = await api.sostituisci(a.id, c.persona_id);
+    const settimana = await chiamata();
     assegnando = false;
-    toast(`${c.nome} copre il turno di ${a.persona_nome} (${dataEstesa(a.data)}): sono ore extra.`, "ok");
+    toast(messaggio, "ok");
     opzioni.aggiorna(settimana);
     if (opzioni.dopo) opzioni.dopo();
   } catch (err) {
@@ -290,6 +359,11 @@ async function onAssegna(a, c, btn, opzioni) {
     toastErrore(err);
     bloccaAssegna(false);
     if (btn.isConnected) btn.focus();
+    // la settimana è cambiata nel frattempo (scambio non più valido, turno sparito): suggerimenti da rifare
+    if ([400, 404, 409].includes(err.status) && opzioni.ricarica) {
+      azzeraSostituti();
+      try { await opzioni.ricarica(); } catch (e) { toastErrore(e); }
+    }
   }
 }
 
@@ -346,12 +420,33 @@ function bloccoStampa(s, a, esito) {
     esito.status === "rejected"
       ? el("p", { class: "sost-errore" }, "Sostituti non disponibili: ",
         esito.reason && esito.reason.message ? esito.reason.message : String(esito.reason))
-      : elencoStampa((esito.value && esito.value.candidati) || []));
+      : risposteStampa(esito.value));
 }
 
-function elencoStampa(candidati) {
-  if (!candidati.length) return el("p", { class: "sost-nessuno" }, "Nessun dipendente può coprirlo: cerca un volontario.");
-  return el("ol", { class: "sost-candidati" }, candidati.map((c) => {
+function risposteStampa(r) {
+  const catene = (r && r.catene) || [];
+  return [cateneStampa(catene), elencoStampa((r && r.candidati) || [], catene.length > 0)];
+}
+
+function cateneStampa(catene) {
+  if (!catene.length) return null;
+  return el("div", { class: "sost-catene" },
+    el("p", { class: "sost-catene-titolo" }, el("strong", {}, "Scambio a catena: "),
+      "nessuno può coprirlo direttamente rispettando le regole, ma si può fare uno scambio."),
+    el("ol", { class: "sost-candidati" }, catene.map((k) => {
+      const note = noteCatena(k);
+      return el("li", {}, fraseCatena(k),
+        el("div", { class: "sost-ore" }, oreCatena(k)),
+        note.length ? el("div", { class: "sost-note" }, `Nota: ${note.join("; ")}`) : null);
+    })));
+}
+
+function elencoStampa(candidati, conCatene = false) {
+  if (!candidati.length) {
+    return conCatene ? null : el("p", { class: "sost-nessuno" }, "Nessun dipendente può coprirlo: cerca un volontario.");
+  }
+  const titolo = conCatene ? el("p", { class: "sost-catene-titolo" }, el("strong", {}, "Oppure, senza rispettare tutte le regole:")) : null;
+  return el("div", {}, titolo, el("ol", { class: "sost-candidati" }, candidati.map((c) => {
     const avvisi = c.regole || [];
     const note = c.avvisi || [];
     const extra = Number(c.ore_sostituzioni) || 0;
@@ -363,5 +458,5 @@ function elencoStampa(candidati) {
       avvisi.length ? el("div", { class: "sost-avvisi" }, el("strong", {}, "Non rispetta: "),
         avvisi.length === 1 ? avvisi[0] : el("ul", {}, avvisi.map((v) => el("li", {}, v)))) : null,
       note.length ? el("div", { class: "sost-note" }, `Nota: ${note.join("; ")}`) : null);
-  }));
+  })));
 }

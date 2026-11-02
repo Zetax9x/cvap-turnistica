@@ -109,6 +109,8 @@ export const api = {
   // Chi può coprire un turno (dipendenti che rispettano le regole, il migliore per primo) e cambio del titolare
   sostituti: (id) => richiesta("GET", `/assegnazioni/${enc(id)}/sostituti`),
   sostituisci: (id, personaId) => richiesta("POST", `/assegnazioni/${enc(id)}/sostituisci`, { persona_id: personaId }),
+  // Scambio a catena: {persona_id: chi prende il turno, ceduto_id: il turno che lascia, sostituto_id: chi prende quello}
+  catena: (id, corpo) => richiesta("POST", `/assegnazioni/${enc(id)}/catena`, corpo),
   genera: (data, tempoMax) =>
     richiesta("POST", `/settimane/${enc(data)}/genera`, tempoMax ? { tempo_max: tempoMax } : {}),
   conferma: (data) => richiesta("POST", `/settimane/${enc(data)}/conferma`),

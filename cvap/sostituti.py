@@ -7,20 +7,27 @@ confronta il controllo della settimana (`valida_settimana`) prima e dopo. Le ore
   e chi lavorerebbe più di LAVORO_DI_FILA_MAX ore senza staccare;
 - proposti ma in fondo, con le regole che non rispetterebbe (`regole`): riposo di 11 h, giorni di fila, Ascoli;
 - semplici note (`avvisi`): le eccezioni ammesse, come 3 giorni di fila.
+
+Se nessuno può coprirlo rispettando tutte le regole, si cercano catene di un solo passaggio (`catene_sostituzione`):
+B prende il turno (ore normali: scambia un suo turno) e cede un suo turno vicino a C (ore extra).
 """
 from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import date, timedelta
 
 from .modello import SOSTITUZIONE, Assegnazione, Fabbisogno, Persona, ore_extra
-from .vincoli import SCARTO_ORE_MAX, Violazione, ore_ferie, valida_settimana
+from .vincoli import SCARTO_ORE_MAX, Violazione, minimo_ore, ore_ferie, valida_settimana
 
 # errori che rendono impossibile la sostituzione (gli altri nuovi problemi del candidato sono avvisi)
 ERRORI_BLOCCANTI = frozenset({"persona", "qualifica", "segmento", "divieto", "ferie", "indisponibile",
                               "sovrapposizione"})
 LAVORO_DI_FILA_MAX = 12  # ore di lavoro senza staccare: oltre, mai
 PAUSA_STACCO = 2         # una pausa più corta (es. Standby fino alle 19 e notte dalle 20) non interrompe il lavoro
+GIORNI_TURNO_CEDUTO = 3  # catene: B cede solo un turno entro 3 giorni (oltre non può essere quello che lo blocca)
+CATENE_MAX = 10
+# un turno in più avvicina sempre al minimo di ore: il messaggio cambia ma non è un problema nuovo
+ERRORI_IGNORATI = frozenset({"ore_min"})
 
 
 @dataclass(frozen=True)
@@ -70,12 +77,14 @@ def candidati_sostituzione(
     indisponibili: dict[int, set[tuple[date, str]]] | None = None,
     fabbisogno: Sequence[Fabbisogno] = (),
     scarto_ore_max: int = SCARTO_ORE_MAX,
+    origine: str = SOSTITUZIONE,
 ) -> list[Candidato]:
     """Dipendenti tra `candidabili` che possono prendere `turno` al posto di chi lo ha, i migliori prima:
     prima chi rispetta tutte le regole (poi chi ne viola meno), poi chi ha meno note, poi chi ha lavorato meno ore
     (extra e ferie comprese), poi il nome.
 
     `assegnazioni`: i turni della settimana, `turno` compreso (ValueError se manca).
+    `origine`: come lo prenderebbe il candidato (predefinito: sostituzione, ore extra).
     """
     if turno not in assegnazioni:
         raise ValueError("il turno da coprire non è tra le assegnazioni della settimana")
@@ -98,11 +107,12 @@ def candidati_sostituzione(
         if (p is None or not p.dipendente or pid == turno.persona_id
                 or not p.puo_ricoprire(turno.ruolo, turno.postazione)):
             continue
-        nuovo = replace(turno, persona_id=pid, origine=SOSTITUZIONE)
+        nuovo = replace(turno, persona_id=pid, origine=origine)
         suoi = [a for a in [*senza, *contesto] if a.persona_id == pid]
         if ore_di_fila(suoi, nuovo) > LAVORO_DI_FILA_MAX:
             continue
-        nuove = [v for v in controlla([*senza, nuovo]) - prima if v.persona_id == pid]
+        nuove = [v for v in controlla([*senza, nuovo]) - prima
+                 if v.persona_id == pid and v.codice not in ERRORI_IGNORATI]
         if any(v.livello == "errore" and v.codice in ERRORI_BLOCCANTI for v in nuove):
             continue
         contate = ore[pid] + ore_ferie(giorni, ferie.get(pid, set()))
@@ -112,3 +122,77 @@ def candidati_sostituzione(
                              ore[pid] + extra[pid] + turno.ore, regole, avvisi))
     return sorted(out, key=lambda c: (len(c.regole), len(c.avvisi), c.ore_contate + c.ore_sostituzioni,
                                       c.nome.lower(), c.persona_id))
+
+
+@dataclass(frozen=True)
+class Catena:
+    prende: Candidato       # B: prende il turno da coprire e cede `ceduto` (ore normali)
+    ceduto: Assegnazione    # il turno di B che passa a C
+    copre: Candidato        # C: prende `ceduto` come sostituzione (ore extra)
+
+
+def prova_catena(turno: Assegnazione, prende: int, ceduto: Assegnazione, copre: int, *,
+                 assegnazioni: Sequence[Assegnazione], **regole) -> Catena | None:
+    """La catena se B (`prende`) e C (`copre`) rispettano entrambi tutte le regole, altrimenti None."""
+    if ceduto not in assegnazioni or ceduto.persona_id != prende or copre in (prende, turno.persona_id):
+        return None
+    b = _prova_b(turno, ceduto, assegnazioni, regole)
+    if b is None:
+        return None
+    c = candidati_sostituzione(ceduto, [copre], assegnazioni=_dopo_b(turno, ceduto, assegnazioni), **regole)
+    if not c or c[0].regole:
+        return None
+    return Catena(b, ceduto, c[0])
+
+
+def _prova_b(turno, ceduto, assegnazioni, regole) -> Candidato | None:
+    """B se, cedendo `ceduto`, prende `turno` rispettando tutte le regole e senza scendere sotto il minimo di ore."""
+    pid = ceduto.persona_id
+    prova = candidati_sostituzione(turno, [pid], assegnazioni=_senza(assegnazioni, ceduto), origine="manuale",
+                                   **regole)
+    if not prova or prova[0].regole:
+        return None
+    b = prova[0]
+    ceduto_conta = 0 if ore_extra(ceduto) else ceduto.ore
+    ferie = b.ore_contate - b.ore
+    prima, dopo = b.ore + ceduto_conta, b.ore + turno.ore  # ore che contano, prima e dopo lo scambio
+    if dopo < prima and dopo + ferie < minimo_ore(regole["persone"][pid]):
+        return None  # con lo scambio scenderebbe sotto il minimo di ore
+    # le ore mostrate sono quelle di B prima dello scambio (col turno che cede)
+    return replace(b, ore=prima, ore_contate=prima + ferie)
+
+
+def _dopo_b(turno, ceduto, assegnazioni) -> list[Assegnazione]:
+    """La settimana dopo che B ha preso `turno`, con `ceduto` ancora suo (da passare a C)."""
+    senza = _senza(_senza(assegnazioni, ceduto), turno)
+    return [*senza, replace(turno, persona_id=ceduto.persona_id, origine="manuale"), ceduto]
+
+
+def catene_sostituzione(turno: Assegnazione, candidabili: Iterable[int], *, assegnazioni: Sequence[Assegnazione],
+                        massimo: int = CATENE_MAX, **regole) -> list[Catena]:
+    """Catene di un passaggio, solo se nessuno può coprire `turno` direttamente rispettando tutte le regole.
+
+    Per ogni B si prova a cedere ognuno dei suoi turni vicini al miglior C. Le migliori prima: meno note, poi meno
+    ore di C (che lavora in più), poi di B."""
+    candidabili = list(dict.fromkeys(candidabili))
+    diretti = candidati_sostituzione(turno, candidabili, assegnazioni=assegnazioni, **regole)
+    if any(not c.regole for c in diretti):
+        return []
+    vicino = timedelta(days=GIORNI_TURNO_CEDUTO)
+    catene = []
+    for b in candidabili:
+        for ceduto in assegnazioni:
+            if ceduto == turno or ceduto.persona_id != b or abs(ceduto.data - turno.data) > vicino:
+                continue
+            prova_b = _prova_b(turno, ceduto, assegnazioni, regole)
+            if prova_b is None:
+                continue
+            altri = [c for c in candidabili if c not in (b, turno.persona_id)]
+            buoni = [c for c in candidati_sostituzione(ceduto, altri, assegnazioni=_dopo_b(turno, ceduto, assegnazioni),
+                                                       **regole) if not c.regole]
+            if buoni:
+                catene.append(Catena(prova_b, ceduto, buoni[0]))
+    catene.sort(key=lambda k: (len(k.prende.avvisi) + len(k.copre.avvisi),
+                               k.copre.ore_contate + k.copre.ore_sostituzioni, k.prende.ore_contate,
+                               k.prende.nome.lower(), k.copre.nome.lower()))
+    return catene[:massimo]

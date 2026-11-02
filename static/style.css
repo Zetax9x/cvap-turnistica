@@ -1327,3 +1327,16 @@ a.btn { text-decoration: none; }
   .sost-errore { margin: 0; color: #b3121f; font-weight: 700; }
   .sost-nota { font-size: 10pt; font-weight: 600; margin-top: 4mm; padding: 2mm 3mm; background: #ffe2b8; border-left: 4px solid #e07800; }
 }
+
+/* ---------- Scambio a catena: B prende il turno, C prende quello di B (ore extra) ---------- */
+.catene { margin-bottom: .6rem; padding: .5rem .6rem; border-radius: var(--radius-sm); background: #e3f4ea; border: 1px solid #7cc39a; }
+.catene-titolo { margin: 0; color: #0d5a2e; }
+.catene-intro { margin: .1rem 0 .45rem; }
+.catena { border-left-color: #009541; }
+.catena-frase { flex-basis: 100%; }
+.catene-oppure { margin: .3rem 0 .35rem; font-size: .9rem; font-weight: 600; color: var(--muted); }
+@media print {
+  .sost-catene { margin: 0 0 2mm; padding: 1.5mm 2mm; border-radius: 1.5mm; background: #e3f4ea; border: 1px solid #7cc39a; }
+  .sost-catene-titolo { margin: 0 0 1mm; font-size: 10.5pt; }
+  .sost-catene .sost-candidati > li { margin-bottom: 1.5mm; }
+}

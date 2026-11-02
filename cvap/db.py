@@ -610,6 +610,19 @@ def lista_ferie(conn: sqlite3.Connection) -> list[dict]:
     return [_ferie_dict(r) for r in rows]
 
 
+def sostituisci_assegnazioni(conn: sqlite3.Connection, *cambi: tuple[int, Assegnazione]) -> bool:
+    """Sostituisce più assegnazioni (id, nuova) in un'unica transazione; False, senza cambiare nulla, se una non c'è più."""
+    try:
+        with conn:
+            for assegnazione_id, nuova in cambi:
+                if conn.execute("DELETE FROM assegnazioni WHERE id = ?", (assegnazione_id,)).rowcount != 1:
+                    raise LookupError(assegnazione_id)
+                _inserisci(conn, nuova)
+    except LookupError:
+        return False
+    return True
+
+
 def get_ferie(conn: sqlite3.Connection, ferie_id: int) -> dict | None:
     r = conn.execute("SELECT * FROM ferie WHERE id = ?", (ferie_id,)).fetchone()
     return _ferie_dict(r) if r else None
