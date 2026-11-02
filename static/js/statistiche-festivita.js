@@ -92,6 +92,9 @@ function render() {
     root.append(el("p", { class: "muted" }, `Nessuna festività a rotazione nei prossimi ${stato.mesi} mesi. `
       + "Le festività che contano si scelgono in Impostazioni."));
   } else {
+    root.append(el("div", { class: "festivita-azioni festivita-azioni-tutte no-print" }, el("button", {
+      type: "button", class: "btn btn-ghost", onclick: (e) => stampaTutteFestivita(e.currentTarget),
+    }, "Stampa tutte le festività")));
     root.append(...stato.prossime.map(renderFestivita));
   }
   root.append(renderLavorate());
@@ -167,8 +170,8 @@ function renderFascia(f, fascia, titoloId) {
           el("th", { scope: "col" }, "Qualifica"),
           el("th", { scope: "col", class: "num" }, "Volte negli ultimi 5 anni"),
           el("th", { scope: "col", class: "num" }, "Ultima volta"),
-          el("th", { scope: "col" }, "Vuole lavorarla"),
-          el("th", { scope: "col" }, "Assenze registrate"))),
+          el("th", { scope: "col", class: "col-voglia" }, "Vuole lavorarla"),
+          el("th", { scope: "col", class: "col-assenze" }, "Assenze registrate"))),
         el("tbody", {}, ordine.map((x, i) => renderPersona(f, x, i, fascia)))))
       : el("p", { class: "muted" }, "Nessun dipendente attivo.")));
   sezione.dataset.fascia = fascia;
@@ -177,12 +180,21 @@ function renderFascia(f, fascia, titoloId) {
 
 /** La stampa espande solo la festività scelta e dopo la finestra di stampa ripristina tutti i pannelli. */
 function stampaFestivita(target) {
-  if (stato.stampa || !target.isConnected) return;
+  avviaStampa([target], target.querySelector("button"));
+}
+
+/** Stampa tutte le festività attualmente mostrate, con entrambe le fasce anche se chiuse. */
+function stampaTutteFestivita(controllo) {
+  avviaStampa([...stato.root.querySelectorAll(".festivita-prossima")], controllo);
+}
+
+function avviaStampa(targets, controllo) {
+  if (stato.stampa || !targets.length || targets.some((target) => !target.isConnected)) return;
   stato.focusStampa = null;
   salvaAperture();
-  const pannelli = [target, ...target.querySelectorAll("details")];
-  stato.stampa = { target, pannelli: pannelli.map((p) => [p, p.open]), focus: document.activeElement };
-  target.classList.add("festivita-da-stampare");
+  const pannelli = targets.flatMap((target) => [target, ...target.querySelectorAll("details")]);
+  stato.stampa = { targets, pannelli: pannelli.map((p) => [p, p.open]), focus: controllo || document.activeElement };
+  for (const target of targets) target.classList.add("festivita-da-stampare");
   document.body.classList.add("stampa-festivita");
   for (const p of pannelli) p.open = true;
   try {
@@ -197,7 +209,7 @@ function ripristinaStampa() {
   const stampa = stato.stampa;
   if (stampa) {
     for (const [pannello, aperto] of stampa.pannelli) pannello.open = aperto;
-    stampa.target.classList.remove("festivita-da-stampare");
+    for (const target of stampa.targets) target.classList.remove("festivita-da-stampare");
     document.body.classList.remove("stampa-festivita");
     stato.stampa = null;
     stato.focusStampa = stampa.focus;
@@ -227,8 +239,8 @@ function renderPersona(f, x, i, fascia) {
     el("td", {}, etichetta("qualifica", x.qualifica)),
     el("td", { class: "num" }, String(x.volte_5_anni)),
     el("td", { class: "num" }, x.ultimo_anno ? String(x.ultimo_anno) : "mai"),
-    el("td", {}, sceltaVoglia(f, x, fascia)),
-    el("td", {}, assenza ? el("span", { class: `badge ${assenza.classe}` }, assenza.testo) : "–"));
+    el("td", { class: "col-voglia" }, sceltaVoglia(f, x, fascia)),
+    el("td", { class: "col-assenze" }, assenza ? el("span", { class: `badge ${assenza.classe}` }, assenza.testo) : "–"));
 }
 
 /** Le scelte possibili quel giorno: solo i turni che contano (anche per un'altra festività dello stesso giorno). */

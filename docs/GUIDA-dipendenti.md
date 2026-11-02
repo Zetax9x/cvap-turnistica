@@ -58,6 +58,8 @@ registrate. Sono mostrate soltanto le fasce scelte dal responsabile per quella f
 
 Con **Stampa festività** il responsabile può stampare in anticipo, per esempio già in autunno per Natale,
 l'intera festività: nella stessa stampa ci sono tutte le sue fasce, anche quelle chiuse sullo schermo.
+Con **Stampa tutte le festività** stampa invece tutte quelle visibili nell'orizzonte scelto. Le stampe sono
+compatte e non mostrano le colonne su chi vuole lavorare né le assenze registrate.
 
 È un'indicazione: chi lavora davvero dipende anche dalle regole e dai posti da autista e da soccorritore.
 

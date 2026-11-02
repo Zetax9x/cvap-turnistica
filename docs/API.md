@@ -467,7 +467,9 @@ Fase 8 di `docs/PIANO-rotazioni.md` (3.7). Modulo `cvap/prossime_festivita.py`; 
   Le configurazioni vengono copiate e i dati riusati; `ordine` resta aggregato e il calcolo del generatore resta
   invariato. `disponibile` è la stessa scelta per persona e giorno in tutte le tabelle.
   La pagina presenta pannelli chiusi festività → fascia; **Stampa festività** espande tutte le fasce della sola
-  festività selezionata e ripristina aperture e focus alla chiusura della stampa, anche se annullata.
+  festività selezionata, mentre **Stampa tutte le festività** stampa tutte quelle nell'orizzonte mostrato. Entrambe
+  ripristinano aperture e focus alla chiusura della stampa, anche se annullata, e omettono dalla stampa le colonne
+  `disponibile` e `assente`.
   - **Stesso calcolo del generatore**: conti con `rotazione_festivi.conta_festivita` sugli ultimi 5 anni fino al
     lunedì della settimana della festività (come quando la si genera), dati letti una volta da
     `dati_festivi.dati_conti` (poi, per ogni lunedì, solo i turni festivi delle settimane e le righe importate del suo

@@ -901,6 +901,7 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
 .festivita-fascia-contenuto > p { margin: .3rem 0; }
 .festivita-fascia .table-scroll { max-width: 100%; }
 .festivita-azioni { margin-top: .85rem; }
+.festivita-azioni-tutte { margin: .25rem 0 .5rem; }
 .tabella-ordine-festivita select { min-width: 9rem; }
 @media (max-width: 640px) {
   .festivita-prossima > summary, .festivita-fascia > summary { padding: .75rem; }
@@ -919,15 +920,19 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
   body.stampa-festivita .festivita-da-stampare > summary {
     display: block; padding: 0 0 3mm;
   }
-  body.stampa-festivita .festivita-da-stampare > summary h2 { font-size: 15pt; }
+  body.stampa-festivita .festivita-da-stampare > summary h2 { font-size: 13pt; }
   body.stampa-festivita .festivita-da-stampare summary::before { display: none; }
   body.stampa-festivita .festivita-contenuto { padding: 0; }
   body.stampa-festivita .festivita-fasce { display: block; }
-  body.stampa-festivita .festivita-fascia { margin: 0 0 5mm; break-inside: auto; }
+  body.stampa-festivita .festivita-fascia { margin: 0 0 3mm; break-inside: auto; }
   body.stampa-festivita .festivita-fascia > summary { display: block; padding: 2mm; }
   body.stampa-festivita .festivita-fascia-contenuto { padding: 0; }
-  body.stampa-festivita .tabella-ordine-festivita { width: 100%; }
+  body.stampa-festivita .tabella-ordine-festivita { width: 100%; font-size: 8pt; }
+  body.stampa-festivita .tabella-ordine-festivita th,
+  body.stampa-festivita .tabella-ordine-festivita td { padding: 1.1mm 1.5mm; }
   body.stampa-festivita .tabella-ordine-festivita tr { break-inside: avoid; }
+  .tabella-ordine-festivita .col-voglia,
+  .tabella-ordine-festivita .col-assenze { display: none !important; }
 }
 
 @media print {
