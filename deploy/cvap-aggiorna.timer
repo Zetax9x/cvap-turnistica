@@ -1,0 +1,9 @@
+[Unit]
+Description=Controlla ogni 5 minuti se su GitHub c'è una nuova versione di CVAP Turnistica
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target
