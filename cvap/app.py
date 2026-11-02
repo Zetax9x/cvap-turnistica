@@ -15,14 +15,17 @@ from email.utils import getaddresses
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Path as PathParam, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, BeforeValidator, Field, StringConstraints, model_validator
 
-from . import accesso, db, email_turni
+from . import accesso, api_equita, api_festivita, api_storico_festivi, dati_festivi, db, db_festivita, email_turni
+from .api_comune import DATA_MAX, DATA_MIN, DataValida, Id, IdPath, Nome, errore as _errore
 from .posta import PostinoBloccato, PostinoSmtp
 from .calendario import giorni_settimana, lunedi, postazioni_attive, tipo_settimana
+from .festivita import festivi_periodo
+from .rotazione_festivi import riepilogo_generazione
 from .liberi import liberi_settimana
 from .riepilogo import GIORNI_MAX as GIORNI_MAX_RIEPILOGO, riepilogo_persona
 from .modello import (EXTRA, INTERO_DI, PARTI_TURNO, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, SEGMENTI, STANDBY,
@@ -30,13 +33,11 @@ from .modello import (EXTRA, INTERO_DI, PARTI_TURNO, POSTAZIONI_A_RICHIESTA, PRO
                       turno_ammesso)
 from .storico import (CATEGORIE_WEEKEND, SEDI_ALTERNATE, SettimanaPassata, calcola_storico, categoria_weekend,
                       indisponibilita_per_giorno, solo_generate)
-from .vincoli import (ORE_MAX_SETTIMANA, TESTO_FERIE, TESTO_MALATTIA, differenza_ore, giorni_disponibili,
+from .vincoli import (ASCOLI, ORE_MAX_SETTIMANA, TESTO_FERIE, TESTO_MALATTIA, differenza_ore, giorni_disponibili,
                       media_ore, ore_ferie, valida_settimana)
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 GIORNI_CONTESTO = 3
-DATA_MIN, DATA_MAX = date(2000, 1, 1), date(2100, 12, 31)
-DataValida = Annotated[date, Field(ge=DATA_MIN, le=DATA_MAX)]
 FERIE_GIORNI_MAX = 366
 FABBISOGNO_VOCI_MAX = 200
 EXTRA_PER_SETTIMANA_MAX = 50  # richieste di Assistenze ed Extra: oltre, il generatore diventa troppo pesante
@@ -47,11 +48,6 @@ TURNI_RICHIEDIBILI = {
     PROGRAMMATI: {("giorno", "prog_mattina"), ("giorno", "prog_pomeriggio")},
 }
 
-Nome = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100,
-                                        pattern=r"^[^\x00-\x1f\x7f]+$")]  # niente caratteri di controllo
-ID_MAX = 2 ** 63 - 1  # oltre, SQLite non accetta l'intero (OverflowError -> 500)
-Id = Annotated[int, Field(ge=1, le=ID_MAX)]
-IdPath = Annotated[int, PathParam(ge=1, le=ID_MAX)]
 Tipo = Literal["dipendente", "volontario"]
 Qualifica = Literal["autista", "soccorritore"]
 
@@ -222,10 +218,6 @@ class GeneraIn(BaseModel):
     tempo_max: float | None = Field(default=None, gt=0, le=600)
 
 
-def _errore(messaggio: str) -> HTTPException:
-    return HTTPException(status_code=400, detail=messaggio)
-
-
 def _data(valore: str) -> date:
     try:
         d = date.fromisoformat(valore)
@@ -360,6 +352,8 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
         "giorni": [g.isoformat() for g in giorni],
         "postazioni": attive,
         "postazioni_a_richiesta": _a_richiesta(tipo),
+        "festivi": festivi_periodo(db_festivita.festivita_attive(conn), giorni[0], giorni[-1]),
+        "festivi_disponibili": dati_festivi.disponibili_settimana(conn, giorni),
         "extra": [{**e, "fine": e["fine"] % 24} for e in db.extra_periodo(conn, giorni[0], giorni[-1])],
         "fabbisogno": [{"data": f.data.isoformat(), "postazione": f.postazione, "fascia": f.fascia,
                         "segmento": f.segmento, "ruolo": f.ruolo, "quantita": f.quantita} for f in fabbisogno],
@@ -531,6 +525,9 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
             conn.close()
 
     Conn = Annotated[sqlite3.Connection, Depends(connessione)]
+    app.include_router(api_festivita.crea_router(connessione))
+    app.include_router(api_storico_festivi.crea_router(connessione))
+    app.include_router(api_equita.crea_router(connessione, _settimana_passata))
 
     # --- persone ---
     @app.get("/api/persone")
@@ -685,11 +682,14 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
             storico = calcola_storico([_settimana_passata(conn, r) for r in db.lista_settimane(conn, prima_di=inizio)])
             kwargs = {"tempo_max": body.tempo_max} if body and body.tempo_max else {}
 
+            contesto = _contesto(conn, giorni)
+            festivi = dati_festivi.festivi_per_generazione(conn, giorni, contesto)
             t0 = time.monotonic()
-            ris = solver.genera(giorni, attive, dipendenti, fissi=fissi, contesto=_contesto(conn, giorni),
+            ris = solver.genera(giorni, attive, dipendenti, fissi=fissi, contesto=contesto,
                                 storico=storico, ferie=db.ferie_periodo(conn, giorni[0], giorni[-1]),
                                 indisponibili=db.indisponibili_periodo(conn, giorni[0], giorni[-1]),
-                                fabbisogno=fabbisogno, scarto_ore_max=db.get_scarto_ore_max(conn), **kwargs)
+                                fabbisogno=fabbisogno, scarto_ore_max=db.get_scarto_ore_max(conn),
+                                festivi=festivi, **kwargs)
             durata = round(time.monotonic() - t0, 2)
             if ris.stato in ("impossibile", "nessuna_soluzione"):
                 # niente da salvare: si tengono i turni generati in precedenza
@@ -703,6 +703,8 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                 "durata_s": durata,
                 "qualita": ris.qualita,
                 "qualita_precedente": qualita_precedente,
+                "festivi": riepilogo_generazione(festivi, fissi + ris.assegnazioni, [p.id for p in dipendenti],
+                                                 {f["id"]: f["nome"] for f in db_festivita.lista_festivita(conn)}),
             }
             nuove = [Assegnazione(a.data, a.postazione, a.fascia, a.segmento, a.ruolo, a.persona_id, "generato")
                      for a in ris.assegnazioni]
@@ -992,6 +994,7 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
         passate = solo_generate([_settimana_passata(conn, r) for r in righe])
         storico = calcola_storico(passate)
         persone = {p["id"]: p for p in db.lista_persone(conn)}
+        festivi, _ = dati_festivi.festivi_statistiche(conn, [pid for pid in storico if pid in persone])
 
         out = []
         for pid, st in storico.items():
@@ -1005,7 +1008,10 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                 "saldo_ore": st.saldo_ore, "ore_giorno": st.ore_giorno, "ore_notte": st.ore_notte,
                 "weekend": dict(st.weekend),
                 "standby": st.richieste[STANDBY], "programmati": st.richieste[PROGRAMMATI],
+                "assistenze": st.richieste[EXTRA],
                 "sedi": dict(st.sedi),
+                "ascoli": {"turni": st.ascoli, "giorno": st.ascoli_giorno, "notte": st.ascoli_notte},
+                "festivi": festivi[pid],
             })
 
         volontari: dict[int, dict] = {}
@@ -1019,8 +1025,10 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                     "persona_id": p["id"], "nome": p["nome"], "tipo": p["tipo"], "qualifica": p["qualifica"],
                     "settimane": 0, "ore_totali": 0, "ore_lavorate": 0, "ore_ferie": 0, "ore_malattia": 0,
                     "saldo_ore": 0, "ore_giorno": 0, "ore_notte": 0,
-                    "weekend": {k: 0 for k in CATEGORIE_WEEKEND}, "standby": 0, "programmati": 0,
+                    "weekend": {k: 0 for k in CATEGORIE_WEEKEND}, "standby": 0, "programmati": 0, "assistenze": 0,
                     "sedi": {k: 0 for k in SEDI_ALTERNATE},
+                    "ascoli": {"turni": 0, "giorno": 0, "notte": 0},
+                    "festivi": {"turni": 0, "per_festivita": []},  # la rotazione riguarda i dipendenti
                 })
                 if a.persona_id not in visti:
                     visti.add(a.persona_id)
@@ -1031,14 +1039,25 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                 cat = categoria_weekend(a)
                 if cat:
                     v["weekend"][cat] += 1
-                chiave = {STANDBY: "standby", PROGRAMMATI: "programmati"}.get(a.postazione)
+                chiave = {STANDBY: "standby", PROGRAMMATI: "programmati", EXTRA: "assistenze"}.get(a.postazione)
                 if chiave:
                     v[chiave] += 1
                 if a.postazione in v["sedi"]:
                     v["sedi"][a.postazione] += 1
+                if a.postazione == ASCOLI:
+                    v["ascoli"]["turni"] += 1
+                    v["ascoli"][a.fascia] += 1
         out += volontari.values()
         out.sort(key=lambda r: (r["tipo"] != "dipendente", r["nome"].lower(), r["persona_id"]))
         return out
+
+    @app.get("/api/statistiche/festivi")
+    def statistiche_festivi(conn: Conn):
+        """Turni festivi di chi non è nella tabella delle statistiche (es. ex dipendenti dello storico importato)."""
+        persone = {p["id"] for p in db.lista_persone(conn)}
+        passate = solo_generate([_settimana_passata(conn, r) for r in db.lista_settimane(conn)])
+        in_tabella = [pid for pid in calcola_storico(passate) if pid in persone]
+        return {"fuori_tabella": dati_festivi.festivi_statistiche(conn, in_tabella)[1]}
 
     @app.get("/api/statistiche/indisponibilita")
     def statistiche_indisponibilita(conn: Conn, dal: DataValida | None = None, al: DataValida | None = None):
@@ -1070,7 +1089,8 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                    for d in db.ferie_periodo(conn, dal, al).get(persona_id, set())}
         nomi_extra = {e["segmento"]: e["nome"] for e in db.extra_periodo(conn, dal, al)}
         return riepilogo_persona(p, dal, al, turni, assenze,
-                                 db.indisponibili_periodo(conn, dal, al).get(persona_id, set()), nomi_extra)
+                                 db.indisponibili_periodo(conn, dal, al).get(persona_id, set()), nomi_extra,
+                                 dati_festivi.nomi_turni_festivi(conn, dal, al))
 
     # --- statici ---
     app.mount("/static", StaticFiles(directory=STATIC_DIR, check_dir=False), name="static")

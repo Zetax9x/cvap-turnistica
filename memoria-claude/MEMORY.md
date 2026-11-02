@@ -1,0 +1,3 @@
+- [CVAP turnistica](cvap-turnistica-progetto.md) — stato, decisioni (CP-SAT, Turso, ferie)
+- [Usa agenti ecc](usa-agenti-ecc.md) — REGOLA FISSA: sempre tutte le skill e gli agenti ecc pertinenti in ogni fase (piano, TDD, parallelo, revisioni, browser, commit)
+- [Suite completa solo al merge](test-suite-solo-al-merge.md) — a step: commit per step, test pertinenti; suite intera prima del merge

@@ -375,6 +375,77 @@ def test_ascoli_di_fila_rispetta_la_settimana_precedente():
                 if a.persona_id == 1 and a.data == GIORNI[0] and a.postazione == "Ascoli" and a.fascia == "notte"]
 
 
+# --- Ascoli a rotazione nel tempo ---------------------------------------------------
+# 4 giorni di solo Ascoli: 8 posti da autista e 8 da soccorritore, 9 autisti e 9 soccorritori,
+# così un autista e un soccorritore restano senza turno. Modello piccolo: l'ottimo si trova subito.
+
+QUATTRO_GIORNI = GIORNI[:4]
+
+
+def _storico_ascoli(persone, **diversi):
+    storico = {p.id: StoricoPersona(settimane=10, settimane_ascoli=5, ascoli=8, ascoli_giorno=4, ascoli_notte=4)
+               for p in persone}
+    storico.update(diversi)
+    return storico
+
+
+def test_chi_ha_fatto_piu_ascoli_in_passato_ne_fa_meno():
+    persone = staff(9, 9)
+    storico = _storico_ascoli(persone)
+    storico[1] = StoricoPersona(settimane=10, settimane_ascoli=5, ascoli=14, ascoli_giorno=7, ascoli_notte=7)
+    r = genera(QUATTRO_GIORNI, ["Ascoli"], persone, storico=storico, tempo_max=10)
+    assert r.scoperti == []
+    assert turni_ascoli(r).get(1, 0) == 0
+
+
+def test_la_quota_di_ascoli_e_rispetto_alle_settimane_con_ascoli():
+    # 1 ha più turni di tutti ma anche il doppio delle settimane B: in proporzione ne ha fatti meno
+    persone = staff(9, 9)
+    storico = _storico_ascoli(persone)
+    storico[1] = StoricoPersona(settimane=20, settimane_ascoli=10, ascoli=10, ascoli_giorno=5, ascoli_notte=5)
+    storico[2] = StoricoPersona(settimane=10, settimane_ascoli=5, ascoli=12, ascoli_giorno=6, ascoli_notte=6)
+    r = genera(QUATTRO_GIORNI, ["Ascoli"], persone, storico=storico, tempo_max=10)
+    assert turni_ascoli(r).get(1, 0) == 1
+    assert turni_ascoli(r).get(2, 0) == 0
+
+
+def test_chi_ha_il_divieto_per_ascoli_non_sposta_la_rotazione():
+    persone = staff(10, 9)  # l'autista 10 non può andare ad Ascoli
+    persone[9] = Persona(10, "Autista 10", "dipendente", "autista", divieti=(Divieto("Ascoli", None),))
+    storico = _storico_ascoli(persone)
+    storico[10] = StoricoPersona(settimane=10, settimane_ascoli=5)  # mai ad Ascoli: non può andarci
+    storico[1] = StoricoPersona(settimane=10, settimane_ascoli=5, ascoli=14, ascoli_giorno=7, ascoli_notte=7)
+    r = genera(QUATTRO_GIORNI, ["Ascoli"], persone, storico=storico, tempo_max=10)
+    assert r.scoperti == []
+    assert turni_ascoli(r).get(10, 0) == 0
+    assert turni_ascoli(r).get(1, 0) == 0
+
+
+def test_chi_ad_ascoli_ha_fatto_piu_giorni_riceve_una_notte():
+    persone = staff(9, 9)
+    storico = _storico_ascoli(persone)
+    storico[1] = StoricoPersona(settimane=10, settimane_ascoli=5, ascoli=8, ascoli_giorno=8, ascoli_notte=0)
+    storico[2] = StoricoPersona(settimane=10, settimane_ascoli=5, ascoli=8, ascoli_giorno=0, ascoli_notte=8)
+    r = genera(QUATTRO_GIORNI, ["Ascoli"], persone, storico=storico, tempo_max=10)
+    fasce = {pid: sorted(a.fascia for a in r.assegnazioni if a.persona_id == pid and a.postazione == "Ascoli")
+             for pid in (1, 2)}
+    assert fasce[1] == ["notte"]
+    assert fasce[2] == ["giorno"]
+
+
+def test_le_regole_settimanali_di_ascoli_vincono_sullo_storico():
+    # 2 turni a testa: anche con uno storico di sole notti, 1 fa un giorno e una notte, mai di fila
+    persone = staff(7, 7)
+    storico = {p.id: StoricoPersona(settimane=10, settimane_ascoli=5, ascoli=10, ascoli_giorno=5, ascoli_notte=5)
+               for p in persone}
+    storico[1] = StoricoPersona(settimane=10, settimane_ascoli=5, ascoli=20, ascoli_giorno=0, ascoli_notte=20)
+    r = genera(GIORNI, ["Ascoli"], persone, storico=storico, tempo_max=10)
+    assert r.scoperti == []
+    assert max(turni_ascoli(r).values()) <= 2
+    assert ascoli_di_fila(r) == []
+    assert sorted(a.fascia for a in r.assegnazioni if a.persona_id == 1) == ["giorno", "notte"]
+
+
 # --- Ascoli: un giorno e una notte, non due turni della stessa fascia (nel limite del possibile) ---
 
 def ascoli_per_fascia(r):

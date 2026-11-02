@@ -47,6 +47,32 @@ per la pianificazione): considera tutta la settimana insieme, non un turno alla 
   (così a fine mese tutti hanno circa le stesse ore)
 - equilibrio tra giorni e notti, nella settimana e nello storico
 - sabati e domeniche (giorno e notte) distribuiti in modo equo su tutto lo storico
+- a rotazione nel tempo anche Standby, Programmati, Assistenze ed Extra (evitando due nella stessa settimana),
+  i turni ad Ascoli (con tanti giorni quante notti) e le due sedi Acquasanta e Venarotta
+- le **festività a rotazione** (sotto)
+
+## Festività a rotazione
+
+- **Impostazioni → Festività a rotazione**: si spuntano le festività che contano (15 predefinite, Pasqua e Pasquetta
+  calcolate, più quelle aggiunte a mano), con i turni che contano (giorno, notte, notte della sera prima) e
+  l'importanza (1 normale, 2 importante, 3 molto importante). I giorni festivi sono evidenziati in griglia, stampa
+  ed email.
+- **Impostazioni → Storico festività**: chi ha lavorato le festività negli anni prima del programma, a mano anno per
+  anno (con chi era in servizio) o da un file CSV con anteprima e abbinamento dei nomi.
+- **Generatore**: ogni festività ha il suo conto sugli ultimi 5 anni (storico importato + programma). Chi l'ha fatta
+  più volte del dovuto, o l'anno prima, lascia il posto agli altri; al massimo un festivo a testa nella settimana
+  quando possibile. Ferie e indisponibilità in una festività contano come riposo goduto (la volta dopo si ha la
+  precedenza), la malattia no. Un festivo di domenica conta anche come weekend.
+- **Chi vuole lavorare una festività**: in Statistiche → Festività si segna "vuole lavorarla" (giorno, notte o
+  entrambi): riceve prima quei turni, nel rispetto delle regole; i turni contano comunque nella sua rotazione.
+- **Ordine in anticipo**: Statistiche → Festività mostra, per le festività dei prossimi 12 mesi, i dipendenti in
+  ordine di precedenza a lavorarle (stesso calcolo del generatore), stampabile; sotto, chi ha lavorato ogni
+  festività negli anni passati.
+- **Quadro dell'equità**: Statistiche → Equità mostra per ogni rotazione (ore, giorni/notti, weekend, Standby,
+  Programmati, Assistenze, Ascoli, sedi, ogni festività) chi ha fatto più e meno della sua parte, la tendenza e il
+  dettaglio per dipendente.
+
+Guida per il personale: [docs/GUIDA-dipendenti.md](docs/GUIDA-dipendenti.md).
 
 ## Password e invio dei turni via email
 
@@ -80,6 +106,8 @@ si alternano A/B a partire da lì e iniziano sempre di lunedì.
 ```bash
 .venv/bin/pytest            # test
 .venv/bin/pytest --cov=cvap # copertura
+python -m cvap.simulazione  # simulazione di alcune settimane su dati di prova, report HTML
+python -m cvap.simulazione --festivita --anni 3 --worker 2   # festività di fine anno con storico importato
 ```
 
 Architettura e contratto API: [docs/API.md](docs/API.md).

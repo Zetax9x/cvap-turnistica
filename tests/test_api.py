@@ -273,6 +273,9 @@ def test_statistiche(generata):
     assert abs(sum(x["saldo_ore"] for x in dip)) < 1e-6
     assert set(dip[0]["weekend"]) == {"sab_giorno", "sab_notte", "dom_giorno", "dom_notte"}
     assert all(x["standby"] == 0 and x["programmati"] == 0 for x in stats)
+    # settimana A: niente Ascoli
+    assert all(x["ascoli"] == {"turni": 0, "giorno": 0, "notte": 0} for x in stats)
+    assert all(x["assistenze"] == 0 for x in stats)
     # turni per sede: tutti i 56 turni della settimana A sono ad Acquasanta o Venarotta (uno è del volontario)
     assert per_id[vol["id"]]["sedi"] == {"Acquasanta": 0, "Venarotta": 1}
     assert sum(x["sedi"]["Acquasanta"] + x["sedi"]["Venarotta"] for x in dip) == 55

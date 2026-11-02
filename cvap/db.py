@@ -9,7 +9,9 @@ import secrets
 import sqlite3
 from datetime import date, timedelta
 
+from . import db_festivi_disponibili
 from .calendario import lunedi
+from .festivita import FESTIVITA_PREDEFINITE
 from .modello import (EXTRA, Assegnazione, Divieto, Fabbisogno, Persona, Postazione, fascia_extra,
                       segmento_extra)
 from .vincoli import ORE_MAX_SETTIMANA
@@ -116,6 +118,40 @@ CREATE TABLE IF NOT EXISTS richieste_extra (  -- Assistenze ed Extra: richieste 
     soccorritori INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_richieste_extra_data ON richieste_extra(data);
+CREATE TABLE IF NOT EXISTS festivita (  -- calendario delle festività a rotazione (cvap/festivita.py)
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chiave TEXT UNIQUE,  -- solo le predefinite (non si cancellano né si rinominano); NULL per quelle aggiunte a mano
+    nome TEXT NOT NULL,
+    regola TEXT NOT NULL,  -- 'fissa' (giorno/mese ogni anno) | 'pasqua' (offset da Pasqua) | 'data' (una volta)
+    giorno INTEGER, mese INTEGER, offset_pasqua INTEGER, data TEXT,
+    conta_giorno INTEGER NOT NULL DEFAULT 1,
+    conta_notte INTEGER NOT NULL DEFAULT 1,
+    conta_notte_prima INTEGER NOT NULL DEFAULT 0,
+    peso INTEGER NOT NULL DEFAULT 1,  -- 1 normale, 2 importante, 3 molto importante
+    attiva INTEGER NOT NULL DEFAULT 0,
+    stata_attiva INTEGER NOT NULL DEFAULT 0  -- 1 se è mai stata attiva: disattivata, resta nelle statistiche
+);
+CREATE TABLE IF NOT EXISTS storico_festivi (  -- anni passati: chi ha lavorato ogni festività (cvap/storico_festivi.py)
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    anno INTEGER NOT NULL,
+    festivita_id INTEGER NOT NULL REFERENCES festivita(id),
+    persona_id INTEGER NOT NULL REFERENCES persone(id),
+    fascia TEXT NOT NULL CHECK (fascia IN ('giorno', 'notte'))  -- notte: anche la notte della sera prima
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_storico_festivi_unici ON storico_festivi(anno, festivita_id, persona_id, fascia);
+CREATE INDEX IF NOT EXISTS idx_storico_festivi_festivita ON storico_festivi(festivita_id);
+CREATE INDEX IF NOT EXISTS idx_storico_festivi_persona ON storico_festivi(persona_id);
+CREATE TABLE IF NOT EXISTS storico_festivi_servizio (  -- chi era in servizio quell'anno (quota attesa nella rotazione)
+    anno INTEGER NOT NULL,
+    persona_id INTEGER NOT NULL REFERENCES persone(id),
+    PRIMARY KEY (anno, persona_id)
+);
+CREATE TABLE IF NOT EXISTS festivi_disponibili (  -- chi vuole lavorare una festività (cvap/db_festivi_disponibili.py)
+    data TEXT NOT NULL,  -- giorno della festività
+    persona_id INTEGER NOT NULL REFERENCES persone(id),
+    fascia TEXT NOT NULL CHECK (fascia IN ('giorno', 'notte', 'entrambi')),
+    PRIMARY KEY (data, persona_id)
+);
 """
 
 _POSTAZIONI_SEED = (("Acquasanta", 0, 1), ("Venarotta", 0, 2), ("Ascoli", 1, 3))
@@ -213,6 +249,10 @@ def connetti(path: str) -> sqlite3.Connection:
             "INSERT OR IGNORE INTO postazioni(nome, solo_settimane_b, ordine) VALUES (?, ?, ?)",
             _POSTAZIONI_SEED,
         )
+        conn.executemany(  # le predefinite, non attive: la chiave unica evita doppioni anche con due avvii insieme
+            "INSERT OR IGNORE INTO festivita(chiave, nome, regola, giorno, mese, offset_pasqua) VALUES (?, ?, ?, ?, ?, ?)",
+            FESTIVITA_PREDEFINITE,
+        )
         conn.execute(
             "INSERT OR IGNORE INTO impostazioni(chiave, valore) VALUES ('data_riferimento_a', ?)",
             (RIFERIMENTO_A_DEFAULT,),
@@ -263,6 +303,13 @@ def _migra(conn) -> None:
         except Exception:
             if "motivo" not in _colonne(conn, "ferie"):
                 raise
+    if "stata_attiva" not in _colonne(conn, "festivita"):
+        try:
+            conn.execute("ALTER TABLE festivita ADD COLUMN stata_attiva INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            if "stata_attiva" not in _colonne(conn, "festivita"):
+                raise
+    conn.execute("UPDATE festivita SET stata_attiva = 1 WHERE attiva = 1 AND stata_attiva = 0")  # idempotente
     # prima il massimo personale arrivava a 168: oltre il tetto di 72 ore scende a 72 (idempotente)
     conn.execute("UPDATE persone SET max_ore_settimana = ? WHERE max_ore_settimana > ?",
                  (ORE_MAX_SETTIMANA, ORE_MAX_SETTIMANA))
@@ -305,8 +352,11 @@ INVARIATA = object()  # valore di `email` che lascia com'è quella salvata
 def aggiorna_persona(conn: sqlite3.Connection, persona_id: int, nome: str, tipo: str,
                      qualifica: str, attivo: bool, autista_programmati: bool | None = None,
                      email=INVARIATA) -> dict | None:
-    """`autista_programmati=None` e `email=INVARIATA` lasciano invariati i valori salvati."""
+    """`autista_programmati=None` e `email=INVARIATA` lasciano invariati i valori salvati. Se non è più un
+    dipendente attivo, le festività che voleva lavorare si tolgono nella stessa transazione."""
     with conn:
+        if not attivo or tipo != "dipendente":
+            db_festivi_disponibili.togli_persona(conn, persona_id)
         if email is not INVARIATA:
             conn.execute("UPDATE persone SET email = ? WHERE id = ?", (email, persona_id))
         if autista_programmati is None:
@@ -327,12 +377,18 @@ def imposta_max_ore(conn: sqlite3.Connection, persona_id: int, max_ore: int | No
 
 
 def elimina_persona(conn: sqlite3.Connection, persona_id: int) -> bool:
-    """Elimina la persona; se ha assegnazioni la disattiva soltanto. False se non esiste."""
+    """Elimina la persona; se ha assegnazioni o è nello storico delle festività la disattiva soltanto.
+
+    In entrambi i casi toglie le festività che voleva lavorare: è una preferenza per il futuro, non storico."""
     if get_persona(conn, persona_id) is None:
         return False
     with conn:
-        usata = conn.execute("SELECT 1 FROM assegnazioni WHERE persona_id = ? LIMIT 1",
-                             (persona_id,)).fetchone()
+        db_festivi_disponibili.togli_persona(conn, persona_id)
+        usata = conn.execute(
+            "SELECT 1 AS si FROM assegnazioni WHERE persona_id = ? UNION ALL "
+            "SELECT 1 AS si FROM storico_festivi WHERE persona_id = ? UNION ALL "
+            "SELECT 1 AS si FROM storico_festivi_servizio WHERE persona_id = ? LIMIT 1",
+            (persona_id, persona_id, persona_id)).fetchone()
         if usata:
             conn.execute("UPDATE persone SET attivo = 0 WHERE id = ?", (persona_id,))
         else:

@@ -23,6 +23,9 @@ GIORNO_BG, GIORNO_BORDO = "#fff4cc", "#d99a00"
 NOTTE_BG, NOTTE_BORDO = "#e3e8fb", "#3f4ba8"
 VOL_BG, VOL_TESTO = "#d9efe0", "#14532d"
 ROSSO = "#b51d2b"
+TESTA_BG = "#e9eef6"
+WEEKEND_BG = "#fbeccb"
+FESTIVO_BG, FESTIVO_TESTO = "#fadde4", "#9b1c3a"  # festività: rosa chiaro, prevale sul weekend
 
 
 def _e(x) -> str:
@@ -36,6 +39,22 @@ def _dmy(iso: str) -> str:
 
 def _dm(iso: str) -> str:
     return date.fromisoformat(iso).strftime("%d/%m")
+
+
+def _nomi_feste(s: dict, giorno: str) -> str:
+    """Nomi delle festività del giorno, uniti da " / " ("" se non è festivo)."""
+    return " / ".join(f["nome"] for f in s.get("festivi", []) if f["data"] == giorno)
+
+
+def _th_giorno(s: dict, giorno: str, stile: str, separatore: str, sfondo_feriale: str = "") -> str:
+    """Intestazione di un giorno: nome e data, sfondo del weekend o della festività con il suo nome sotto."""
+    d = date.fromisoformat(giorno)
+    feste = _nomi_feste(s, giorno)
+    sfondo = FESTIVO_BG if feste else WEEKEND_BG if d.weekday() >= 5 else sfondo_feriale
+    nome = (f'<br><span style="font-size:11px;font-weight:bold;color:{FESTIVO_TESTO};">{_e(feste)}</span>'
+            if feste else "")
+    return (f'<th style="{stile}{f"background:{sfondo};" if sfondo else ""}">'
+            f'{GIORNI_BREVI[d.weekday()]}{separatore}{_dm(giorno)}{nome}</th>')
 
 
 def fascia_orario(fascia: str, segmento: str) -> str:
@@ -284,10 +303,8 @@ def _html_extra(s: dict, pid: int | None, testa: str) -> str:
 
 def _html_tabellone(s: dict, pid: int | None) -> str:
     blocchi = []
+    testa = "".join(_th_giorno(s, g, _TD, "<br>", TESTA_BG) for g in s["giorni"])
     for postazione in _postazioni(s):
-        testa = "".join(
-            f'<th style="{_TD}background:{"#fbeccb" if date.fromisoformat(g).weekday() >= 5 else "#e9eef6"};">'
-            f'{GIORNI_BREVI[date.fromisoformat(g).weekday()]}<br>{_dm(g)}</th>' for g in s["giorni"])
         righe = []
         for i, (fascia, segmento, ruolo, turno) in enumerate(_righe(postazione)):
             bg = GIORNO_BG if fascia == "giorno" else NOTTE_BG
@@ -307,9 +324,6 @@ def _html_tabellone(s: dict, pid: int | None) -> str:
             + f'<table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;">'
             f'<tr><th style="{_TD}background:#e9eef6;">Turno</th>{testa}</tr>{"".join(righe)}</table>')
     if s.get("extra"):  # solo se nella settimana ci sono richieste
-        testa = "".join(
-            f'<th style="{_TD}background:{"#fbeccb" if date.fromisoformat(g).weekday() >= 5 else "#e9eef6"};">'
-            f'{GIORNI_BREVI[date.fromisoformat(g).weekday()]}<br>{_dm(g)}</th>' for g in s["giorni"])
         blocchi.append(_html_extra(s, pid, testa))
     return "".join(blocchi)
 
@@ -379,8 +393,7 @@ def _nomi(s: dict) -> dict[int, str]:
 
 def _testa_giorni(s: dict, prima: str) -> str:
     return f'<tr><th style="{_TH}">{prima}</th>' + "".join(
-        f'<th style="{_TH}{"background:#fbeccb;" if date.fromisoformat(g).weekday() >= 5 else ""}">'
-        f'{GIORNI_BREVI[date.fromisoformat(g).weekday()]} {_dm(g)}</th>' for g in s["giorni"]) + "</tr>"
+        _th_giorno(s, g, _TH, " ") for g in s["giorni"]) + "</tr>"
 
 
 def _voce(nome: str, nota: str = "", colore: str = "#4d5868") -> str:
@@ -446,9 +459,24 @@ def _ore_totali(r: dict) -> str:
     return f"{r['ore_totali']} ({' + '.join([str(r.get('ore_lavorate', 0)) + ' lavorate'] + assenze)})"
 
 
+def _ascoli(r: dict) -> str:
+    """Turni ad Ascoli con giorni e notti: "4 (3 / 1)"."""
+    a = r.get("ascoli") or {}
+    return f"{a.get('turni', 0)} ({a.get('giorno', 0)} / {a.get('notte', 0)})"
+
+
+def festivi_testo(r: dict) -> str:
+    """Turni festivi degli ultimi 5 anni, solo le festività lavorate: "Natale 2 (2025), Pasqua 1 (2023)"."""
+    voci = [f"{f['festivita']}{'' if f.get('attiva', True) else ' (non più nel calendario)'} {f['turni']} "
+            f"({f['ultimo_anno']})"
+            for f in (r.get("festivi") or {}).get("per_festivita", []) if f.get("turni")]
+    return ", ".join(voci) or "—"
+
+
 def _sezione_statistiche(righe: list[dict]) -> tuple[str, str]:
     colonne = ["Persona", "Tipo", "Settimane", "Ore totali", "Saldo ore", "Ore giorno / notte",
-               "Acquasanta / Venarotta", "Turni weekend", "Standby", "Programmati"]
+               "Acquasanta / Venarotta", "Turni weekend", "Standby", "Programmati", "Ascoli (giorni / notti)",
+               "Festivi (ultimo anno)", "Assistenze"]
     corpo, txt = [], []
     for r in righe:
         saldo = r.get("saldo_ore", 0)
@@ -457,7 +485,7 @@ def _sezione_statistiche(righe: list[dict]) -> tuple[str, str]:
         valori = [r["nome"], "Dipendente" if r["tipo"] == "dipendente" else "Volontario", r["settimane"],
                   _ore_totali(r), saldo_t, f"{r['ore_giorno']} / {r['ore_notte']}",
                   f"{sedi.get('Acquasanta', 0)} / {sedi.get('Venarotta', 0)}", sum(r["weekend"].values()),
-                  r["standby"], r["programmati"]]
+                  r["standby"], r["programmati"], _ascoli(r), festivi_testo(r), r.get("assistenze", 0)]
         corpo.append("<tr>" + "".join(f'<td style="{_TC}{"text-align:right;" if i >= 2 else ""}">'
                                       f'{"<b>" if i == 0 else ""}{_e(v)}{"</b>" if i == 0 else ""}</td>'
                                       for i, v in enumerate(valori)) + "</tr>")
@@ -466,7 +494,9 @@ def _sezione_statistiche(righe: list[dict]) -> tuple[str, str]:
              + "".join(f'<th style="{_TH}">{c}</th>' for c in colonne) + f'</tr>{"".join(corpo)}</table>'
              '<p style="font-size:11px;color:#4d5868;margin:4px 0 0;">Solo le settimane con turni generati. '
              'Ore totali: ore lavorate più 6 h per ogni giorno di ferie o malattia. '
-             'Saldo ore: differenza rispetto alla media dei dipendenti.</p>')
+             'Saldo ore: differenza rispetto alla media dei dipendenti. '
+             'Festivi: turni nelle festività a rotazione negli ultimi 5 anni (anni passati inseriti compresi), '
+             "tra parentesi l'ultimo anno in cui l'ha lavorata.</p>")
     return (html_ if righe else "<p>Nessuna settimana con turni generati.</p>"), "\n".join(txt)
 
 

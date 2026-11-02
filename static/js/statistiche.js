@@ -4,8 +4,10 @@ import { api } from "./api.js";
 import { el, clear, etichetta, formatOre, formatSaldo } from "./util.js";
 import * as indisponibilita from "./statistiche-indisponibilita.js";
 import * as perDipendente from "./statistiche-dipendente.js";
+import * as equita from "./statistiche-equita.js";
+import * as festivita from "./statistiche-festivita.js";
 
-const stato = { root: null, righe: [], ordine: { campo: "nome", dir: 1 }, filtroTipo: "tutti" };
+const stato = { root: null, righe: [], fuoriTabella: [], ordine: { campo: "nome", dir: 1 }, filtroTipo: "tutti" };
 
 const COLONNE = [
   { campo: "nome", titolo: "Persona", testo: true },
@@ -22,6 +24,9 @@ const COLONNE = [
   { campo: "weekend_tot", titolo: "Tot. weekend", valore: (r) => totWeekend(r) },
   { campo: "standby", titolo: "Standby", valore: (r) => r.standby || 0 },
   { campo: "programmati", titolo: "Programmati", valore: (r) => r.programmati || 0 },
+  { campo: "ascoli", titolo: "Ascoli (G / N)", valore: (r) => asc(r, "turni") },
+  { campo: "festivi", titolo: "Festivi", valore: (r) => (r.tipo === "dipendente" && r.festivi ? r.festivi.turni : -1) },
+  { campo: "assistenze", titolo: "Assistenze", valore: (r) => r.assistenze || 0 },
 ];
 
 function tot(r) { return (r.ore_giorno || 0) + (r.ore_notte || 0); }
@@ -33,12 +38,38 @@ function dettaglioOre(r) {
   return el("span", { class: "ore-dettaglio" }, [`${formatOre(r.ore_lavorate || 0)} lavorate`, ...assenze].join(" + "));
 }
 
+/** Nome della festività, con l'avviso se non è più nel calendario (non conta più per il generatore). */
+export function nomeFestivita(f) {
+  return f.attiva === false ? `${f.festivita} (non più nel calendario)` : f.festivita;
+}
+
+/** Le festività lavorate negli ultimi 5 anni, in elenco: "Natale 2 (ultima 2025)". Volontari e dati assenti: "–". */
+function festivi(r) {
+  if (r.tipo !== "dipendente" || !r.festivi) return "–";
+  const voci = (r.festivi.per_festivita || []).filter((f) => f.turni);
+  if (!voci.length) return "0";
+  return el("span", { class: "festivi-elenco" }, String(r.festivi.turni),
+    el("ul", { class: "festivi-voci" }, voci.map((f) => el("li", { class: "festivi-voce" },
+      `${nomeFestivita(f)} ${f.turni} (ultima ${f.ultimo_anno})`))));
+}
+
+/** Sotto la tabella: i turni festivi di chi non è più in tabella (es. ex dipendenti dello storico importato). */
+function notaFuoriTabella(fuori) {
+  const voci = (fuori || []).filter((f) => f.turni);
+  if (!voci.length) return null;
+  const totale = voci.reduce((s, f) => s + f.turni, 0);
+  return el("p", { class: "hint" }, `Nello storico ci sono anche ${totale === 1 ? "1 turno festivo" : `${totale} turni festivi`} ` +
+    `di persone che non lavorano più o non compaiono in tabella: ${voci.map((f) => `${nomeFestivita(f)} ${f.turni}`).join(", ")}.`);
+}
+
 function sede(r, k) { return (r.sedi && r.sedi[k]) || 0; }
 function totSedi(r) { return sede(r, "Acquasanta") + sede(r, "Venarotta"); }
+function asc(r, k) { return (r.ascoli && r.ascoli[k]) || 0; }
 function wk(r, k) { return (r.weekend && r.weekend[k]) || 0; }
 function totWeekend(r) { return ["sab_giorno", "sab_notte", "dom_giorno", "dom_notte"].reduce((s, k) => s + wk(r, k), 0); }
 
-const SCHEDE = [["", "Turni"], ["indisponibilita", "Indisponibilità"], ["dipendente", "Riepilogo per dipendente"]];
+const SCHEDE = [["", "Turni"], ["indisponibilita", "Indisponibilità"], ["dipendente", "Riepilogo per dipendente"],
+  ["equita", "Equità"], ["festivita", "Festività"]];
 
 /** Schede della vista: sono link, così il router a hash gestisce anche avanti/indietro. */
 export function renderSchede(attiva) {
@@ -75,17 +106,20 @@ export function focusTitolo(root) {
   }
 }
 
-// hash: #statistiche, #statistiche/indisponibilita oppure #statistiche/dipendente
+// hash: #statistiche, #statistiche/indisponibilita, #statistiche/dipendente, #statistiche/equita o #statistiche/festivita
 export async function mostra(root, parametro) {
   if (parametro === "indisponibilita") return indisponibilita.mostra(root);
   if (parametro === "dipendente") return perDipendente.mostra(root);
+  if (parametro === "equita") return equita.mostra(root);
+  if (parametro === "festivita") return festivita.mostra(root);
   stato.root = root;
   const numero = nuovoCaricamento();
   clear(root).append(renderSchede(""), el("p", { class: "muted loading" }, "Caricamento delle statistiche…"));
   try {
-    const righe = await api.statistiche();
+    const [righe, festiviExtra] = await Promise.all([api.statistiche(), api.statisticheFestivi().catch(() => null)]);
     if (superato(numero)) return;
     stato.righe = righe;
+    stato.fuoriTabella = (festiviExtra && festiviExtra.fuori_tabella) || [];
     render();
     focusTitolo(root);
   } catch (err) {
@@ -170,17 +204,31 @@ function render() {
       el("td", { class: "num" }, String(totWeekend(r))),
       el("td", { class: "num" }, String(r.standby || 0)),
       el("td", { class: "num" }, String(r.programmati || 0)),
+      el("td", { class: "num" }, `${asc(r, "turni")} (${asc(r, "giorno")} / ${asc(r, "notte")})`),
+      el("td", { class: "num" }, festivi(r)),
+      el("td", { class: "num" }, String(r.assistenze || 0)),
     );
   }));
 
   root.append(el("div", { class: "table-scroll" }, el("table", { class: "tabella tabella-stat" },
     el("caption", { class: "sr-only" }, "Statistiche per persona. Fare clic sulle intestazioni per ordinare."),
     thead, tbody)));
+  const nota = notaFuoriTabella(stato.fuoriTabella);
+  if (nota) root.append(nota);
   root.append(el("p", { class: "hint" }, "Ore totali: ore lavorate più 6 h per ogni giorno di ferie o malattia, " +
     "come nel confronto delle ore tra dipendenti; sotto, il dettaglio quando ci sono assenze. " +
     "Le settimane interamente di ferie o malattia non contano."));
   root.append(el("p", { class: "hint" }, "Weekend: numero di turni svolti il sabato e la domenica, di giorno (G) e di notte (N). " +
     "Acquasanta / Venarotta: turni svolti in ciascuna delle due sedi (anche i mezzi turni); il generatore cerca di farne " +
     "fare a ogni dipendente tanti nell'una quanti nell'altra. " +
-    "Standby e Programmati: turni svolti in quelle postazioni; il generatore li distribuisce in modo equo come i weekend."));
+    "Standby, Programmati e Assistenze: turni svolti in quelle postazioni (ogni Assistenza conta 1, qualunque sia la " +
+    "durata); il generatore li distribuisce in modo equo come i weekend. " +
+    "Ascoli: turni svolti ad Ascoli, tra parentesi quanti di giorno (G) e di notte (N); il generatore li distribuisce " +
+    "in proporzione alle settimane con Ascoli e cerca di far fare a ognuno tanti giorni quante notti."));
+  root.append(el("p", { class: "hint" }, "Festivi: turni lavorati nelle festività a rotazione (scelte in Impostazioni) " +
+    "negli ultimi 5 anni, compresi gli anni passati inseriti nello Storico festività; sotto, il dettaglio per festività " +
+    "con l'ultimo anno in cui è stata lavorata. Il generatore fa ruotare ogni festività per conto suo: chi l'ha lavorata " +
+    "più volte o l'anno prima lascia il posto agli altri. Ferie e indisponibilità in una festività contano come riposo " +
+    "goduto: la volta dopo si ha la precedenza a lavorarla. I volontari non entrano nella rotazione (–). " +
+    "Le festività tolte dal calendario restano nel totale, segnate come “non più nel calendario”."));
 }

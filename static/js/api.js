@@ -81,6 +81,25 @@ export const api = {
 
   postazioni: () => richiesta("GET", "/postazioni"),
 
+  // Festività a rotazione: anno facoltativo (anteprima delle date di quell'anno e del successivo)
+  festivita: (anno) => richiesta("GET", `/festivita${anno ? `?${new URLSearchParams({ anno })}` : ""}`),
+  creaFestivita: (dati) => richiesta("POST", "/festivita", dati),
+  aggiornaFestivita: (id, dati) => richiesta("PUT", `/festivita/${enc(id)}`, dati),
+  eliminaFestivita: (id) => richiesta("DELETE", `/festivita/${enc(id)}`),
+
+  // Storico festività degli anni prima del programma (il CSV viaggia come testo dentro il JSON)
+  storicoFestivi: () => richiesta("GET", "/storico-festivi"),
+  storicoFestiviAnno: (anno) => richiesta("GET", `/storico-festivi/${enc(anno)}`),
+  salvaStoricoFestiviAnno: (anno, corpo) => richiesta("PUT", `/storico-festivi/${enc(anno)}`, corpo),
+  anteprimaStoricoFestivi: (testo) => richiesta("POST", "/storico-festivi/anteprima", { testo }),
+  importaStoricoFestivi: (corpo) => richiesta("POST", "/storico-festivi/importa", corpo),
+
+  // Chi vuole lavorare una festività ({data, persona_id, fascia: "giorno"|"notte"|"entrambi"|null}) e ordine di
+  // rotazione delle prossime festività; chi ha lavorato le festività di un anno (importato o dal programma)
+  impostaDisponibile: (corpo) => richiesta("PUT", "/festivita/disponibili", corpo),
+  prossimeFestivita: (mesi) => richiesta("GET", `/festivita/prossime?${new URLSearchParams({ mesi })}`),
+  festivitaLavorate: (anno) => richiesta("GET", `/festivita/lavorate?${new URLSearchParams({ anno })}`),
+
   impostazioni: () => richiesta("GET", "/impostazioni"),
   salvaImpostazioni: (dati) => richiesta("PUT", "/impostazioni", dati),
 
@@ -109,6 +128,7 @@ export const api = {
   eliminaFerie: (id) => richiesta("DELETE", `/ferie/${enc(id)}`),
 
   statistiche: () => richiesta("GET", "/statistiche"),
+  statisticheFestivi: () => richiesta("GET", "/statistiche/festivi"),
   riepilogoPersona: (id, dal, al) =>
     richiesta("GET", `/statistiche/persona/${enc(id)}?${new URLSearchParams({ dal, al })}`),
   statisticheIndisponibilita: (dal, al) => {
@@ -116,5 +136,11 @@ export const api = {
     if (dal) q.set("dal", dal);
     if (al) q.set("al", al);
     return richiesta("GET", `/statistiche/indisponibilita${q.size ? `?${q}` : ""}`);
+  },
+  statisticheEquita: (dal, al) => {
+    const q = new URLSearchParams();
+    if (dal) q.set("dal", dal);
+    if (al) q.set("al", al);
+    return richiesta("GET", `/statistiche/equita${q.size ? `?${q}` : ""}`);
   },
 };

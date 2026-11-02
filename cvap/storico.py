@@ -3,11 +3,12 @@ from dataclasses import dataclass, field
 
 from datetime import date
 
-from .modello import PARTI_TURNO, POSTAZIONI_A_RICHIESTA, Assegnazione
-from .vincoli import ORE_FERIE_GIORNO
+from .modello import EXTRA, PARTI_TURNO, POSTAZIONI_A_RICHIESTA, Assegnazione
+from .vincoli import ASCOLI, ORE_FERIE_GIORNO
 
 CATEGORIE_WEEKEND = ("sab_giorno", "sab_notte", "dom_giorno", "dom_notte")
-CATEGORIE_RICHIESTA = POSTAZIONI_A_RICHIESTA  # Standby e Programmati, distribuiti come i weekend
+# Standby, Programmati e Assistenze ed Extra: turni distribuiti a rotazione come i weekend
+CATEGORIE_RICHIESTA = (*POSTAZIONI_A_RICHIESTA, EXTRA)
 SEDI_ALTERNATE = ("Acquasanta", "Venarotta")  # ognuno, nel tempo, tanti turni nell'una quanti nell'altra
 
 
@@ -23,10 +24,14 @@ class StoricoPersona:
     weekend: dict[str, int] = field(default_factory=dict)
     ore_giorno: int = 0
     ore_notte: int = 0
-    richieste: dict[str, int] = field(default_factory=dict)  # turni Standby e Programmati
+    richieste: dict[str, int] = field(default_factory=dict)  # turni Standby, Programmati, Assistenze ed Extra
     sedi: dict[str, int] = field(default_factory=dict)  # turni ad Acquasanta e a Venarotta (anche mezzi)
     ore_ferie: int = 0     # ORE_FERIE_GIORNO per giorno di ferie (nelle settimane che contano)
     ore_malattia: int = 0  # idem per malattia o infortunio
+    ascoli: int = 0            # turni ad Ascoli (anche mezzo turno conta 1)
+    ascoli_giorno: int = 0     # di cui di giorno
+    ascoli_notte: int = 0      # di cui di notte
+    settimane_ascoli: int = 0  # settimane con Ascoli in cui era presente: la base della quota attesa
 
     @property
     def ore_lavorate(self) -> int:
@@ -85,9 +90,13 @@ def calcola_storico(settimane: list[SettimanaPassata]) -> dict[int, StoricoPerso
         # in ferie tutta la settimana: la settimana non conta per lui
         presenti = {pid for pid in s.dipendenti if s.giorni_ferie.get(pid, 0) < 7}
         ore = {pid: 0 for pid in presenti}
+        # una settimana "con Ascoli" ha almeno un turno ad Ascoli: non dipende dalla data di riferimento A/B
+        con_ascoli = any(a.postazione == ASCOLI for a in s.assegnazioni)
         for pid in presenti:
             st = storico.setdefault(pid, StoricoPersona())
             st.settimane += 1
+            if con_ascoli:
+                st.settimane_ascoli += 1
             malattia = s.giorni_malattia.get(pid, 0)
             st.ore_malattia += ORE_FERIE_GIORNO * malattia
             st.ore_ferie += ORE_FERIE_GIORNO * (s.giorni_ferie.get(pid, 0) - malattia)
@@ -107,6 +116,12 @@ def calcola_storico(settimane: list[SettimanaPassata]) -> dict[int, StoricoPerso
                 st.richieste[a.postazione] += 1
             if a.postazione in st.sedi:
                 st.sedi[a.postazione] += 1
+            if a.postazione == ASCOLI:
+                st.ascoli += 1
+                if a.fascia == "giorno":
+                    st.ascoli_giorno += 1
+                else:
+                    st.ascoli_notte += 1
         for pid, h in ore.items():
             # con ferie nella settimana le ore mancanti non si recuperano dopo
             if not s.giorni_ferie.get(pid):

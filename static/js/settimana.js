@@ -273,6 +273,22 @@ const FRASI_TECNICHE = [
   /\d+ posti non coperti: servono altri dipendenti o volontari\.\s*/,
 ];
 
+/** Le festività della settimana nel report, in parole semplici (null se la settimana non ne ha). */
+function testoFestivi(f) {
+  if (!f || !f.per_festivita || !f.per_festivita.length) return null;
+  const turni = (n) => (n === 1 ? "1 turno" : `${n} turni`);
+  const frasi = [`Festività: ${f.per_festivita.map((x) => `${x.festivita} ${turni(x.turni)}`).join(", ")} ai dipendenti.`];
+  if (f.anno_prima) {
+    frasi.push(`${f.anno_prima === 1 ? "1 turno è andato" : `${f.anno_prima} turni sono andati`} a chi aveva lavorato ` +
+      "la stessa festività l'anno scorso (non c'era di meglio nel rispetto delle regole).");
+  }
+  if (f.persone_con_piu_festivi) {
+    frasi.push(`${f.persone_con_piu_festivi === 1 ? "1 persona ha" : `${f.persone_con_piu_festivi} persone hanno`} ` +
+      "più di un turno festivo in questa settimana.");
+  }
+  return frasi.join(" ");
+}
+
 /** Esito della generazione in parole semplici: posti scoperti e problemi da sistemare, niente dati tecnici. */
 function renderReport(r) {
   const riuscita = ["ottimo", "ammissibile"].includes(r.stato);
@@ -290,6 +306,8 @@ function renderReport(r) {
     el("div", { class: "report-head" }, el("strong", {}, titolo)),
     note ? el("p", { class: "report-msg" }, note) : null,
   );
+  const festivi = riuscita ? testoFestivi(r.festivi) : null;
+  if (festivi) riquadro.append(el("p", { class: "report-msg report-festivi" }, festivi));
   if (scoperti.length) {
     riquadro.append(
       el("p", { class: "report-scoperti-titolo" }, "Servono altri dipendenti o volontari per:"),
@@ -439,6 +457,33 @@ function indiceViolazioni(s) {
   return mappa;
 }
 
+/** Nomi delle festività di un giorno, uniti da " / " ("" se non è festivo). */
+function nomiFeste(s, data) {
+  return (s.festivi || []).filter((f) => f.data === data).map((f) => f.nome).join(" / ");
+}
+
+/**
+ * Intestazione di colonna di un giorno (griglie e stampa dei liberi): nome e data, weekend e festività
+ * evidenziati, con il nome della festività sotto. Con `conLiberi` il giorno apre "chi è libero".
+ */
+function thGiorno(s, data, conLiberi = false) {
+  const i = indiceGiorno(data);
+  const feste = nomiFeste(s, data);
+  const classi = [i >= 5 ? "weekend" : null, feste ? "festivo" : null].filter(Boolean).join(" ") || null;
+  const contenuto = [
+    el("span", { class: "giorno-nome" }, GIORNI_BREVI[i]), " ", el("span", { class: "giorno-data" }, ddmm(data)),
+    feste ? el("span", { class: "giorno-festa" }, feste) : null,
+  ];
+  return el("th", { scope: "col", class: classi },
+    conLiberi
+      ? el("button", {
+        type: "button", class: "giorno-btn", title: "Chi è libero questo giorno",
+        "aria-label": `${GIORNI_BREVI[i]} ${ddmm(data)}${feste ? `, ${feste}` : ""}: chi è libero`,
+        onclick: () => apriLiberi(data),
+      }, contenuto)
+      : contenuto);
+}
+
 function renderGriglia(s, postazione) {
   const scopertiReport = new Set(((s.report && s.report.scoperti) || []).map((u) => chiaveCella(u)));
   const violazioni = indiceViolazioni(s);
@@ -447,17 +492,7 @@ function renderGriglia(s, postazione) {
 
   const thead = el("thead", {}, el("tr", {},
     el("th", { scope: "col", class: "col-turno" }, "Turno"),
-    s.giorni.map((g) => {
-      const i = indiceGiorno(g);
-      const etichettaGiorno = [el("span", { class: "giorno-nome" }, GIORNI_BREVI[i]), " ", el("span", { class: "giorno-data" }, ddmm(g))];
-      return el("th", { scope: "col", class: i >= 5 ? "weekend" : null },
-        haTurni(s)
-          ? el("button", {
-            type: "button", class: "giorno-btn", title: "Chi è libero questo giorno",
-            "aria-label": `${GIORNI_BREVI[i]} ${ddmm(g)}: chi è libero`, onclick: () => apriLiberi(g),
-          }, etichettaGiorno)
-          : etichettaGiorno);
-    }),
+    s.giorni.map((g) => thGiorno(s, g, haTurni(s))),
   ));
 
   const tbody = el("tbody");
@@ -1033,8 +1068,7 @@ function renderStampaLiberi(s) {
     el("table", { class: "tabella tabella-liberi" },
       el("thead", {}, el("tr", {},
         el("th", { scope: "col" }, ""),
-        s.giorni.map((g, i) => el("th", { scope: "col", class: i >= 5 ? "weekend" : null },
-          `${GIORNI_BREVI[i]} ${ddmm(g)}`)))),
+        s.giorni.map((g) => thGiorno(s, g)))),
       el("tbody", {},
         riga("Liberi tutto il giorno", "liberi", (g) => g.liberi.filter((v) => !(v.avvisi || []).length)),
         riga("Smontano dalla notte", "smonto", conAvviso("smonto_notte"), "smonto_notte"),
@@ -1080,8 +1114,7 @@ function renderGrigliaExtra(s) {
   const richieste = s.extra || [];
   const thead = el("thead", {}, el("tr", {},
     el("th", { scope: "col", class: "col-turno" }, "Richieste"),
-    s.giorni.map((g, i) => el("th", { scope: "col", class: i >= 5 ? "weekend" : null },
-      el("span", { class: "giorno-nome" }, GIORNI_BREVI[i]), " ", el("span", { class: "giorno-data" }, ddmm(g))))));
+    s.giorni.map((g) => thGiorno(s, g))));
   const celle = s.giorni.map((g, i) => {
     const delGiorno = richieste.filter((e) => e.data === g)
       .sort((a, b) => a.inizio - b.inizio || a.id - b.id);
@@ -1298,6 +1331,9 @@ function renderFormAggiunta(c, mancanti) {
   const inFerie = new Map((s.ferie || []).filter((x) => x.data === c.data).map((x) => [x.persona_id, x.motivo]));
   // indisponibile solo se la sua indisponibilità tocca le ore di questo turno
   const indisponibili = giorniPersona(s.indisponibilita, c.data, partiTurno(c.fascia, segmentoCella(c)));
+  // festività: chi ha detto che vuole lavorare questo turno (giorno o notte della festività)
+  const vuoleLavorare = new Set((s.festivi_disponibili || [])
+    .filter((x) => x.data === c.data && x.fascia === c.fascia).map((x) => x.persona_id));
   const prog = c.postazione === PROGRAMMATI;  // "autista programmati" vale solo qui
   // l'autista può fare anche il soccorritore; nei Programmati guida anche chi ha "autista programmati"
   const puoRicoprire = (p) => c.ruolo === "soccorritore" || p.qualifica === "autista"
@@ -1323,7 +1359,7 @@ function renderFormAggiunta(c, mancanti) {
     el("option", { value: "" }, "— Seleziona —"),
     dipendenti.map((p) => {
       const ore = oreSettimana.get(p.id);
-      const extra = [inFerie.has(p.id) ? (inFerie.get(p.id) === "malattia" ? "IN MALATTIA" : "IN FERIE") : null, indisponibili.has(p.id) ? "INDISPONIBILE" : null,
+      const extra = [vuoleLavorare.has(p.id) ? "VUOLE LAVORARE" : null, inFerie.has(p.id) ? (inFerie.get(p.id) === "malattia" ? "IN MALATTIA" : "IN FERIE") : null, indisponibili.has(p.id) ? "INDISPONIBILE" : null,
         vietato(p.id, c.postazione, c.fascia, segmentoCella(c)) ? "NON PUÒ" : null,
         p.qualifica === "autista" ? "autista" : (prog && p.autista_programmati ? "autista programmati" : null), ore ? `${formatOre(ore)} h` : null, giaInCella.has(p.id) ? "già qui" : null]
         .filter(Boolean).join(", ");
@@ -1331,6 +1367,8 @@ function renderFormAggiunta(c, mancanti) {
     }));
   const campoDip = el("div", { class: "campo campo-largo", hidden: true },
     el("label", { for: "cella-persona" }, "Dipendente"), select,
+    dipendenti.some((p) => vuoleLavorare.has(p.id)) ? el("p", { class: "hint" },
+      "“Vuole lavorare”: ha chiesto di lavorare questa festività (si segna in Statistiche → Festività).") : null,
     !dipendenti.length ? el("p", { class: "hint" }, c.ruolo === "autista"
       ? "Nessun dipendente attivo con qualifica autista."
       : "Nessun dipendente attivo. Aggiungilo nella sezione Personale.") : null,

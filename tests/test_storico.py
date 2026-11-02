@@ -70,8 +70,17 @@ def test_conta_i_turni_standby_e_programmati():
          ass(GIORNI[2], "Programmati", "giorno", "soccorritore", 2, segmento="prog_mattina"),
          ass(GIORNI[3], "Acquasanta", "giorno", "autista", 2)]
     s = calcola_storico([SettimanaPassata(media_ore=0, dipendenti=[1, 2], assegnazioni=a)])
-    assert s[1].richieste == {"Standby": 2, "Programmati": 0}
-    assert s[2].richieste == {"Standby": 0, "Programmati": 1}
+    assert s[1].richieste == {"Standby": 2, "Programmati": 0, "Assistenze ed Extra": 0}
+    assert s[2].richieste == {"Standby": 0, "Programmati": 1, "Assistenze ed Extra": 0}
+
+
+def test_conta_i_turni_di_assistenze_ed_extra_qualunque_sia_la_durata():
+    a = [ass(GIORNI[1], "Assistenze ed Extra", "giorno", "autista", 1, segmento="extra_1_9_13"),
+         ass(GIORNI[3], "Assistenze ed Extra", "giorno", "autista", 1, segmento="extra_2_8_20"),
+         ass(GIORNI[3], "Assistenze ed Extra", "notte", "soccorritore", 2, segmento="extra_3_22_26")]
+    s = calcola_storico([SettimanaPassata(media_ore=0, dipendenti=[1, 2], assegnazioni=a)])
+    assert s[1].richieste["Assistenze ed Extra"] == 2
+    assert s[2].richieste["Assistenze ed Extra"] == 1
 
 
 def test_con_un_massimo_di_ore_il_saldo_si_misura_dal_massimo():
@@ -149,3 +158,31 @@ def test_ore_di_ferie_e_malattia_contano_6_ore_al_giorno():
     assert s[1].ore_ferie == 12 and s[1].ore_malattia == 6  # 3 giorni di assenza, uno per malattia
     assert s[1].ore_contate == 42
     assert 2 not in s  # assente tutta la settimana: la settimana non conta
+
+
+# --- Ascoli nel tempo -------------------------------------------------------------
+
+def test_conta_i_turni_ad_ascoli_divisi_tra_giorno_e_notte():
+    a = [
+        ass(GIORNI[0], "Ascoli", "giorno", "autista", 1),
+        ass(GIORNI[2], "Ascoli", "notte", "autista", 1),
+        ass(GIORNI[4], "Ascoli", "giorno", "autista", 1, segmento="mattina"),  # anche mezzo turno conta 1
+        ass(GIORNI[1], "Acquasanta", "giorno", "autista", 2),
+    ]
+    s = calcola_storico([SettimanaPassata(media_ore=0, dipendenti=[1, 2], assegnazioni=a)])
+    assert (s[1].ascoli, s[1].ascoli_giorno, s[1].ascoli_notte) == (3, 2, 1)
+    assert (s[2].ascoli, s[2].ascoli_giorno, s[2].ascoli_notte) == (0, 0, 0)
+
+
+def test_settimane_con_ascoli_solo_per_i_presenti_e_solo_se_c_era_ascoli():
+    # settimana B con Ascoli: conta per 1 e 2, non per 3 che è in ferie tutta la settimana
+    wb = SettimanaPassata(0, [1, 2, 3], [ass(GIORNI[0], "Ascoli", "giorno", "autista", 1),
+                                         ass(GIORNI[1], "Acquasanta", "giorno", "autista", 2)],
+                          giorni_ferie={3: 7})
+    # settimana A senza Ascoli: non conta per nessuno
+    dopo = [g + timedelta(weeks=1) for g in GIORNI]
+    wa = SettimanaPassata(0, [1, 2, 3], [ass(dopo[0], "Acquasanta", "giorno", "autista", 1)])
+    s = calcola_storico([wb, wa])
+    assert s[1].settimane_ascoli == 1 and s[2].settimane_ascoli == 1
+    assert 3 not in s or s[3].settimane_ascoli == 0
+    assert s[1].settimane == 2

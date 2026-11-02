@@ -13,9 +13,11 @@ RUOLI = {"autista": "Autista", "soccorritore": "Soccorritore"}
 
 def riepilogo_persona(persona: dict, dal: date, al: date, assegnazioni: list[Assegnazione],
                       assenze: dict[date, str], indisponibili: set[tuple[date, str]],
-                      nomi_extra: dict[str, str]) -> dict:
+                      nomi_extra: dict[str, str], festivi: dict[tuple[date, str], str] | None = None) -> dict:
     """`assegnazioni`: i turni della persona nel periodo; `assenze`: giorno -> "ferie" | "malattia";
-    `indisponibili`: coppie (giorno, parte); `nomi_extra`: segmento -> nome della richiesta."""
+    `indisponibili`: coppie (giorno, parte); `nomi_extra`: segmento -> nome della richiesta;
+    `festivi`: (giorno, fascia) -> nome della festività attiva, per i turni festivi del periodo."""
+    festivi = festivi or {}
     per_giorno: dict[date, list[Assegnazione]] = defaultdict(list)
     for a in assegnazioni:
         per_giorno[a.data].append(a)
@@ -34,7 +36,7 @@ def riepilogo_persona(persona: dict, dal: date, al: date, assegnazioni: list[Ass
             "data": d.isoformat(),
             "turni": [{"postazione": nome_postazione(a), "orario": orario_turno(a.fascia, a.segmento),
                        "fascia": a.fascia, "ruolo": RUOLI.get(a.ruolo, a.ruolo), "ore": a.ore,
-                       "origine": a.origine} for a in turni],
+                       "origine": a.origine, "festivita": festivi.get((a.data, a.fascia))} for a in turni],
             "assenza": assenze.get(d),
             "indisponibile": [p for p in PARTI_TURNO if p in parti],
         })
@@ -49,6 +51,12 @@ def riepilogo_persona(persona: dict, dal: date, al: date, assegnazioni: list[Ass
         p = postazioni.setdefault(a.postazione, {"postazione": a.postazione, "turni": 0, "ore": 0})
         p["turni"] += 1
         p["ore"] += a.ore
+
+    per_festivita: dict[str, int] = {}
+    for a in sorted(assegnazioni, key=lambda a: a.inizio):
+        nome = festivi.get((a.data, a.fascia))
+        if nome:
+            per_festivita[nome] = per_festivita.get(nome, 0) + 1
 
     ore_lavorate = sum(a.ore for a in assegnazioni)
     giorni_malattia = sum(1 for m in assenze.values() if m == "malattia")
@@ -73,5 +81,7 @@ def riepilogo_persona(persona: dict, dal: date, al: date, assegnazioni: list[Ass
             "weekend": weekend,
             "postazioni": sorted(postazioni.values(), key=lambda p: p["postazione"].lower()),
             "giorni_indisponibili": len({g for g, _ in indisponibili}),
+            "turni_festivi": sum(per_festivita.values()),
+            "festivi": [{"festivita": nome, "turni": n} for nome, n in per_festivita.items()],
         },
     }
