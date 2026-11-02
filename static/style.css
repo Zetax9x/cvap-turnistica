@@ -3,23 +3,23 @@
    rosso CVAP solo per il marchio e i problemi, verde per i volontari e le conferme, blu per le azioni. */
 
 :root {
-  --bg: #c7ced8;
-  --surface: #e2e6eb;
-  --surface-2: #d5dbe2;
-  --text: #1b2330;
-  --muted: #3d4857;
-  --border: #b3bcc8;
-  --border-strong: #7f8a99;
-  --control-border: #5e6878;  /* bordi di campi e pulsanti: almeno 3:1 */
+  --bg: #f2f5f7;
+  --surface: #ffffff;
+  --surface-2: #e8edf1;
+  --text: #17212d;
+  --muted: #4b5968;
+  --border: #c9d2db;
+  --border-strong: #8492a1;
+  --control-border: #596878;  /* bordi di campi e pulsanti: almeno 3:1 */
   --accent: #009541;          /* verde Croce Verde, come il logo */
   --accent-text: #ffffff;
   --primary: #25509d;
   --primary-hover: #1d4384;
-  --primary-soft: #cbd8ee;
+  --primary-soft: #dbe7f8;
   --primary-text: #ffffff;
   --focus: #0a3fa8;           /* 9:1 sul bianco */
-  --weekend: #e8dbbd;
-  --festivo: #f6cdd6;          /* festività: rosa chiaro, distinto dal weekend beige */
+  --weekend: #f4ead0;
+  --festivo: #f8dce3;          /* festività: rosa chiaro, distinto dal weekend beige */
   --festivo-testo: #8e1838;
   --giorno: #b07400;          /* icona del sole */
   --notte: #4654b8;           /* icona della luna */
@@ -35,7 +35,7 @@
 
   --radius: 10px;
   --radius-sm: 6px;
-  --shadow: 0 1px 3px rgba(30, 41, 59, .07);
+  --shadow: 0 2px 8px rgba(30, 41, 59, .08);
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --tap: 44px;                /* altezza minima dei comandi principali */
   color-scheme: light;
@@ -133,7 +133,7 @@ main:focus { outline: none; }
 }
 .btn:hover:not(:disabled) { background: var(--surface-2); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
-.btn-primary { background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
+.btn-primary { background: var(--primary); border-color: var(--primary); color: var(--primary-text); box-shadow: 0 1px 2px rgba(37, 80, 157, .22); }
 .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
 .btn-success { background: var(--ok); border-color: var(--ok); color: var(--surface); }
 .btn-success:hover:not(:disabled) { filter: brightness(1.1); background: var(--ok); }
@@ -170,6 +170,7 @@ main:focus { outline: none; }
 }
 .banner-errore { background: var(--err-bg); border-color: var(--err); color: var(--text); }
 .banner-info { background: var(--info-bg); border-color: var(--man-border); }
+.banner-ok { background: var(--ok-bg); border-color: var(--ok); }
 
 /* ---------- Testata settimana ---------- */
 
