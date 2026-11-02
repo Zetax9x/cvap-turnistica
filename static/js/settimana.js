@@ -139,7 +139,7 @@ function render() {
   const s = stato.settimana;
   const confermata = s.stato === "confermata";
   const frammento = document.createDocumentFragment();
-  frammento.append(renderTestata(s), renderPassi(s), renderToolbar(s));
+  frammento.append(renderTestata(s), renderCentroOperativo(s), renderPassi(s), renderToolbar(s));
   if (confermata) {
     frammento.append(el("div", { class: "banner banner-info" },
       "Settimana confermata: le modifiche sono bloccate. Usa “Riapri” per modificarla."));
@@ -200,6 +200,25 @@ function renderTestata(s) {
   return el("header", { class: "week-header" }, titolo, nav);
 }
 
+/** Riepilogo che risponde subito a tre domande: a che punto siamo, cosa manca e cosa fare ora. */
+function renderCentroOperativo(s) {
+  const confermata = s.stato === "confermata";
+  const generati = s.assegnazioni.some((a) => a.origine === "generato");
+  const scoperti = contaScoperti(s);
+  const statoTesto = confermata ? "Settimana confermata" : generati ? "Turni da controllare" : s.assegnazioni.length ? "Turni compilati a mano" : "Pronta per la pianificazione";
+  const prossima = confermata ? "Invia i turni via email oppure riapri la settimana se serve una modifica."
+    : generati || s.assegnazioni.length ? "Controlla le celle evidenziate e conferma quando il tabellone è pronto."
+      : "Segna eventuali assenze e genera una prima proposta di turni.";
+  const copertura = scoperti
+    ? `${scoperti} ${scoperti === 1 ? "posto scoperto" : "posti scoperti"}`
+    : haTurni(s) ? "Tutti i posti sono coperti" : "Nessun turno ancora compilato";
+  return el("section", { class: `centro-operativo${scoperti ? " centro-operativo-critico" : ""}`, "aria-label": "Stato operativo della settimana" },
+    el("div", { class: "centro-operativo-stato" },
+      el("span", { class: `badge badge-${confermata ? "confermata" : generati ? "bozza" : "nuova"}` }, statoTesto),
+      el("strong", { class: scoperti ? "testo-critico" : null }, copertura)),
+    el("p", { class: "muted" }, prossima));
+}
+
 /** I quattro passi di ogni settimana, con quello a cui si è arrivati evidenziato. */
 function renderPassi(s) {
   const passi = [
@@ -243,24 +262,23 @@ function renderToolbar(s) {
       }, "Invia una prova a me"),
       el("button", {
         type: "button", class: "btn btn-danger", disabled: confermata || dis || !haGenerati, onclick: onRimuoviGenerati,
-      }, "Rimuovi i turni generati")));
+      }, "Rimuovi i turni generati"),
+      confermata ? el("button", { type: "button", class: "btn", disabled: dis, onclick: onRiapri }, "Riapri la settimana") : null,
+      el("button", {
+        type: "button", class: "btn", disabled: !haTurni(s), onclick: stampaLiberi,
+        title: "Stampa per ogni giorno della settimana chi è libero",
+      }, "Stampa liberi"),
+      el("button", { type: "button", class: "btn", onclick: stampaGriglia }, "Stampa tabellone")));
+  const primaria = confermata
+    ? el("button", { type: "button", class: "btn btn-primary btn-grande", disabled: dis, onclick: () => apriInvio(stato.data) }, "Invia i turni via email")
+    : generati || s.assegnazioni.length
+      ? el("button", { type: "button", class: "btn btn-primary btn-grande", disabled: dis, onclick: onConferma }, "Conferma settimana")
+      : el("button", { type: "button", class: "btn btn-primary btn-grande", disabled: dis, onclick: onGenera }, "Genera turni");
   return el("div", { class: "toolbar", role: "group", "aria-label": "Azioni settimana" },
-    el("button", {
-      type: "button", class: "btn btn-primary btn-grande", disabled: confermata || dis, onclick: onGenera,
-    }, haGenerati ? "Rigenera turni" : "Genera turni"),
-    confermata
-      ? [el("button", {
-          type: "button", class: "btn btn-primary btn-grande", disabled: dis, onclick: () => apriInvio(stato.data),
-        }, "Invia i turni via email"),
-        el("button", { type: "button", class: "btn btn-grande", disabled: dis, onclick: onRiapri }, "Riapri")]
-      : el("button", { type: "button", class: "btn btn-success btn-grande", disabled: dis || s.stato === "nuova" && !s.assegnazioni.length, onclick: onConferma }, "Conferma settimana"),
+    primaria,
+    !confermata && haGenerati ? el("button", { type: "button", class: "btn", disabled: dis, onclick: onGenera }, "Rigenera turni") : null,
     altre,
     el("span", { class: "toolbar-spacer" }),
-    el("button", {
-      type: "button", class: "btn btn-ghost", disabled: !haTurni(s), onclick: stampaLiberi,
-      title: "Stampa per ogni giorno della settimana chi è libero",
-    }, "Stampa liberi"),
-    el("button", { type: "button", class: "btn btn-ghost", onclick: stampaGriglia }, "Stampa"),
   );
 }
 
