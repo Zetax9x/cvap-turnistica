@@ -193,9 +193,13 @@ function avviaStampa(targets, controllo) {
   stato.focusStampa = null;
   salvaAperture();
   const pannelli = targets.flatMap((target) => [target, ...target.querySelectorAll("details")]);
-  stato.stampa = { targets, pannelli: pannelli.map((p) => [p, p.open]), focus: controllo || document.activeElement };
+  stato.stampa = {
+    targets, pannelli: pannelli.map((p) => [p, p.open]), focus: controllo || document.activeElement,
+    tutte: targets.length > 1,
+  };
   for (const target of targets) target.classList.add("festivita-da-stampare");
   document.body.classList.add("stampa-festivita");
+  if (stato.stampa.tutte) document.body.classList.add("stampa-tutte-festivita");
   for (const p of pannelli) p.open = true;
   try {
     window.print();
@@ -211,6 +215,7 @@ function ripristinaStampa() {
     for (const [pannello, aperto] of stampa.pannelli) pannello.open = aperto;
     for (const target of stampa.targets) target.classList.remove("festivita-da-stampare");
     document.body.classList.remove("stampa-festivita");
+    document.body.classList.remove("stampa-tutte-festivita");
     stato.stampa = null;
     stato.focusStampa = stampa.focus;
   }

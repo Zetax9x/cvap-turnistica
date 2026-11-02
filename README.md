@@ -68,8 +68,9 @@ per la pianificazione): considera tutta la settimana insieme, non un turno alla 
 - **Ordine in anticipo**: Statistiche → Festività mostra le festività dei prossimi 12 mesi come righe da aprire.
   Dentro ogni festività si aprono le sezioni Giorno e Notte, con conteggi e precedenze separati per le fasce
   abilitate. **Stampa festività** stampa tutte le fasce di quella festività, anche se chiuse; **Stampa tutte le
-  festività** crea un riepilogo compatto dell'orizzonte mostrato. Nella stampa non compaiono volontà di lavoro e
-  assenze; sotto resta lo storico di chi ha lavorato ogni festività negli anni passati.
+  festività** crea un riepilogo compatto dell'orizzonte mostrato, con ogni festività che inizia in una pagina nuova.
+  Nella stampa non compaiono volontà di lavoro e assenze; sotto resta lo storico di chi ha lavorato ogni festività
+  negli anni passati.
 - **Quadro dell'equità**: Statistiche → Equità mostra per ogni rotazione (ore, giorni/notti, weekend, Standby,
   Programmati, Assistenze, Ascoli, sedi, ogni festività) chi ha fatto più e meno della sua parte, la tendenza e il
   dettaglio per dipendente.
