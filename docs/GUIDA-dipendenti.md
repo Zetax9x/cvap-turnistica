@@ -2,12 +2,8 @@
 
 Croce Verde Ascoli Piceno · aggiornata a novembre 2026
 
-Questo documento ha due parti:
-
-- **Parte 1 · Regolamento**: le regole che ognuno deve rispettare (scadenze, indisponibilità, riepilogo delle ore);
-- **Parte 2 · Guida**: come vengono preparati i turni settimanali e quali regole segue il programma che li assegna.
-
-Le regole servono a garantire a tutti riposi adeguati e una distribuzione del lavoro il più possibile equa.
+Nella **Parte 1** c'è il regolamento, cioè le regole che ognuno deve rispettare; nella **Parte 2** la guida, che
+spiega come vengono preparati i turni e quali regole segue il programma che li assegna.
 
 # Parte 1 · Regolamento
 
@@ -42,6 +38,11 @@ turno, **non** l'orario previsto dal turno.
 
 Se alla fine del mese un dipendente ha fatto **meno ore di quelle previste dal contratto**, le ore di differenza
 vengono **comunque pagate dalla Croce Verde**.
+
+## 6. Turni esclusi (divieti)
+
+Per alcuni dipendenti possono essere esclusi un certo tipo di turno o una certa postazione. Questi divieti possono
+essere **decisi dal direttivo** e **non possono essere messi in discussione**.
 
 ---
 
@@ -235,11 +236,11 @@ colleghi.
 
 ### 6.3 Turni esclusi
 
-- Se per motivi concordati non puoi fare un certo tipo di turno o una certa postazione (per esempio «niente
-  notti», «niente Ascoli» oppure «niente Ascoli di notte»), il responsabile lo registra (nel programma si chiama
-  «divieto») e il programma non te lo assegnerà mai.
-- Un'esclusione della mattina vale anche per il turno di giorno intero, che comprende la mattina; lo stesso per il
-  pomeriggio.
+- Per alcuni dipendenti possono essere esclusi un certo tipo di turno o una certa postazione. Queste esclusioni
+  (nel programma si chiamano «divieti») possono essere **decise dal direttivo** e **non possono essere messe in
+  discussione** (regolamento, punto 6).
+- Il responsabile le registra e il programma non assegnerà mai quei turni.
+- Un'esclusione di una parte della giornata vale anche per il turno di giorno intero che la comprende.
 
 ### 6.4 Sostituzioni: quando un collega si ammala
 
@@ -469,7 +470,7 @@ errore al responsabile.
 | Ore minime | 36 ore a settimana, ferie comprese (se il personale basta) |
 | Differenza tra colleghi | Al massimo 12 ore tra chi lavora di più e chi di meno (se il personale basta) |
 | Ferie e malattia | Nessun turno; 6 ore per giorno nel conteggio; niente da recuperare |
-| Turni esclusi | Tipi di turno o postazioni concordati come esclusi: mai assegnati |
+| Turni esclusi (divieti) | Decisi dal direttivo, non si mettono in discussione: quei turni non vengono mai assegnati |
 | Sostituzioni | Ore extra, fuori dai conteggi; mai più di 12 ore di lavoro di fila |
 | Autista e soccorritore | L'autista può fare il soccorritore, non viceversa (salvo «autista programmati» nei Programmati) |
 | Ascoli | Al massimo 2 turni (3 solo in extremis); mai 2 giorni o 2 notti di fila; alternare giorno e notte |
