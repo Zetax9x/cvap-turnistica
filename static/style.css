@@ -1304,28 +1304,50 @@ a.btn { text-decoration: none; }
 .stampa-sostituti { display: none; }
 .coprire-azioni { margin: 0 0 .75rem; }
 
-@page verticale { size: A4 portrait; margin: 12mm; }
+@page verticale { size: A4 portrait; margin: 12mm 13mm; }
 @media print {
   body.stampa-sostituti-attiva > *:not(#stampa-sostituti) { display: none !important; }
-  body.stampa-sostituti-attiva .stampa-sostituti { display: block !important; page: verticale; color: #000; }
-  .stampa-sostituti h1 { font-size: 16pt; margin: 0 0 5mm; padding-bottom: 2mm; border-bottom: 3px solid #009541; }
-  .sost-blocco {
-    break-inside: avoid; page-break-inside: avoid; margin: 0 0 5mm; padding: 2.5mm 3.5mm;
-    border: 1px solid #9aa3af; border-left: 4px solid #009541; border-radius: 2mm; background: #fff;
+  body.stampa-sostituti-attiva .stampa-sostituti {
+    display: block !important; page: verticale; color: #111; font-size: 11pt; line-height: 1.4;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
-  .sost-blocco h2 { font-size: 12.5pt; margin: 0 0 1mm; }
-  .sost-assente { margin: 0 0 2mm; font-size: 11pt; }
-  .sost-candidati { margin: 0; padding-left: 7mm; font-size: 11pt; }
-  .sost-candidati > li { padding: 1mm 1.5mm; margin-bottom: 1mm; border-radius: 1.5mm; }
-  .sost-nome { font-size: 12pt; font-weight: 800; }
-  .sost-ore { color: #1b2330; }
-  .sost-fuori-regola { background: #fff1dc; border-left: 3px solid #e07800; }
-  .sost-avvisi { font-size: 10pt; color: #6b3500; margin-top: .5mm; }
-  .sost-avvisi ul { margin: .5mm 0 0; padding-left: 5mm; }
-  .sost-note { font-size: 9.5pt; color: #4b5563; margin-top: .5mm; }
-  .sost-nessuno { margin: 0; font-weight: 700; color: #7a4a00; background: #ffeec2; padding: 1.5mm 2mm; border-radius: 1.5mm; }
+  .sost-testata { border-bottom: 3px solid #009541; padding-bottom: 2mm; margin-bottom: 3mm; }
+  .sost-testata h1 { font-size: 18pt; margin: 0; color: #0d5a2e; }
+  .sost-periodo { margin: .5mm 0 0; font-size: 10.5pt; color: #374151; }
+  .sost-intro { margin: 0 0 4mm; font-size: 10.5pt; }
+  .sost-blocco {
+    break-inside: avoid; page-break-inside: avoid; margin: 0 0 5mm; padding: 3mm 4mm;
+    border: 1px solid #9aa3af; border-radius: 2mm; background: #fff;
+  }
+  .sost-numero { margin: 0; font-size: 9pt; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #6b7280; }
+  .sost-blocco h2 { font-size: 14pt; margin: .5mm 0 0; }
+  .sost-dove { margin: 0; font-size: 11.5pt; font-weight: 600; }
+  .sost-assente { margin: 1mm 0 3mm; }
+  .sost-proposta { margin: 0 0 3mm; padding: 2.5mm 3.5mm; border-radius: 1.5mm; background: #e3f4ea; border-left: 5px solid #009541; }
+  .sost-proposta-nessuna { background: #ffeec2; border-left-color: #e07800; }
+  .sost-etichetta { margin: 0 0 .5mm; font-size: 9pt; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: #0d5a2e; }
+  .sost-proposta-nessuna .sost-etichetta { color: #7a4a00; }
+  .sost-scelta { margin: 0; font-size: 13pt; }
+  .sost-dettaglio { margin: .8mm 0 0; font-size: 10.5pt; }
+  .sost-passi { margin: 1.5mm 0 0; padding-left: 6mm; font-size: 11.5pt; }
+  .sost-passi li { margin-bottom: 1mm; }
+  .sost-piccolo { font-size: 10pt; color: #374151; }
+  .sost-alternative { margin-top: 2mm; }
+  .sost-titoletto { margin: 0 0 1mm; font-weight: 700; font-size: 10.5pt; }
+  .sost-alternative-fuori .sost-titoletto { color: #8a4200; }
+  .sost-tabella { width: 100%; border-collapse: collapse; font-size: 10pt; }
+  .sost-tabella th { text-align: left; font-size: 9pt; color: #374151; border-bottom: 1.5px solid #6b7280; padding: .8mm 1.5mm; }
+  .sost-tabella td { border-bottom: 1px solid #d1d5db; padding: 1mm 1.5mm; vertical-align: top; }
+  .sost-tabella tr { break-inside: avoid; }
+  .sost-alternative-fuori .sost-tabella td { background: #fff4e5; }
+  .sost-col-n { width: 7mm; color: #6b7280; }
+  .sost-tabella { table-layout: fixed; }
+  .sost-tabella th:nth-child(2) { width: 30mm; }
+  .sost-tabella th:nth-child(3) { width: 34mm; }
+  .sost-col-ore { white-space: nowrap; }
   .sost-errore { margin: 0; color: #b3121f; font-weight: 700; }
-  .sost-nota { font-size: 10pt; font-weight: 600; margin-top: 4mm; padding: 2mm 3mm; background: #ffe2b8; border-left: 4px solid #e07800; }
+  .sost-nota { margin-top: 4mm; padding: 2mm 3mm; font-size: 9.5pt; background: #f3f4f6; border-left: 4px solid #9aa3af; }
+  .sost-nota p { margin: 0 0 .8mm; }
 }
 
 /* ---------- Scambio a catena: B prende il turno, C prende quello di B (ore extra) ---------- */
@@ -1335,8 +1357,3 @@ a.btn { text-decoration: none; }
 .catena { border-left-color: #009541; }
 .catena-frase { flex-basis: 100%; }
 .catene-oppure { margin: .3rem 0 .35rem; font-size: .9rem; font-weight: 600; color: var(--muted); }
-@media print {
-  .sost-catene { margin: 0 0 2mm; padding: 1.5mm 2mm; border-radius: 1.5mm; background: #e3f4ea; border: 1px solid #7cc39a; }
-  .sost-catene-titolo { margin: 0 0 1mm; font-size: 10.5pt; }
-  .sost-catene .sost-candidati > li { margin-bottom: 1.5mm; }
-}

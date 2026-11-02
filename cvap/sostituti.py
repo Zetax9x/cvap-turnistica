@@ -25,7 +25,7 @@ ERRORI_BLOCCANTI = frozenset({"persona", "qualifica", "segmento", "divieto", "fe
 LAVORO_DI_FILA_MAX = 12  # ore di lavoro senza staccare: oltre, mai
 PAUSA_STACCO = 2         # una pausa più corta (es. Standby fino alle 19 e notte dalle 20) non interrompe il lavoro
 GIORNI_TURNO_CEDUTO = 3  # catene: B cede solo un turno entro 3 giorni (oltre non può essere quello che lo blocca)
-CATENE_MAX = 10
+CATENE_MAX = 1  # scelta dell'utente: si propone solo lo scambio migliore
 # un turno in più avvicina sempre al minimo di ore: il messaggio cambia ma non è un problema nuovo
 ERRORI_IGNORATI = frozenset({"ore_min"})
 
