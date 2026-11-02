@@ -1,7 +1,47 @@
-# Turni nelle festività: cosa cambia per i dipendenti
+# Turni dei dipendenti: regolamento e guida
 
-Breve guida per il personale dipendente. I turni li prepara il responsabile con il programma dei turni; questa
-pagina spiega come vengono distribuiti i turni nelle festività.
+Questo documento ha due parti:
+
+- **il regolamento**: le regole che ognuno deve rispettare (scadenze, indisponibilità, riepilogo delle ore);
+- **la guida**: come il programma dei turni distribuisce i turni, in particolare quelli delle festività.
+
+I turni li prepara il responsabile con il programma dei turni.
+
+# Parte 1 · Regolamento
+
+## 1. Scadenze della settimana
+
+| Cosa | Chi | Entro quando |
+|------|-----|--------------|
+| Comunicare le indisponibilità per la settimana successiva | ogni dipendente | **venerdì alle ore 12** |
+| Confermare e inviare i turni della settimana successiva | il responsabile | **venerdì alle ore 20** |
+
+## 2. Indisponibilità: sempre per l'intera giornata
+
+L'indisponibilità riguarda **tutto il giorno**, non un singolo turno.
+
+- ✅ Corretto: «**sabato** libero».
+- ❌ Da non fare: «sabato **notte** libero» o «sabato mattina libero».
+
+## 3. Indisponibilità nel fine settimana: al massimo 2 al mese
+
+Ogni mese si possono chiedere **al massimo 2 indisponibilità nel fine settimana** (sabato o domenica).
+
+## 4. Riepilogo mensile delle ore: orari effettivi
+
+Quando compili il riepilogo mensile delle ore, scrivi l'**orario effettivo** in cui hai iniziato e finito il
+turno, **non** l'orario previsto dal turno.
+
+> Esempio: nei Programmati il turno del pomeriggio finisce alle 20, ma se hai finito alle 17 scrivi **17**, non 20.
+
+## 5. Ore sotto il contratto
+
+Se alla fine del mese un dipendente ha fatto **meno ore di quelle previste dal contratto**, le ore di differenza
+vengono **comunque pagate dalla Croce Verde**.
+
+---
+
+# Parte 2 · Guida: le festività
 
 ## Quali festività
 
@@ -33,7 +73,7 @@ le regole.
 
 ## Ferie e indisponibilità
 
-Se in una festività sei **in ferie** o hai segnato un'**indisponibilità** per uno dei turni che contano, quella
+Se in una festività sei **in ferie** o hai un'**indisponibilità** in quel giorno, quella
 festività conta come **riposo goduto**: la volta dopo hai la precedenza a lavorarla. Così chi prende spesso ferie
 a Natale non salta il turno di Natale per sempre.
 

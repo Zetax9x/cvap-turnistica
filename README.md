@@ -75,7 +75,7 @@ per la pianificazione): considera tutta la settimana insieme, non un turno alla 
   Programmati, Assistenze, Ascoli, sedi, ogni festività) chi ha fatto più e meno della sua parte, la tendenza e il
   dettaglio per dipendente.
 
-Guida per il personale: [docs/GUIDA-dipendenti.md](docs/GUIDA-dipendenti.md).
+Regolamento e guida per il personale: [docs/GUIDA-dipendenti.md](docs/GUIDA-dipendenti.md).
 
 ## Password e invio dei turni via email
 
