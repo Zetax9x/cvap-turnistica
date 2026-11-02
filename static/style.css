@@ -791,6 +791,8 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
 .avviso-turni-ferie p { margin: 0 0 .5rem; }
 .avviso-turni-settimane { list-style: none; margin: 0 0 .6rem; padding: 0; display: grid; gap: .5rem; }
 .avviso-turni-elenco { margin: .3rem 0 0; padding-left: 1.2rem; font-size: .9rem; }
+.ferie-anteprima-campo { margin-top: -.35rem; }
+.ferie-anteprima { margin: 0; padding: .45rem .6rem; border-left: 3px solid var(--primary); background: var(--primary-soft); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
 .copertura-preventiva {
   margin: 0 0 1rem; padding: .9rem 1rem; border: 1px solid var(--ok); border-left: 5px solid var(--ok);
   border-radius: var(--radius); background: var(--ok-bg); box-shadow: var(--shadow);

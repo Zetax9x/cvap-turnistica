@@ -280,7 +280,24 @@ function renderFerie() {
   const motivo = el("select", { id: "ferie-motivo" },
     el("option", { value: "ferie" }, "Ferie"),
     el("option", { value: "malattia" }, "Malattia o infortunio"));
-  dal.addEventListener("change", () => { if (dal.value && (!al.value || al.value < dal.value)) al.value = dal.value; });
+  const anteprima = el("p", { class: "hint ferie-anteprima", "aria-live": "polite" });
+  const aggiornaAnteprima = () => {
+    if (!dal.value || !al.value) { anteprima.textContent = "Indica il periodo: il controllo segnalerà le settimane coinvolte."; return; }
+    const settimane = new Set();
+    for (let data = dal.value; data <= al.value;) {
+      settimane.add(lunedi(data));
+      const dopo = new Date(`${data}T12:00:00`);
+      dopo.setDate(dopo.getDate() + 1);
+      data = dopo.toISOString().slice(0, 10);
+    }
+    const elenco = [...settimane].map((x) => dataLunga(x)).join(", ");
+    anteprima.textContent = settimane.size === 1
+      ? `Verrà controllata la settimana del ${elenco}.`
+      : `Verranno controllate ${settimane.size} settimane: ${elenco}.`;
+  };
+  dal.addEventListener("change", () => { if (dal.value && (!al.value || al.value < dal.value)) al.value = dal.value; aggiornaAnteprima(); });
+  al.addEventListener("change", aggiornaAnteprima);
+  aggiornaAnteprima();
   const invia = el("button", { type: "submit", class: "btn btn-primary", disabled: !dipendenti.length }, "Aggiungi");
 
   const form = el("form", {
@@ -308,7 +325,8 @@ function renderFerie() {
   el("div", { class: "campo" }, el("label", { for: "ferie-motivo" }, "Motivo"), motivo),
   el("div", { class: "campo" }, el("label", { for: "ferie-dal" }, "Dal"), dal),
   el("div", { class: "campo" }, el("label", { for: "ferie-al" }, "Al (incluso)"), al),
-  el("div", { class: "campo campo-azione" }, invia));
+  el("div", { class: "campo campo-azione" }, invia),
+  el("div", { class: "campo campo-largo ferie-anteprima-campo" }, anteprima));
 
   const tabella = (lista) => el("div", { class: "table-scroll" }, el("table", { class: "tabella" },
     el("thead", {}, el("tr", {},
