@@ -41,7 +41,8 @@ async function carica() {
 
 function render() {
   const root = clear(stato.root);
-  const { settimane, rotazioni } = stato.dati;
+  const { settimane } = stato.dati;
+  const rotazioni = stato.dati.rotazioni.filter((r) => !r.festivita);  // le festività hanno la loro pagina
   root.append(renderSchede("equita"), el("header", { class: "view-header" },
     el("div", { class: "view-header-riga" }, el("h1", {}, "Equità dei turni"), bottoneStampa()),
     el("p", { class: "muted" },
@@ -50,9 +51,7 @@ function render() {
       + "Fai clic su una riga per vedere tutti i dipendenti.")));
   root.append(renderPeriodo(), el("p", { class: "solo-stampa" }, `Periodo: ${descriviPeriodo()}`));
 
-  // le festività senza dati si nascondono; senza settimane generate restano solo le festività con dati
-  const senzaDati = rotazioni.filter((r) => r.festivita && r.con_dati === false);
-  const visibili = rotazioni.filter((r) => (settimane.length || r.festivita) && !senzaDati.includes(r));
+  const visibili = settimane.length ? rotazioni : [];
   if (!settimane.length) {
     root.append(el("p", { class: "muted" }, "Nessuna settimana con turni generati nel periodo scelto."));
     if (!visibili.length) return;
@@ -97,18 +96,6 @@ function render() {
     + "Weekend, Standby, Programmati e Assistenze: la parte attesa è in proporzione alle settimane lavorate; "
     + "per Ascoli alle settimane con Ascoli. Chi ha il divieto per una postazione non entra nel suo conto. "
     + "I volontari non compaiono."));
-  if (senzaDati.length) {
-    root.append(el("p", { class: "hint" }, `${senzaDati.length === 1 ? "1 festività" : `${senzaDati.length} festività`} `
-      + `senza dati nel periodo (nessun dipendente attivo l'ha lavorata negli ultimi 5 anni): ${senzaDati.map((r) => r.nome).join(", ")}.`));
-  }
-  if (visibili.some((r) => r.festivita)) {
-    root.append(el("p", { class: "hint" },
-      "Festività: ognuna ha il suo conto, sugli ultimi 5 anni fino alla fine del periodo scelto (la data di inizio "
-      + "non conta), con gli anni passati inseriti a mano e i turni del programma, come fa il generatore. La parte "
-      + "attesa è in proporzione alle volte in cui la festività è caduta mentre la persona era in servizio, anche se "
-      + "in ferie o indisponibile; la malattia non conta. Una festività cade una volta l'anno, quindi non c'è un "
-      + "andamento settimana per settimana."));
-  }
 }
 
 /** "ore" | "turni", al singolare per 1 (1 turno, ma 0,5 turni). */
@@ -186,7 +173,6 @@ function svg(tag, attrs = {}, ...figli) {
 }
 
 function grafico(r) {
-  if (r.festivita) return el("span", { class: "muted" }, "Una volta l'anno");
   const valori = r.andamento.map((p) => p.differenza);
   if (!valori.length) return el("span", { class: "muted" }, "—");
   const massimo = Math.max(...valori, 0) || 1;
@@ -239,10 +225,9 @@ function renderDettaglio(r) {
     contenuto.push(el("p", { class: "muted" }, "Nessun dipendente ha ancora turni di questo tipo nel periodo."));
   }
   if (esclusi.length) {
-    contenuto.push(el("p", { class: "hint" }, r.festivita
-      ? `Non entrano nel conto: ${esclusi.map((d) => (d.motivo ? `${d.nome} (${d.motivo})` : d.nome)).join(", ")}.`
-      : "Non entrano nel conto (divieto per la postazione o nessun turno o settimana di questo tipo nel periodo): "
-        + `${esclusi.map((d) => d.nome).join(", ")}.`));
+    contenuto.push(el("p", { class: "hint" },
+      "Non entrano nel conto (divieto per la postazione o nessun turno o settimana di questo tipo nel periodo): "
+      + `${esclusi.map((d) => d.nome).join(", ")}.`));
   }
   return el("div", { class: "eq-dettaglio" }, contenuto);
 }
