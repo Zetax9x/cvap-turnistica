@@ -1,0 +1,8 @@
+[Unit]
+Description=Copia su Google Drive i backup di CVAP Turnistica
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/cvap-backup-gdrive

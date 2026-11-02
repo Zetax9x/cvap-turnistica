@@ -1,0 +1,8 @@
+[Unit]
+Description=Aggiorna CVAP Turnistica da GitHub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/cvap-aggiorna

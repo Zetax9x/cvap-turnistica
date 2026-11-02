@@ -50,6 +50,21 @@ TURNI_RICHIEDIBILI = {
 
 Tipo = Literal["dipendente", "volontario"]
 Qualifica = Literal["autista", "soccorritore"]
+WORKER_MAX_AUTOMATICI = 8   # senza CVAP_WORKER: i core della macchina, al massimo questi
+WORKER_MAX_IMPOSTABILI = 64
+
+
+def worker_generatore() -> int:
+    """Processi paralleli del generatore: CVAP_WORKER se è un intero da 1 a 64, altrimenti i core che il
+    programma può usare (al massimo 8). Così su un VPS a 6 core se ne usano 6, senza contendersi la CPU."""
+    valore = os.environ.get("CVAP_WORKER", "").strip()
+    if valore.isdigit() and 1 <= int(valore) <= WORKER_MAX_IMPOSTABILI:
+        return int(valore)
+    try:
+        core = len(os.sched_getaffinity(0))
+    except AttributeError:  # non disponibile su macOS e Windows
+        core = os.cpu_count() or 1
+    return max(1, min(WORKER_MAX_AUTOMATICI, core))
 
 
 # un solo indirizzo semplice (ASCII, niente virgole, <>, virgolette): mai più destinatari in un campo
@@ -689,7 +704,7 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                                 storico=storico, ferie=db.ferie_periodo(conn, giorni[0], giorni[-1]),
                                 indisponibili=db.indisponibili_periodo(conn, giorni[0], giorni[-1]),
                                 fabbisogno=fabbisogno, scarto_ore_max=db.get_scarto_ore_max(conn),
-                                festivi=festivi, **kwargs)
+                                festivi=festivi, workers=worker_generatore(), **kwargs)
             durata = round(time.monotonic() - t0, 2)
             if ris.stato in ("impossibile", "nessuna_soluzione"):
                 # niente da salvare: si tengono i turni generati in precedenza
