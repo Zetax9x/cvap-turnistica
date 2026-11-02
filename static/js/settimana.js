@@ -40,6 +40,7 @@ const stato = {
   dispAperta: {},      // lunedì ISO -> pannello disponibilità aperto/chiuso dall'utente
   richAperta: {},      // lunedì ISO -> pannello richieste Standby/Programmati aperto/chiuso
   coperturaPreventiva: null, // esito dell'ultima indisponibilità modificata in questa settimana
+  filtroTabellone: "tutti",
 };
 
 let dialogCella = null;
@@ -79,6 +80,7 @@ document.addEventListener("focusout", (e) => {
 export async function mostra(root, parametro) {
   stato.root = root;
   stato.coperturaPreventiva = null;
+  stato.filtroTabellone = "tutti";
   azzeraSostituti();  // i suggerimenti dipendono anche da settimane vicine, persone e divieti
   let data = parametro && /^\d{4}-\d{2}-\d{2}$/.test(parametro) ? parametro : null;
   if (!data) {
@@ -153,9 +155,9 @@ function render() {
   if (stato.coperturaPreventiva) frammento.append(renderCoperturaPreventiva(stato.coperturaPreventiva));
   if ((s.postazioni_a_richiesta || []).length) frammento.append(renderRichieste(s));
   const speciali = postazioniSpecialiVisibili(s);
-  frammento.append(renderLegenda(speciali.length > 0));
+  frammento.append(renderLegenda(speciali.length > 0), renderFiltriTabellone());
 
-  const griglie = el("div", { class: "griglie" });
+  const griglie = el("div", { class: `griglie filtro-${stato.filtroTabellone}` });
   for (const postazione of s.postazioni) griglie.append(renderGriglia(s, postazione));
   if (!s.postazioni.length) griglie.append(el("p", { class: "muted" }, "Nessuna postazione attiva in questa settimana."));
   for (const postazione of speciali) griglie.append(renderGriglia(s, postazione));
@@ -295,6 +297,17 @@ function renderLegenda(conSpeciali) {
     el("li", {}, el("span", { class: "scoperto" }, "scoperto"), " posto da coprire"),
     conSpeciali ? el("li", {}, el("span", { class: "non-richiesto", "aria-hidden": "true" }, "—"), " turno non richiesto") : null,
   );
+}
+
+function renderFiltriTabellone() {
+  const filtri = [["tutti", "Tutti"], ["scoperti", "Evidenzia scoperti"], ["manuali", "Evidenzia modifiche manuali"]];
+  return el("div", { class: "filtri filtri-tabellone", role: "group", "aria-label": "Evidenza nel tabellone" },
+    el("span", { class: "filtri-etichetta" }, "Tabellone:"),
+    filtri.map(([valore, testo]) => el("button", {
+      type: "button", class: `btn btn-small btn-filter${stato.filtroTabellone === valore ? " attivo" : ""}`,
+      "aria-pressed": stato.filtroTabellone === valore ? "true" : "false",
+      onclick: () => { stato.filtroTabellone = valore; render(); },
+    }, testo)));
 }
 
 // Frasi tecniche del generatore che a chi fa i turni non servono (lo stato si vede già dal titolo).
@@ -529,6 +542,7 @@ function renderGriglia(s, postazione) {
   const violazioni = indiceViolazioni(s);
   const confermata = s.stato === "confermata";
   const speciale = aRichiesta(postazione);
+  const mancanti = contaScopertiPostazione(s, postazione);
 
   const thead = el("thead", {}, el("tr", {},
     el("th", { scope: "col", class: "col-turno" }, "Turno"),
@@ -555,9 +569,24 @@ function renderGriglia(s, postazione) {
   const idTitolo = `griglia-${postazione.replace(/[^\w-]/g, "_")}`;
   return el("section", { class: `griglia-blocco${speciale ? " griglia-speciale" : ""}`, "aria-labelledby": idTitolo },
     el("h2", { id: idTitolo, class: "griglia-titolo" }, postazione,
-      speciale ? el("span", { class: "griglia-sottotitolo muted" }, " · solo i turni richiesti") : null),
+      speciale ? el("span", { class: "griglia-sottotitolo muted" }, " · solo i turni richiesti") : null,
+      el("span", { class: `griglia-copertura${mancanti ? " griglia-copertura-critica" : ""}` },
+        mancanti ? `${mancanti} ${mancanti === 1 ? "scoperto" : "scoperti"}` : "coperto")),
     el("div", { class: "griglia-scroll" },
+      el("p", { class: "griglia-scorri" }, "Scorri orizzontalmente per vedere tutti i giorni"),
       el("table", { class: "griglia" }, thead, tbody)));
+}
+
+function contaScopertiPostazione(s, postazione) {
+  let totale = 0;
+  for (const riga of righeGriglia(postazione)) {
+    for (const data of s.giorni) {
+      const cella = { data, postazione, fascia: riga.fascia, ruolo: riga.ruolo };
+      if (riga.segmento) cella.segmento = riga.segmento;
+      totale += coperturaCella(s, cella, assegnazioniCella(s, cella)).nMancanti;
+    }
+  }
+  return totale;
 }
 
 /** Il segmento va indicato sul chip solo se diverso dal turno della riga. */
@@ -619,6 +648,7 @@ function renderCella(s, cella, scopertiReport, violazioni, confermata, tag = "td
   const etichettaCella = `${postazione}, ${GIORNI_BREVI[i]} ${ddmm(data)}, ${turno}: ${descr.join(", ")}`;
   if (scoperti.length) classi.push("cella-scoperta");
   if (evidenzia) classi.push("cella-evidenziata");
+  if (lista.some((a) => a.origine === "manuale")) classi.push("cella-manuale");
 
   return el(tag, { class: classi.join(" ") },
     el("button", {

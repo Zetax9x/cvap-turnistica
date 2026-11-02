@@ -291,6 +291,11 @@ input[type="checkbox"] { min-height: 0; width: 1.1rem; height: 1.1rem; accent-co
 .griglia-titolo::before {
   content: ""; width: 10px; height: 10px; border-radius: 3px; background: var(--accent); flex: none;
 }
+.griglia-copertura {
+  margin-left: auto; padding: .12rem .55rem; border: 1px solid var(--ok); border-radius: 999px;
+  color: var(--ok); background: var(--ok-bg); font-size: .78rem; font-weight: 750; white-space: nowrap;
+}
+.griglia-copertura-critica { border-color: var(--err); color: var(--err); background: var(--err-bg); }
 .griglia-scroll {
   overflow-x: auto; -webkit-overflow-scrolling: touch;
   border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
@@ -301,7 +306,7 @@ input[type="checkbox"] { min-height: 0; width: 1.1rem; height: 1.1rem; accent-co
 .griglia tr > :last-child { border-right: 0; }
 .griglia tbody tr:last-child > * { border-bottom: 0; }
 .griglia thead th {
-  background: var(--surface); padding: .55rem .35rem; font-size: .9rem; text-align: center;
+  position: sticky; top: 68px; z-index: 2; background: var(--surface); padding: .55rem .35rem; font-size: .9rem; text-align: center;
   border-top: 0; border-bottom: 2px solid var(--border-strong);
 }
 .giorno-nome { font-weight: 750; }
@@ -310,6 +315,8 @@ input[type="checkbox"] { min-height: 0; width: 1.1rem; height: 1.1rem; accent-co
   width: 140px; text-align: left; padding: .5rem .65rem; background: var(--surface-2);
   position: sticky; left: 0; z-index: 1;
 }
+.griglia thead .col-turno { z-index: 3; }
+.griglia-scorri { display: none; }
 .griglia tbody .col-turno { font-weight: 400; }
 .fascia-label {
   display: flex; align-items: center; gap: .3rem;
@@ -367,6 +374,12 @@ input[type="checkbox"] { min-height: 0; width: 1.1rem; height: 1.1rem; accent-co
 .chip-viol-errore { outline: 2px solid var(--err); outline-offset: -1px; }
 .chip-viol-errore .chip-alert { background: var(--err); color: var(--surface); }
 .chip-viol-avviso .chip-alert { background: var(--warn-border); color: #000; }
+
+/* I filtri non eliminano le celle: conservano la mappa dei turni, ma portano in primo piano ciò che serve. */
+.griglie.filtro-scoperti .cella:not(.cella-scoperta) { opacity: .2; }
+.griglie.filtro-manuali .cella:not(.cella-manuale) { opacity: .2; }
+.filtri-tabellone { margin: .5rem 0 .75rem; }
+.filtri-etichetta { font-weight: 700; color: var(--muted); }
 
 .scoperto {
   display: inline-block; align-self: flex-start;
@@ -646,6 +659,9 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
   .toolbar-spacer { display: none; }
   .altre-opzioni-menu { left: auto; right: 0; }
   .griglia .col-turno { width: 104px; }
+  .griglia thead th { top: 52px; }
+  .griglia-scorri { display: block; margin: 0; padding: .35rem .65rem; font-size: .78rem; color: var(--muted); background: var(--surface-2); }
+  .griglia-copertura { font-size: .72rem; }
   .chip { font-size: .8rem; overflow-wrap: break-word; }
   .tabella-stat tbody th { white-space: nowrap; }
   .tabella .azioni { white-space: normal; }
