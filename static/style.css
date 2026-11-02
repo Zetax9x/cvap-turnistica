@@ -775,6 +775,18 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
 .avviso-turni-ferie p { margin: 0 0 .5rem; }
 .avviso-turni-settimane { list-style: none; margin: 0 0 .6rem; padding: 0; display: grid; gap: .5rem; }
 .avviso-turni-elenco { margin: .3rem 0 0; padding-left: 1.2rem; font-size: .9rem; }
+.copertura-preventiva {
+  margin: 0 0 1rem; padding: .9rem 1rem; border: 1px solid var(--ok); border-left: 5px solid var(--ok);
+  border-radius: var(--radius); background: var(--ok-bg); box-shadow: var(--shadow);
+}
+.copertura-preventiva-titolo { display: flex; align-items: center; gap: .55rem; }
+.copertura-icona { display: inline-grid; place-items: center; width: 1.45rem; height: 1.45rem; border-radius: 50%; background: var(--ok); color: #fff; font-weight: 800; }
+.copertura-preventiva p { margin: .35rem 0 0; }
+.copertura-preventiva-lista { margin: .65rem 0 0; padding-left: 1.2rem; columns: 2 20rem; }
+.copertura-non-copribile { border-color: var(--err); background: var(--err-bg); }
+.copertura-non-copribile .copertura-icona { background: var(--err); }
+.copertura-incerta { border-color: var(--warn-border); background: var(--warn-bg); }
+.copertura-incerta .copertura-icona { background: var(--warn); }
 .btn-primary:visited { color: var(--primary-text); }
 a.btn { text-decoration: none; }
 

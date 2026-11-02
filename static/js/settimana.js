@@ -39,6 +39,7 @@ const stato = {
   cellaAperta: null,   // {data, postazione, fascia, ruolo, segmento?} (segmento solo per i Programmati)
   dispAperta: {},      // lunedì ISO -> pannello disponibilità aperto/chiuso dall'utente
   richAperta: {},      // lunedì ISO -> pannello richieste Standby/Programmati aperto/chiuso
+  coperturaPreventiva: null, // esito dell'ultima indisponibilità modificata in questa settimana
 };
 
 let dialogCella = null;
@@ -77,6 +78,7 @@ document.addEventListener("focusout", (e) => {
 
 export async function mostra(root, parametro) {
   stato.root = root;
+  stato.coperturaPreventiva = null;
   azzeraSostituti();  // i suggerimenti dipendono anche da settimane vicine, persone e divieti
   let data = parametro && /^\d{4}-\d{2}-\d{2}$/.test(parametro) ? parametro : null;
   if (!data) {
@@ -148,6 +150,7 @@ function render() {
   if (avvisoCoprire) frammento.append(avvisoCoprire);
   if (s.report) frammento.append(renderReport(s.report));
   frammento.append(renderDisponibilita(s));
+  if (stato.coperturaPreventiva) frammento.append(renderCoperturaPreventiva(stato.coperturaPreventiva));
   if ((s.postazioni_a_richiesta || []).length) frammento.append(renderRichieste(s));
   const speciali = postazioniSpecialiVisibili(s);
   frammento.append(renderLegenda(speciali.length > 0));
@@ -874,6 +877,8 @@ async function onCambiaIndisponibilita(p, data, menu) {
       for (const parte of PARTI_TURNO.filter((x) => scelte.includes(x))) turni.push({ data, parte });
       aggiorna(await api.impostaIndisponibilita(stato.data, p.id, turni));
       const copertura = await api.coperturaPreventiva(stato.data);
+      stato.coperturaPreventiva = copertura;
+      render();
       if (copertura.solo_dipendenti.stato === "non_copribile") {
         const conVolontari = copertura.con_volontari.stato === "copribile"
           ? " Con i volontari già prenotati la settimana è copribile." : "";
@@ -889,6 +894,32 @@ async function onCambiaIndisponibilita(p, data, menu) {
     cella.classList.toggle("disp-indisponibile", Boolean(precedente));
     menu.disabled = false;
   }
+}
+
+/** Esito persistente dell'ultima indisponibilità: usa esclusivamente vincoli rigidi. */
+function renderCoperturaPreventiva(copertura) {
+  const solo = copertura.solo_dipendenti || {};
+  const volontari = copertura.con_volontari || {};
+  const nonCopribile = solo.stato === "non_copribile";
+  const incerto = solo.stato === "da_verificare";
+  const scoperti = solo.scoperti || [];
+  const titolo = nonCopribile ? "Con i soli dipendenti la settimana non è copribile"
+    : incerto ? "Il controllo preventivo richiede una verifica"
+      : "Con i soli dipendenti la settimana resta copribile";
+  const dettagli = scoperti.length
+    ? el("ul", { class: "copertura-preventiva-lista" }, scoperti.map((t) => el("li", {},
+      `${GIORNI_BREVI[indiceGiorno(t.data)]} ${ddmm(t.data)} · ${t.postazione} · ${etichetta("ruolo", t.ruolo)} · ${t.fascia}`)))
+    : null;
+  const notaVolontari = nonCopribile && volontari.stato === "copribile"
+    ? " Con i volontari disponibili, invece, risulta copribile."
+    : null;
+  return el("section", { class: `copertura-preventiva ${nonCopribile ? "copertura-non-copribile" : incerto ? "copertura-incerta" : ""}`, "aria-live": "polite", "aria-label": "Esito del controllo preventivo" },
+    el("div", { class: "copertura-preventiva-titolo" },
+      el("span", { class: "copertura-icona", "aria-hidden": "true" }, nonCopribile ? "!" : incerto ? "?" : "✓"),
+      el("strong", {}, titolo)),
+    el("p", { class: "muted" }, "Questo controllo considera solo le regole rigide: non valuta l'equità dei turni.", notaVolontari),
+    incerto && solo.messaggio ? el("p", { class: "hint" }, solo.messaggio) : null,
+    dettagli);
 }
 
 // ---------------------------------------------------------------- richieste Standby / Programmati
