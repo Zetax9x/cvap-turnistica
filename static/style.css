@@ -440,6 +440,17 @@ input[type="checkbox"] { min-height: 0; width: 1.1rem; height: 1.1rem; accent-co
 .card-title { margin-bottom: .75rem; }
 .card.info ul { margin: 0; padding-left: 1.2rem; }
 .card.info li { margin: .25rem 0; }
+.info-ripiegabile summary { cursor: pointer; font-weight: 700; }
+.info-ripiegabile[open] summary { margin-bottom: .5rem; }
+
+/* Impostazioni: salti alle sezioni e avviso di modifiche non ancora salvate */
+.indice-sezioni { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin: 0 0 1rem; }
+[id^="imp-"] { scroll-margin-top: 84px; }
+.modifiche-non-salvate {
+  margin-right: auto; align-self: center; padding: .1rem .6rem; border: 1px solid var(--warn-border);
+  border-radius: 999px; background: var(--warn-bg); color: var(--warn); font-size: .85rem; font-weight: 700;
+}
+.modifiche-non-salvate:empty { display: none; }
 .pannello h2 { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .75rem; }
 .conteggi { display: inline-flex; gap: .35rem; margin-left: auto; font-size: .85rem; font-weight: 400; }
 .ok-text { color: var(--ok); font-weight: 600; margin: 0; }

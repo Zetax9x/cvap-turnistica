@@ -94,27 +94,69 @@ function render(imp) {
     input,
     anteprima),
   el("div", { class: "form-actions" }, invia));
+  form.id = "imp-alternanza";
+  segnalaModifiche(form);
 
-  const sezioneRiepiloghi = el("section", { class: "card card-larga", "aria-labelledby": "titolo-riepiloghi" },
+  const sezioneRiepiloghi = el("section", { id: "imp-riepiloghi", class: "card card-larga", "aria-labelledby": "titolo-riepiloghi" },
     el("p", { class: "muted" }, "Caricamento degli indirizzi…"));
   mostraRiepiloghi(sezioneRiepiloghi);
   clear(root).append(
     renderSchede(""),
     el("header", { class: "view-header" }, el("h1", {}, "Impostazioni")),
+    renderIndice(),
+    renderInfo(),
     form,
     renderScarto(imp),
     renderMassimiOre(),
     renderDivieti(),
     sezioneRiepiloghi,
-    el("section", { class: "card info", "aria-labelledby": "titolo-info" },
-      el("h2", { id: "titolo-info", class: "card-title" }, "Come funziona"),
-      el("ul", {},
-        el("li", {}, "Le settimane iniziano sempre di lunedì e si alternano: A, B, A, B…"),
-        el("li", {}, el("strong", {}, "Settimana A:"), " postazioni Acquasanta e Venarotta."),
-        el("li", {}, el("strong", {}, "Settimana B:"), " Acquasanta, Venarotta e anche Ascoli."),
-        el("li", {}, "La settimana che contiene la data di riferimento è una settimana A; qualsiasi data scelta viene riportata al lunedì."),
-        el("li", {}, "Turni: giorno 8–20 (divisibile in mattina 8–14 e pomeriggio 14–20 per i volontari) e notte 20–8."))),
   );
+}
+
+/** Le sezioni della pagina, nell'ordine in cui compaiono: [id, etichetta breve]. */
+const SEZIONI = [
+  ["imp-alternanza", "Settimane A/B"],
+  ["imp-scarto", "Differenza ore"],
+  ["imp-parametri", "Massimi ore"],
+  ["imp-divieti", "Divieti"],
+  ["imp-riepiloghi", "Email"],
+];
+
+/** Salti alle sezioni: pulsanti e non link "#", perché l'indirizzo con "#" è già usato dal router. */
+function renderIndice() {
+  return el("nav", { class: "indice-sezioni", "aria-label": "Sezioni di questa pagina" },
+    el("span", { class: "filtri-etichetta" }, "Vai a:"),
+    SEZIONI.map(([id, testo]) => el("button", {
+      type: "button", class: "btn btn-small",
+      onclick: () => {
+        const sezione = document.getElementById(id);
+        if (!sezione) return;
+        sezione.scrollIntoView({ behavior: "smooth", block: "start" });
+        const titolo = sezione.querySelector("h2");
+        if (titolo) { titolo.tabIndex = -1; titolo.focus({ preventScroll: true }); }
+      },
+    }, testo)));
+}
+
+/** In cima ma ripiegata: serve a chi non conosce le regole, non deve spingere giù i campi. */
+function renderInfo() {
+  return el("details", { class: "card info info-ripiegabile" },
+    el("summary", {}, "Come funziona"),
+    el("ul", {},
+      el("li", {}, "Le settimane iniziano sempre di lunedì e si alternano: A, B, A, B…"),
+      el("li", {}, el("strong", {}, "Settimana A:"), " postazioni Acquasanta e Venarotta."),
+      el("li", {}, el("strong", {}, "Settimana B:"), " Acquasanta, Venarotta e anche Ascoli."),
+      el("li", {}, "La settimana che contiene la data di riferimento è una settimana A; qualsiasi data scelta viene riportata al lunedì."),
+      el("li", {}, "Turni: giorno 8–20 (divisibile in mattina 8–14 e pomeriggio 14–20 per i volontari) e notte 20–8.")));
+}
+
+/** Scrive "Modifiche non salvate" accanto a Salva appena un campo del modulo cambia. */
+function segnalaModifiche(form) {
+  const azioni = form.querySelector(".form-actions");
+  if (!azioni) return;
+  const avviso = el("span", { class: "modifiche-non-salvate", role: "status" });
+  azioni.prepend(avviso);
+  form.addEventListener("input", () => { avviso.textContent = "Modifiche non salvate"; });
 }
 
 // ---------------------------------------------------------------- parametri dei dipendenti
@@ -131,7 +173,7 @@ function renderScarto(imp) {
     min: String(SCARTO_MIN), max: String(SCARTO_MAX), step: "1", value: String(valore),
   });
   const invia = el("button", { type: "submit", class: "btn btn-primary" }, "Salva");
-  return el("form", {
+  const form = el("form", {
     class: "card",
     onsubmit: async (e) => {
       e.preventDefault();
@@ -159,11 +201,14 @@ function renderScarto(imp) {
     el("p", { class: "hint" }, `Tra chi fa più ore e chi ne fa meno nella settimana (ferie e malattia: 6 h al giorno). `
       + `Chi ha un massimo di ore non entra nel confronto. Attualmente ${valore} h. Valori ammessi da ${SCARTO_MIN} a ${SCARTO_MAX}; predefinito ${SCARTO_PREDEFINITO}.`)),
   el("div", { class: "form-actions" }, invia));
+  form.id = "imp-scarto";
+  segnalaModifiche(form);
+  return form;
 }
 
 function renderMassimiOre() {
   const dip = dipendentiAttivi();
-  const sezione = el("section", { class: "card", "aria-labelledby": "titolo-parametri" },
+  const sezione = el("section", { id: "imp-parametri", class: "card", "aria-labelledby": "titolo-parametri" },
     el("h2", { id: "titolo-parametri", class: "card-title" }, "Parametri dipendenti"));
   if (!dip.length) {
     sezione.append(el("p", { class: "muted" }, "Nessun dipendente attivo. Aggiungilo nella sezione Personale."));
@@ -216,6 +261,7 @@ function renderMassimiOre() {
       el("th", { scope: "row" }, el("label", { for: `max-ore-${p.id}` }, p.nome)),
       el("td", {}, campi.get(p.id))))))),
   el("div", { class: "form-actions" }, invia));
+  segnalaModifiche(form);
   sezione.append(form);
   return sezione;
 }
@@ -228,7 +274,7 @@ function etichettaDivieto(d) {
 
 function renderDivieti() {
   const dip = dipendentiAttivi();
-  const sezione = el("section", { class: "card", "aria-labelledby": "titolo-divieti" },
+  const sezione = el("section", { id: "imp-divieti", class: "card", "aria-labelledby": "titolo-divieti" },
     el("h2", { id: "titolo-divieti", class: "card-title" }, "Divieti dei dipendenti"),
     el("p", { class: "hint" }, "Turni che un dipendente non può fare: il generatore non glieli assegna e "
       + "i turni inseriti a mano vengono segnalati."));
