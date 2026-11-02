@@ -89,6 +89,7 @@ Variabili d'ambiente (su Vercel: *Settings → Environment Variables*):
 | `SMTP_USER`, `SMTP_PASSWORD` | Utente e password SMTP (Gmail: indirizzo e *password per le app*; Brevo: login e chiave SMTP). |
 | `EMAIL_MITTENTE` | Indirizzo che spedisce (predefinito `SMTP_USER`). |
 | `EMAIL_NOME_MITTENTE` | Nome mostrato (predefinito "Croce Verde Ascoli Piceno - Turni"). |
+| `CVAP_WORKER` | Facoltativa: processi paralleli del generatore (1–64). Senza, tanti quanti i core della macchina, al massimo 8. |
 
 In **Personale** si inserisce l'email di ognuno. Dopo **Conferma settimana** compare **Invia i turni via email**:
 chi è di turno quella settimana (dipendente o volontario) riceve i propri turni e il tabellone completo; chi non ha turni non riceve nulla. Se la settimana viene riaperta e modificata, si può
