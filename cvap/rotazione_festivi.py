@@ -100,7 +100,10 @@ def _conta_importati(conti: Conti, festivita: list[Mapping], dal: date, al: date
             for pid in in_servizio:
                 _conto(conti, f["id"], pid).esposizione += 1
             for r in righe_festivita:
-                _conto(conti, f["id"], r["persona_id"]).lavorata(anno)
+                # Lo storico distingue giorno/notte, ma non quale delle due notti.
+                if (r["fascia"] == "giorno" and f["conta_giorno"] or
+                        r["fascia"] == "notte" and (f["conta_notte"] or f["conta_notte_prima"])):
+                    _conto(conti, f["id"], r["persona_id"]).lavorata(anno)
 
 
 def _conta_programma(conti: Conti, festivita: list[Mapping], dal: date, al: date,

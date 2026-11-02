@@ -355,6 +355,9 @@ debito; non c'è un conteggio unico di tutte le festività.
   `SettimanaProgramma(inizio, dipendenti, assegnazioni)`.
   - **Turni**: anni importati (righe `storico_festivi` con data prima della prima settimana generata) + settimane del
     programma dalla prima generata: turni dei dipendenti nei turni che contano (`turni_festivi`), volontari esclusi.
+    Anche per lo storico importato contano solo le fasce attualmente selezionate per quella festività: giorno
+    con `conta_giorno`, notte con `conta_notte` o `conta_notte_prima` (lo storico non distingue le due notti).
+    Cambiare la selezione ricalcola turni, ultimo anno e debito senza cancellare lo storico o l'esposizione.
     La notte della sera prima conta per l'anno della festività.
   - **Esposizione**: anni importati, solo per le festività presenti nei dati di quell'anno: chi è nell'elenco "in
     servizio" salvato, altrimenti la proposta (dipendenti attivi + chi compare quell'anno). Programma: i dipendenti

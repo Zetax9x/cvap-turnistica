@@ -87,6 +87,43 @@ def test_prossime_festivita_ordine_e_dettagli(client):
     assert per_nome["Anna"]["debito"] == 0.0 and per_nome["Anna"]["volte_5_anni"] == 1
 
 
+@pytest.mark.parametrize("giorno,notte,notte_prima,conteggi,primo", [
+    (False, True, False, (0, 1), "Anna"),
+    (True, False, False, (1, 0), "Bruno"),
+    (False, False, True, (0, 1), "Anna"),
+])
+def test_prossime_ricalcola_lo_storico_importato_con_i_soli_turni_scelti(
+        client, giorno, notte, notte_prima, conteggi, primo):
+    anno = prossimo_natale().year - 1
+    anna, bruno = (crea(client, nome)["id"] for nome in ("Anna", "Bruno"))
+    natale = attiva(client, "Natale")
+    turni = [turno(natale, anna), turno(natale, bruno, "notte")]
+    assert salva(client, anno, turni, [anna, bruno]).status_code == 200
+
+    f = next(f for f in client.get("/api/festivita").json() if f["id"] == natale)
+    campi = ("nome", "regola", "giorno", "mese", "offset_pasqua", "data", "peso", "attiva")
+    r = client.put(f"/api/festivita/{natale}", json={
+        **{k: f[k] for k in campi}, "conta_giorno": giorno, "conta_notte": notte,
+        "conta_notte_prima": notte_prima,
+    })
+    assert r.status_code == 200, r.text
+
+    voce = next(v for v in prossime(client) if v["festivita_id"] == natale)
+    assert (voce["conta_giorno"], voce["conta_notte"], voce["conta_notte_prima"]) == (
+        giorno, notte, notte_prima)
+    per_nome = {p["nome"]: p for p in voce["ordine"]}
+    assert tuple(per_nome[n]["volte_5_anni"] for n in ("Anna", "Bruno")) == conteggi
+    assert voce["ordine"][0]["nome"] == primo
+    for nome, conteggio in zip(("Anna", "Bruno"), conteggi):
+        assert per_nome[nome]["ultimo_anno"] == (anno if conteggio else None)
+
+    # La selezione modifica il conto della rotazione, senza cancellare i dati originali.
+    storico = client.get(f"/api/storico-festivi/{anno}").json()
+    importato = next(f for f in storico["festivita"] if f["festivita_id"] == natale)
+    assert [p["persona_id"] for p in importato["giorno"]] == [anna]
+    assert [p["persona_id"] for p in importato["notte"]] == [bruno]
+
+
 def test_prossime_festivita_disponibili_e_assenze(client):
     d = prossimo_natale()
     a, b, c, dd = (crea(client, n)["id"] for n in ("Anna", "Bruno", "Carlo", "Dario"))

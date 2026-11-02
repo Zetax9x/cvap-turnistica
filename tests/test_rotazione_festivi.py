@@ -66,6 +66,65 @@ def test_giorno_e_notte_sono_due_turni():
     assert c[MARIO].turni == 2 and c[MARIO].esposizione == 1
 
 
+@pytest.mark.parametrize("giorno,notte,notte_prima,attesi", [
+    (False, True, False, (0, 1)),
+    (True, False, False, (1, 0)),
+    (False, False, True, (0, 1)),
+    (False, False, False, (0, 0)),
+])
+def test_importati_contano_solo_le_fasce_spuntate(giorno, notte, notte_prima, attesi):
+    festivita = {**NATALE, "conta_giorno": giorno, "conta_notte": notte,
+                 "conta_notte_prima": notte_prima}
+    c = conta([festivita], importati=[riga(2025, NATALE, MARIO), riga(2025, NATALE, LUIGI, "notte")],
+              servizio={2025: {MARIO, LUIGI}}, dipendenti_attivi={MARIO, LUIGI})[NATALE["id"]]
+    assert (c[MARIO].turni, c[LUIGI].turni) == attesi
+    # Le righe documentano l'anno anche quando nessuna fascia è più selezionata.
+    assert c[MARIO].esposizione == c[LUIGI].esposizione == 1
+    assert c[MARIO].ultimo_anno == (2025 if attesi[0] else None)
+    assert c[LUIGI].ultimo_anno == (2025 if attesi[1] else None)
+    assert c[MARIO].debito == pytest.approx((attesi[0] - attesi[1]) / 2)
+    assert c[LUIGI].debito == pytest.approx((attesi[1] - attesi[0]) / 2)
+
+
+@pytest.mark.parametrize("servizio,esposti", [
+    ({2025: {MARIO}}, {MARIO}),
+    ({}, {MARIO, LUIGI, 7}),
+])
+def test_importati_fascia_esclusa_conserva_esposizione_e_servizio(servizio, esposti):
+    festivita = {**NATALE, "conta_giorno": False}
+    # L'ex dipendente compare solo in una fascia esclusa; non si cancellano
+    # né la documentazione dell'anno né la proposta di chi era in servizio.
+    c = conta([festivita], importati=[riga(2025, NATALE, 7)], servizio=servizio,
+              dipendenti_attivi={MARIO, LUIGI})[NATALE["id"]]
+    assert {pid for pid, conto in c.items() if conto.esposizione} == esposti
+    assert all(conto.esposizione == 1 for pid, conto in c.items() if pid in esposti)
+    assert all((conto.turni, conto.ultimo_anno, conto.debito) == (0, None, 0.0) for conto in c.values())
+
+
+def test_cambio_fasce_ricalcola_importati_ultimo_anno_e_debito_senza_cancellare_righe():
+    importati = [riga(2023, NATALE, LUIGI, "notte"), riga(2024, NATALE, MARIO),
+                 riga(2025, NATALE, MARIO)]
+    originali = [dict(r) for r in importati]
+    servizio = {anno: {MARIO, LUIGI} for anno in (2023, 2024, 2025)}
+
+    def calcola(festivita):
+        return conta([festivita], importati=importati, servizio=servizio,
+                     dipendenti_attivi={MARIO, LUIGI})[NATALE["id"]]
+
+    completo = calcola(NATALE)
+    assert (completo[MARIO].turni, completo[MARIO].ultimo_anno, completo[MARIO].debito) == (2, 2025, 0.5)
+    assert (completo[LUIGI].turni, completo[LUIGI].ultimo_anno, completo[LUIGI].debito) == (1, 2023, -0.5)
+    solo_notte = calcola({**NATALE, "conta_giorno": False})
+    assert (solo_notte[MARIO].turni, solo_notte[MARIO].ultimo_anno, solo_notte[MARIO].debito) == (0, None, -0.5)
+    assert (solo_notte[LUIGI].turni, solo_notte[LUIGI].ultimo_anno, solo_notte[LUIGI].debito) == (1, 2023, 0.5)
+    solo_giorno = calcola({**NATALE, "conta_notte": False})
+    assert (solo_giorno[MARIO].turni, solo_giorno[MARIO].ultimo_anno, solo_giorno[MARIO].debito) == (2, 2025, 1.0)
+    assert (solo_giorno[LUIGI].turni, solo_giorno[LUIGI].ultimo_anno, solo_giorno[LUIGI].debito) == (0, None, -1.0)
+    assert all(c[pid].esposizione == 3 for c in (completo, solo_notte, solo_giorno) for pid in (MARIO, LUIGI))
+    assert importati == originali
+    assert calcola(NATALE) == completo
+
+
 def test_solo_gli_ultimi_cinque_anni():
     importati = [riga(2020, NATALE, MARIO), riga(2021, NATALE, LUIGI)]
     c = conta(importati=importati, servizio={2020: {MARIO, LUIGI}, 2021: {MARIO, LUIGI}},
