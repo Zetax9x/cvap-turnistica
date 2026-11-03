@@ -58,7 +58,7 @@ async function scegliTurno() {
   await esegui(async () => {
     const turni = await richiesta(`cambi-turno/turni?persona_id=${persona.id}`);
     pagina(2, "Quale turno vuoi cambiare?", el("p", {}, `Stai registrando come ${persona.nome}.`),
-      el("p", { class: "cambio-muted" }, "Sono inclusi i turni futuri delle settimane bloccate."),
+      el("p", { class: "cambio-muted" }, "Sono visibili solo i turni futuri."),
       elencoTurni(turni, turno?.id, t => { turno = t; tipo = null; collega = null; ricevuto = null; scegliOperazione(); }),
       bottone("Cambia nome", scegliPersona, true));
   });
