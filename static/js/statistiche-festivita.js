@@ -5,13 +5,13 @@
 
 import { api } from "./api.js";
 import { el, clear, dataEstesa, etichetta, toast, toastErrore, todayISO } from "./util.js";
+import { scaricaPdf } from "./pdf.js";
 import { focusTitolo, nuovoCaricamento, renderSchede, superato } from "./statistiche.js";
 
 const stato = {
   root: null, mesi: 12, prossime: [], lavorate: null, anno: null, salvataggi: Promise.resolve(),
   aperture: new Set(), voglia: new Map(), stampa: null, focusStampa: null,
 };
-const mediaStampa = window.matchMedia("print");
 
 const IMPORTANZA = { 1: "normale", 2: "importante", 3: "molto importante" };
 const FASCE = { giorno: "Giorno", notte: "Notte" };
@@ -94,7 +94,7 @@ function render() {
   } else {
     root.append(el("div", { class: "festivita-azioni festivita-azioni-tutte no-print" }, el("button", {
       type: "button", class: "btn btn-ghost", onclick: (e) => stampaTutteFestivita(e.currentTarget),
-    }, "Stampa tutte le festività")));
+    }, "Scarica PDF festività")));
     root.append(...stato.prossime.map(renderFestivita));
   }
   root.append(renderLavorate());
@@ -148,7 +148,7 @@ function renderFestivita(f) {
       el("div", { class: "festivita-azioni no-print" }, el("button", {
         type: "button", class: "btn btn-ghost", disabled: !fasce.length || !datiCompleti,
         onclick: () => stampaFestivita(sezione),
-      }, "Stampa festività"))));
+      }, "Scarica PDF festività"))));
   return sezione;
 }
 
@@ -178,17 +178,17 @@ function renderFascia(f, fascia, titoloId) {
   return sezione;
 }
 
-/** La stampa espande solo la festività scelta e dopo la finestra di stampa ripristina tutti i pannelli. */
+/** L'esportazione espande solo la festività scelta e poi ripristina tutti i pannelli. */
 function stampaFestivita(target) {
   avviaStampa([target], target.querySelector("button"));
 }
 
-/** Stampa tutte le festività attualmente mostrate, con entrambe le fasce anche se chiuse. */
+/** Esporta tutte le festività attualmente mostrate, con entrambe le fasce anche se chiuse. */
 function stampaTutteFestivita(controllo) {
   avviaStampa([...stato.root.querySelectorAll(".festivita-prossima")], controllo);
 }
 
-function avviaStampa(targets, controllo) {
+async function avviaStampa(targets, controllo) {
   if (stato.stampa || !targets.length || targets.some((target) => !target.isConnected)) return;
   stato.focusStampa = null;
   salvaAperture();
@@ -198,15 +198,15 @@ function avviaStampa(targets, controllo) {
     tutte: targets.length > 1,
   };
   for (const target of targets) target.classList.add("festivita-da-stampare");
-  document.body.classList.add("stampa-festivita");
-  if (stato.stampa.tutte) document.body.classList.add("stampa-tutte-festivita");
   for (const p of pannelli) p.open = true;
   try {
-    window.print();
+    await scaricaPdf(targets, stato.stampa.tutte ? "festivita" : "festivita-a-chi-tocca", { orientamento: "landscape" });
   } catch (err) {
     ripristinaStampa();
     toastErrore(err);
+    return;
   }
+  ripristinaStampa();
 }
 
 function ripristinaStampa() {
@@ -214,8 +214,6 @@ function ripristinaStampa() {
   if (stampa) {
     for (const [pannello, aperto] of stampa.pannelli) pannello.open = aperto;
     for (const target of stampa.targets) target.classList.remove("festivita-da-stampare");
-    document.body.classList.remove("stampa-festivita");
-    document.body.classList.remove("stampa-tutte-festivita");
     stato.stampa = null;
     stato.focusStampa = stampa.focus;
   }
@@ -223,8 +221,6 @@ function ripristinaStampa() {
 }
 
 function ripristinaFocusStampa() {
-  // Chrome può emettere afterprint mentre il pulsante è ancora nascosto dai CSS di stampa.
-  if (mediaStampa.matches) return;
   const controllo = stato.focusStampa;
   stato.focusStampa = null;
   const attivo = document.activeElement;
@@ -233,8 +229,6 @@ function ripristinaFocusStampa() {
   }
 }
 
-window.addEventListener("afterprint", ripristinaStampa);
-mediaStampa.addEventListener("change", (e) => { if (!e.matches) ripristinaStampa(); });
 
 function renderPersona(f, x, i, fascia) {
   const assenza = x.assente ? ASSENZA[x.assente] : null;

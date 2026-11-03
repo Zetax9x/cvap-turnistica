@@ -2,6 +2,7 @@
 
 import { api } from "./api.js";
 import { el, clear, etichetta, formatOre, formatSaldo } from "./util.js";
+import { scaricaPdf } from "./pdf.js";
 import * as indisponibilita from "./statistiche-indisponibilita.js";
 import * as perDipendente from "./statistiche-dipendente.js";
 import * as equita from "./statistiche-equita.js";
@@ -56,8 +57,11 @@ export function renderSchede(attiva) {
     }, titolo)));
 }
 
-export function bottoneStampa() {
-  return el("button", { type: "button", class: "btn btn-ghost", onclick: () => window.print() }, "Stampa");
+export function bottoneStampa(titolo = "Statistiche") {
+  return el("button", {
+    type: "button", class: "btn btn-ghost",
+    onclick: () => scaricaPdf(document.getElementById("view-statistiche"), titolo, { orientamento: "landscape" }),
+  }, "Scarica PDF");
 }
 
 // Le due schede disegnano nello stesso contenitore: ogni caricamento prende un numero e

@@ -35,7 +35,7 @@ async function carica() {
 function render() {
   const root = clear(stato.root);
   root.append(renderSchede("indisponibilita"), el("header", { class: "view-header" },
-    el("div", { class: "view-header-riga" }, el("h1", {}, "Indisponibilità per giorno"), bottoneStampa()),
+    el("div", { class: "view-header-riga" }, el("h1", {}, "Indisponibilità per giorno"), bottoneStampa("indisponibilità per giorno")),
     el("p", { class: "muted" },
       "Quante volte ogni dipendente ha chiesto di essere indisponibile in ciascun giorno della settimana. "
       + "Il numero conta i giorni (anche se indisponibile solo in una parte); sotto, il dettaglio per mattina (M), "

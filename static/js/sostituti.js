@@ -6,6 +6,7 @@ import {
   el, clear, toast, toastErrore, GIORNI_BREVI, ddmm, dataEstesa, indiceGiorno, orarioTurno, oraInizio,
   etichetta, formatOre, badgeAssenza, EXTRA, dataLunga,
 } from "./util.js";
+import { scaricaPdf } from "./pdf.js";
 
 const PRIMI = 3;  // candidati mostrati subito, gli altri con "Mostra tutti"
 const NOTA_EXTRA = "Le ore di una sostituzione sono extra: non contano nelle ore della settimana né nelle statistiche.";
@@ -129,7 +130,7 @@ export function renderTurniDaCoprire(s, opzioni) {
     el("div", { class: "coprire-azioni" }, el("button", {
       type: "button", class: "btn btn-small",
       onclick: (e) => stampaSostituti(s, turni, e.currentTarget),
-    }, "Stampa chi può sostituire")),
+    }, "Scarica PDF sostituti")),
     confermata ? el("p", { class: "banner banner-info" }, "Settimana confermata: riaprila per assegnare.") : null,
     esito,
     el("ul", { class: "coprire-lista" }, voci.map((v) => v.li))));
@@ -387,13 +388,13 @@ export function annullaStampaSostituti() {
 }
 
 /**
- * Stampa per ogni turno l'elenco completo di chi può sostituire (prima scarica i suggerimenti che mancano).
+ * Scarica per ogni turno l'elenco completo di chi può sostituire (prima carica i suggerimenti che mancano).
  * turni: assegnazioni, con `motivo` ("ferie" | "malattia") se chi le ha è assente.
  */
 export async function stampaSostituti(s, turni, btn = null) {
   aggiornaCache(s);
   const testo = btn ? btn.textContent : "";
-  if (btn) { btn.disabled = true; btn.textContent = "Preparo la stampa…"; }
+  if (btn) { btn.disabled = true; btn.textContent = "Preparo il PDF…"; }
   try {
     const esiti = await Promise.allSettled(turni.map((a) => ottieniSostituti(a.id)));
     const falliti = esiti.filter((e) => e.status === "rejected").length;
@@ -401,10 +402,10 @@ export async function stampaSostituti(s, turni, btn = null) {
       toast(`Per ${falliti === 1 ? "1 turno" : `${falliti} turni`} non sono riuscito a caricare i sostituti: è segnato sul foglio.`, "avviso");
     }
     annullaStampaSostituti();
-    document.body.append(renderFoglio(s, turni, esiti));
-    document.body.classList.add(CLASSE_STAMPA);
-    window.addEventListener("afterprint", annullaStampaSostituti, { once: true });
-    window.print();
+    const foglio = renderFoglio(s, turni, esiti);
+    document.body.append(foglio);
+    await scaricaPdf(foglio, `sostituti-${s.inizio}`);
+    annullaStampaSostituti();
   } finally {
     if (btn && btn.isConnected) { btn.disabled = false; btn.textContent = testo; }
   }

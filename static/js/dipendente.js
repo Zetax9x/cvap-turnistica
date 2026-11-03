@@ -6,6 +6,7 @@ import {
   orarioTurno, oraInizio, etichettaParti,
   badgeAssenza,
 } from "./util.js";
+import { scaricaPdf } from "./pdf.js";
 
 const CHIAVE_SETTIMANA = "cvap.settimana";
 const CHIAVE_PERSONA = "cvap.dipendente";
@@ -83,7 +84,9 @@ function render() {
       el("button", { type: "button", class: "btn", onclick: () => vaiA(stato.personaId, todayISO()) }, "Oggi"),
       el("button", { type: "button", class: "btn btn-freccia", "aria-label": "Settimana successiva", title: "Settimana successiva", onclick: () => vaiA(stato.personaId, addDays(stato.data, 7)) }, "›"),
       el("label", { class: "sr-only", for: "dip-data" }, "Vai alla settimana del giorno"), inputData,
-      persona ? el("button", { type: "button", class: "btn btn-ghost", onclick: () => window.print() }, "Stampa") : null)));
+      persona ? el("button", {
+        type: "button", class: "btn btn-ghost", onclick: () => scaricaPdf(stato.root, `turni-${persona.nome}-${s.inizio}`, { orientamento: "landscape" }),
+      }, "Scarica PDF") : null)));
 
   if (!persona) {
     root.append(el("p", { class: "muted" }, dipendenti.length

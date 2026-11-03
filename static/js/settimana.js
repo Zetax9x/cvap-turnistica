@@ -11,6 +11,7 @@ import {
   PARTI_TURNO, SCELTE_INDISPONIBILITA, partiTurno, valoreParti, etichettaParti, badgeAssenza,
   EXTRA, leggiExtra,
 } from "./util.js";
+import { scaricaPdf } from "./pdf.js";
 
 const FASCE = ["giorno", "notte"];
 const RUOLI = ["autista", "soccorritore"];
@@ -272,9 +273,9 @@ function renderToolbar(s) {
       confermata ? el("button", { type: "button", class: "btn", disabled: dis, onclick: onRiapri }, "Riapri la settimana") : null,
       el("button", {
         type: "button", class: "btn", disabled: !haTurni(s), onclick: stampaLiberi,
-        title: "Stampa per ogni giorno della settimana chi è libero",
-      }, "Stampa liberi"),
-      el("button", { type: "button", class: "btn", onclick: stampaGriglia }, "Stampa tabellone")));
+        title: "Scarica un PDF con chi è libero ogni giorno della settimana",
+      }, "Scarica PDF liberi"),
+      el("button", { type: "button", class: "btn", onclick: stampaGriglia }, "Scarica PDF tabellone")));
   const primaria = confermata
     ? el("button", { type: "button", class: "btn btn-primary btn-grande", disabled: dis, onclick: () => apriInvio(stato.data) }, "Invia i turni via email")
     : haGenerati || s.assegnazioni.length
@@ -1195,18 +1196,14 @@ function renderStampaLiberi(s) {
       + "Fanno la notte = sono liberi di giorno e fanno la notte quella sera."));
 }
 
-// Se "afterprint" non arriva (alcuni browser) la classe resta: la stampa normale la toglie comunque.
 function stampaGriglia() {
-  document.body.classList.remove("stampa-liberi-attiva");
   annullaStampaSostituti();
-  window.print();
+  scaricaPdf(stato.root, `tabellone-${stato.settimana.inizio}`, { orientamento: "landscape" });
 }
 
 function stampaLiberi() {
   annullaStampaSostituti();
-  document.body.classList.add("stampa-liberi-attiva");
-  window.addEventListener("afterprint", () => document.body.classList.remove("stampa-liberi-attiva"), { once: true });
-  window.print();
+  scaricaPdf(stato.root.querySelector(".stampa-liberi"), `liberi-${stato.settimana.inizio}`);
 }
 
 // ---------------------------------------------------------------- Assistenze ed Extra
@@ -1473,7 +1470,7 @@ function mostraSostituti(s, a, box, btn, confermata) {
     el("button", {
       type: "button", class: "btn btn-small btn-ghost",
       onclick: (e) => stampaSostituti(s, [{ ...a, motivo: motivoAssenza(s, a) }], e.currentTarget),
-    }, "Stampa chi può sostituire"));
+    }, "Scarica PDF sostituti"));
 }
 
 /** "ferie" | "malattia" se chi ha il turno quel giorno è assente, altrimenti null. */

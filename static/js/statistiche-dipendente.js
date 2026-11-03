@@ -60,7 +60,7 @@ function render() {
   const root = clear(stato.root);
   const d = stato.dati && String(stato.dati.persona_id) === stato.personaId ? stato.dati : null;
   root.append(renderSchede("dipendente"), el("header", { class: "view-header" },
-    el("div", { class: "view-header-riga" }, el("h1", {}, "Riepilogo per dipendente"), d ? bottoneStampa() : null),
+    el("div", { class: "view-header-riga" }, el("h1", {}, "Riepilogo per dipendente"), d ? bottoneStampa("riepilogo dipendente") : null),
     el("p", { class: "muted no-print" }, "Scegli un dipendente e il periodo: vedi i turni svolti giorno per giorno e, in fondo, i totali.")));
   root.append(renderFiltri());
   if (!stato.persone.length) {

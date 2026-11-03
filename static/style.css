@@ -1389,6 +1389,16 @@ a.btn { text-decoration: none; }
 
 /* ---------- Stampa "Chi può sostituire": foglio a parte, si vede solo in stampa ---------- */
 .stampa-sostituti { display: none; }
+
+/* Area temporanea catturata dal generatore PDF: resta fuori dallo schermo e non altera la vista corrente. */
+.pdf-esportazione {
+  position: fixed; left: 0; top: 0; z-index: -1;
+  width: 820px; padding: 24px; background: #fff; color: #111;
+}
+.pdf-esportazione-landscape { width: 1120px; }
+.pdf-esportazione .stampa-liberi,
+.pdf-esportazione .stampa-sostituti { display: block !important; }
+.pdf-esportazione .stampa-sostituti { padding: 0; background: #fff; color: #111; }
 .coprire-azioni { margin: 0 0 .75rem; }
 
 @page verticale { size: A4 portrait; margin: 12mm 13mm; }

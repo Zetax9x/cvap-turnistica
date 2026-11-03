@@ -44,7 +44,7 @@ function render() {
   const { settimane } = stato.dati;
   const rotazioni = stato.dati.rotazioni.filter((r) => !r.festivita);  // le festività hanno la loro pagina
   root.append(renderSchede("equita"), el("header", { class: "view-header" },
-    el("div", { class: "view-header-riga" }, el("h1", {}, "Equità dei turni"), bottoneStampa()),
+    el("div", { class: "view-header-riga" }, el("h1", {}, "Equità dei turni"), bottoneStampa("equità dei turni")),
     el("p", { class: "muted" },
       "Per ogni tipo di turno: chi ha fatto più della sua parte e chi meno, quanto sono lontani tra loro e se la "
       + "distanza si sta riducendo. La parte di ognuno tiene conto delle settimane in cui ha lavorato. "
