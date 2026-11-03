@@ -4,7 +4,7 @@ Report unico che unisce la critique di design e l'audit tecnico dell'interfaccia
 
 ## In breve
 
-- **Nessun problema critico e nessun problema importante aperto.** Restano 4 problemi minori, tutti da decidere o da provare con strumenti che qui non ho.
+- **Nessun problema critico e nessun problema importante aperto.** Restano 2 problemi minori, da decidere o da provare con strumenti che qui non ho. Dopo il terzo giro sono stati fatti anche il Calendario a settimane su telefono e i token per i colori che si ripetono.
 - I punteggi sono saliti a ogni giro. L'audit tecnico è ora **Excellent**.
 - Durante il giro ho trovato e corretto due difetti che avevo introdotto io con i comandi da 44 px (vedi "Corretti durante il giro").
 
@@ -21,7 +21,7 @@ Report unico che unisce la critique di design e l'audit tecnico dell'interfaccia
 | Adattamento ai telefoni | 2/4 | 3/4 | 4/4 |
 | Coerenza dell'implementazione | 3/4 | 3/4 | 4/4 |
 
-Problemi aperti: da **16** (3 critici, 8 importanti, 5 minori) a **11** (0, 4, 7) a **4** (0, 0, 4).
+Problemi aperti: da **16** (3 critici, 8 importanti, 5 minori) a **11** (0, 4, 7) a **4** (0, 0, 4) e infine a **2** (0, 0, 2) dopo il Calendario a settimane e i token dei colori. I punteggi del terzo giro non sono stati rimisurati dopo queste due modifiche.
 
 ## Come sono stati fatti i controlli
 
@@ -43,29 +43,17 @@ Nessuno.
 
 ## Problemi minori
 
-### M1. Calendario su telefono: 42 righe
-- **Pagina:** Calendario (telefono).
-- **Cosa non va:** l'elenco dei giorni è lungo (circa 2100 px) e i giorni coperti occupano 44 px ognuno.
-- **Cosa proponiamo:** una riga per settimana, che si apre sui giorni solo se c'è un'eccezione. È un cambio di struttura: da decidere.
-- **Comando consigliato:** `/impeccable shape`
-
-### M2. Titolo dentro la riga cliccabile
+### M1. Titolo dentro la riga cliccabile
 - **Pagine:** Settimana (pannello "Turni da coprire") e Impostazioni (sezioni richiudibili).
 - **Cosa non va:** il titolo (`h2`) sta dentro `<summary>`: alcuni lettori di schermo perdono il livello del titolo. Non l'ho provato con un lettore vero.
 - **Cosa proponiamo:** provarlo con un lettore di schermo prima di cambiare; una correzione semplice non c'è senza duplicare il titolo.
 - **Comando consigliato:** `/impeccable polish`
 
-### M3. Indirizzi email reali visibili
+### M2. Indirizzi email reali visibili
 - **Pagina:** Personale.
 - **Cosa non va:** la tabella mostra gli indirizzi email. In una stampa o in uno screenshot condiviso diventano dati personali visibili.
 - **Cosa proponiamo:** nasconderli nelle stampe, o mostrarli solo nella finestra "Modifica". È una scelta sulla privacy, tua.
 - **Comando consigliato:** `/impeccable polish`
-
-### M4. Colori scritti a mano nelle regole di stampa
-- **Pagine:** tutte (stampa e stati). Codice: `static/style.css`.
-- **Cosa non va:** circa 204 valori esadecimali fuori da `:root`, in gran parte nelle regole di stampa. Nessun difetto visibile; cambiare i colori richiede di toccare molti punti.
-- **Cosa proponiamo:** token solo per i pochi colori di stato che ricorrono; quelli specifici della stampa restano.
-- **Comando consigliato:** `/impeccable colorize`
 
 ---
 
@@ -94,6 +82,8 @@ Nessuno.
 | Controlli a 40 px e righe di apertura da 23 px con il tocco | Tutti a 44 px con puntatore tattile; su PC restano a 40 px |
 | Altezze incoerenti nella toolbar | Pulsanti e "Altre opzioni" a 44 px; corpo del testo da 16 px su telefono |
 | Codice morto del vecchio suggerimento di scorrimento | Rimosso |
+| Calendario su telefono: 42 righe | Una riga per settimana con i giorni a pallini da 44 px, sintesi e, nella settimana corrente, l'elenco dei giorni con eccezioni; le altre si aprono toccando l'intestazione. L'elenco passa da circa 2100 a 1116 px |
+| Colori scritti a mano | Token `--ok-soft-*` e `--tendenza-*`, "ore extra" con `--eccezione-testo-lieve`: da 204 a 189 valori fuori da `:root`. Il resto sono bianco, nero e grigi della stampa, voluti |
 | Frecce diverse nelle sezioni richiudibili | Stesso triangolo in "Turni da coprire" e nelle sezioni di Impostazioni |
 | "Autista programmati" su telefono, navigazione di Turni dipendente, celle fuori mese | Badge con il nome intero; selettore su una riga; solo grigio |
 
@@ -106,8 +96,7 @@ Nessuno.
 
 ## Ordine di lavoro consigliato
 
-1. Provare con un lettore di schermo il titolo dentro `<summary>` (M2) prima di cambiare qualcosa.
-2. Decidere sulle email in Personale (M3).
-3. Facoltativi: `/impeccable shape` per il Calendario a settimane (M1) e `/impeccable colorize` per i colori di stampa (M4).
+1. Provare con un lettore di schermo il titolo dentro `<summary>` (M1) prima di cambiare qualcosa.
+2. Decidere sulle email in Personale (M2).
 
 Dopo le modifiche, rilanciare `/impeccable critique` e `/impeccable audit` per confrontare i punteggi con quelli di questo giro (32/40 e 18/20).
