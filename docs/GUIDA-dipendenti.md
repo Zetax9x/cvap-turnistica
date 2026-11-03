@@ -11,6 +11,7 @@ spiega come vengono preparati i turni e quali regole segue il programma che li a
 
 | Cosa | Chi | Entro quando |
 |------|-----|--------------|
+| Comunicare le proprie disponibilità per la settimana successiva | ogni volontario | **venerdì alle ore 16** |
 | Comunicare le indisponibilità per la settimana successiva | ogni dipendente | **venerdì alle ore 12** |
 | Confermare e inviare i turni della settimana successiva | il responsabile | **venerdì alle ore 20** |
 
@@ -34,10 +35,9 @@ turno, **non** l'orario previsto dal turno.
 
 > Esempio: nei Programmati il turno del pomeriggio finisce alle 20, ma se hai finito alle 17 scrivi **17**, non 20.
 
-## 5. Ore sotto il contratto
+## 5. Ore sotto e sopra il contratto
 
-Se alla fine del mese un dipendente ha fatto **meno ore di quelle previste dal contratto**, le ore di differenza
-vengono **comunque pagate dalla Croce Verde**.
+Se alla fine del mese un dipendente ha fatto **meno ore di quelle previste dal contratto**, le ore di differenza vengono **comunque pagate dalla Croce Verde**. Se nel mese successivo supera le ore previste dal contratto, le ore in più vengono scalate per recuperare quelle già pagate.
 
 ## 6. Turni esclusi (divieti)
 
@@ -51,12 +51,13 @@ essere **decisi dal direttivo** e **non possono essere messi in discussione**.
 ## 1. In breve
 
 - I turni si organizzano per settimana, dal lunedì alla domenica.
-- Prima vengono inseriti i turni scelti dai volontari; poi il programma assegna ai dipendenti tutti i posti
-  rimasti, valutando l'intera settimana insieme e non un turno alla volta.
+- Prima vengono inseriti i turni scelti dai volontari, in base alle disponibilità comunicate entro le 16 del
+  venerdì; poi il programma assegna ai dipendenti tutti i posti rimasti, valutando l'intera settimana insieme e
+  non un turno alla volta.
 - Il programma rispetta sempre: almeno 11 ore di riposo tra due turni, al massimo 3 giorni o 3 notti di fila,
   al massimo 72 ore lavorate a settimana, ferie, malattia, indisponibilità e turni che non puoi fare.
-- Cerca di dare a tutti circa le stesse ore: almeno 36 a settimana e non più di 12 ore di differenza tra chi
-  lavora di più e chi di meno.
+- Cerca di dare a tutti circa le stesse ore: almeno 36 a settimana e di norma non più di 12 ore di differenza
+  tra chi lavora di più e chi di meno.
 - Distribuisce in modo equo, anche nel corso delle settimane, ore, notti, weekend, turni di Standby e
   Programmati, turni tra Acquasanta e Venarotta e turni nelle festività.
 - Il responsabile dei turni controlla il risultato, lo corregge se serve, conferma la settimana e invia i turni
@@ -68,8 +69,9 @@ essere **decisi dal direttivo** e **non possono essere messi in discussione**.
 
 1. **Assenze e indisponibilità.** Il responsabile registra le ferie, le malattie e le indisponibilità comunicate
    per quella settimana (le indisponibilità entro le 12 del venerdì).
-2. **Turni dei volontari.** Vengono inseriti i turni scelti dai volontari (anche mezzi turni) ed eventuali turni
-   assegnati a mano a un dipendente. Il programma non sposta mai questi turni.
+2. **Turni dei volontari.** Vengono inseriti i turni scelti dai volontari in base alle disponibilità comunicate
+   entro le 16 del venerdì (anche mezzi turni) ed eventuali turni assegnati a mano a un dipendente. Il programma
+   non sposta mai questi turni.
 3. **Assegnazione automatica.** Il programma assegna ai dipendenti tutti i posti rimasti, rispettando le regole di
    questa guida e cercando la distribuzione più equa. Tiene conto anche dei turni dei giorni a cavallo con la
    settimana precedente e con quella successiva.
@@ -142,7 +144,6 @@ Tra la fine di un turno e l'inizio del successivo devono passare almeno 11 ore. 
 | Notte (20–8) | Sì: la notte del giorno dopo | 12 ore |
 | Giorno (8–20) | Sì: il giorno del giorno dopo | 12 ore |
 | Pomeriggio (14–20) | Sì: la mattina del giorno dopo | 12 ore |
-| Giorno (8–20) | Sì: la notte del giorno dopo | 24 ore |
 
 In pratica: mai giorno e notte nello stesso giorno, e dopo una notte il giorno seguente è di smonto (al massimo puoi
 rifare la notte, la sera). La regola vale anche a cavallo tra due settimane: se fai la notte della domenica, il
@@ -190,7 +191,8 @@ Le ore delle **sostituzioni** (paragrafo 6.4) sono a parte: non entrano in quest
 - Ogni dipendente dovrebbe avere almeno 36 ore contate a settimana (3 turni interi), ferie comprese.
 - Non vale per chi è in ferie o in malattia per tutta la settimana.
 - Se hai un massimo di ore personale sotto le 36, il minimo è uguale al tuo massimo.
-- Se a fine mese resti sotto le ore del contratto, la differenza viene comunque pagata (regolamento, punto 5).
+- Se a fine mese resti sotto le ore del contratto, la differenza viene comunque pagata; se il mese dopo superi le
+  ore del contratto, le ore in più vengono scalate per recuperarla (regolamento, punto 5).
 
 ### 5.3 Non più di 12 ore di differenza
 
@@ -219,7 +221,8 @@ colleghi.
   successive.
 - Se sei in ferie o in malattia per tutta la settimana, sei fuori dal calcolo di quella settimana, che non conta
   nemmeno nel tuo storico.
-- Ferie e malattia contano allo stesso modo; la differenza serve solo a indicarle correttamente.
+- Ai fini delle ore, ferie e malattia contano allo stesso modo; la differenza serve a indicarle correttamente e
+  conta nelle festività (paragrafo 9.3).
 
 ### 6.2 Indisponibilità
 
@@ -326,7 +329,8 @@ Quando non si può avere tutto, il programma segue in linea di massima questo or
 2. rispettare il minimo di 36 ore e la differenza massima di 12 ore, ed evitare il terzo turno ad Ascoli;
 3. evitare 3 giorni o 3 notti di fila;
 4. alternare giorno e notte ad Ascoli;
-5. non dare a una persona più di un turno di weekend, di Standby o di Programmati nella stessa settimana;
+5. non dare a una persona più di un turno di weekend nella stessa settimana, né più di un turno di Standby o di
+   Programmati;
 6. portare le ore di ciascuno vicino alla media, recuperando le differenze delle settimane passate;
 7. distribuire in modo equo nel tempo weekend, Standby, Programmati e festività;
 8. equilibrare giorni e notti.
@@ -463,12 +467,13 @@ errore al responsabile.
 | Indisponibilità | Per il giorno intero, entro le 12 del venerdì; nel weekend al massimo 2 al mese |
 | Invio dei turni | Il responsabile conferma e invia entro le 20 del venerdì |
 | Riepilogo mensile | Orario effettivo di inizio e fine, non quello del turno |
-| Ore sotto il contratto | La differenza viene comunque pagata dalla Croce Verde |
+| Ore sotto e sopra il contratto | La differenza viene comunque pagata dalla Croce Verde; se il mese dopo superi le ore del contratto, le ore in più vengono scalate per recuperarla |
+| Disponibilità dei volontari | Da comunicare entro le 16 del venerdì per la settimana successiva |
 | Riposo | Almeno 11 ore tra due turni: mai giorno e notte nello stesso giorno; dopo una notte, giorno di smonto |
 | Turni di fila | Al massimo 3 giorni o 3 notti di fila; meglio 2 |
 | Ore massime | 72 ore lavorate a settimana, o il tuo massimo personale se più basso |
 | Ore minime | 36 ore a settimana, ferie comprese (se il personale basta) |
-| Differenza tra colleghi | Al massimo 12 ore tra chi lavora di più e chi di meno (se il personale basta) |
+| Differenza tra colleghi | Di norma al massimo 12 ore tra chi lavora di più e chi di meno (se il personale basta) |
 | Ferie e malattia | Nessun turno; 6 ore per giorno nel conteggio; niente da recuperare |
 | Turni esclusi (divieti) | Decisi dal direttivo, non si mettono in discussione: quei turni non vengono mai assegnati |
 | Sostituzioni | Ore extra, fuori dai conteggi; mai più di 12 ore di lavoro di fila |
@@ -479,4 +484,4 @@ errore al responsabile.
 | Acquasanta e Venarotta | Nel tempo, tanti turni in una sede quanti nell'altra |
 | Festività | Ognuna gira guardando gli ultimi 5 anni; chi l'ha fatta di recente ha la precedenza per restare a casa |
 | Equità nel tempo | Ore, notti, weekend e turni speciali bilanciati nel corso delle settimane |
-| Volontari | Scelgono i propri turni; il programma non li sposta e assegna ai dipendenti i posti rimasti |
+| Volontari | Comunicano le disponibilità entro le 16 del venerdì e scelgono i propri turni; il programma non li sposta e assegna ai dipendenti i posti rimasti |
