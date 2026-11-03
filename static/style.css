@@ -1564,7 +1564,7 @@ a.btn { text-decoration: none; }
   .legenda-toggle[aria-expanded="true"]::after { content: "▴"; content: "▴" / ""; }
   .legenda-box:not(.aperta) .legenda-contenuto { display: none; }
   .disponibilita > summary::after, .richieste > summary::after { display: none; }
-  .disponibilita > summary, .richieste > summary { align-items: center; min-height: var(--tap); }
+  .disponibilita > summary, .richieste > summary { align-content: center; min-height: var(--tap); }
   .disponibilita-titolo, .richieste-titolo { font-size: 1rem; }
 
   /* Settimana: la griglia mostra solo il giorno scelto nella barra; il numero rosso sono i posti scoperti */
@@ -1626,5 +1626,7 @@ a.btn { text-decoration: none; }
   /* campi, selettori e pulsanti da 44 px come il resto, e le righe che aprono una sezione con un'area da toccare vera */
   .btn, .altre-opzioni > summary, input:not([type="checkbox"]):not([type="radio"]), select { min-height: var(--tap); }
   .nuova-persona > summary, .info-ripiegabile > summary, .ferie-passate > summary { padding-block: .7rem; }
-  .scheda, .giorno-btn, .sort-btn { display: inline-flex; align-items: center; justify-content: center; min-height: var(--tap); }
+  .scheda, .giorno-btn, .sort-btn { display: inline-flex; align-items: center; justify-content: center; gap: .3rem; min-height: var(--tap); }
+  .giorno-btn { flex-wrap: wrap; }
+  .griglia thead th { vertical-align: middle; }
 }
