@@ -373,20 +373,8 @@ def _dati_settimana(conn, inizio: date) -> _DatiSettimana:
         scarto_ore_max=db.get_scarto_ore_max(conn))
 
 
-def payload_settimana(conn: sqlite3.Connection, inizio: date, *,
-                      sostituzioni: dict[int, Assegnazione] | None = None) -> dict:
+def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
     d = _dati_settimana(conn, inizio)
-    if sostituzioni:
-        # Simulazione in memoria: nessuna assegnazione o revisione viene scritta.
-        originali = {db.get_assegnazione(conn, aid): a for aid, a in sostituzioni.items()}
-        righe = [(aid, sostituzioni.get(aid, a)) for aid, a in d.righe]
-        presenti = {a.persona_id for _, a in righe}
-        divieti = db.divieti_per_persona(conn)
-        d = dataclasses.replace(
-            d, righe=righe,
-            contesto=[originali.get(a, a) for a in d.contesto],
-            rilevanti={pid: db.a_persona(p, divieti.get(pid, ())) for pid, p in d.persone.items()
-                       if p['tipo'] == 'volontario' or p['attivo'] or pid in presenti})
     giorni, tipo, attive, fabbisogno, righe = d.giorni, d.tipo, d.attive, d.fabbisogno, d.righe
     assegnazioni, persone, rilevanti, contesto = d.assegnazioni, d.persone, d.rilevanti, d.contesto
     ferie, malattia, indisponibili, scarto_ore_max = d.ferie, d.malattia, d.indisponibili, d.scarto_ore_max
@@ -763,8 +751,7 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
     app.include_router(api_festivita.crea_router(connessione))
     app.include_router(api_storico_festivi.crea_router(connessione))
     app.include_router(api_equita.crea_router(connessione, _settimana_passata))
-    app.include_router(api_cambi_turno.crea_router(connessione, scrittura, _dati_settimana, payload_settimana,
-                                                 postino, PROVE_PER_ORA))
+    app.include_router(api_cambi_turno.crea_router(connessione, scrittura, _dati_settimana, payload_settimana, postino))
 
     # --- persone ---
     @app.get("/api/persone")

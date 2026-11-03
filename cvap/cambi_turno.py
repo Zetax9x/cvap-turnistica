@@ -176,16 +176,6 @@ def _trasferisci(conn, foto):
         conn.execute('UPDATE assegnazioni SET persona_id = ? WHERE id = ?', (f['persona_id'], f['id']))
 
 
-def prepara_prova(conn, corpo, dati_settimana, payload_settimana):
-    """Fotografa il risultato simulato senza scrivere turni, registro o notifiche."""
-    vista = anteprima(conn, corpo, dati_settimana)
-    _controlla(vista, corpo['versione'])
-    sostituzioni = {f['id']: assegnazione(f) for f in vista['dopo']}
-    return {'variazione': vista, 'quando': adesso().isoformat(timespec='seconds'),
-            'settimane': [payload_settimana(conn, date.fromisoformat(d), sostituzioni=sostituzioni)
-                         for d in vista['settimane']]}
-
-
 def conferma(conn, corpo, dati_settimana, payload_settimana):
     with registro.transazione(conn):
         esistente = conn.execute('SELECT id FROM variazioni_turno WHERE chiave = ?', (corpo['chiave'],)).fetchone()
