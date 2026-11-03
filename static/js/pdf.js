@@ -2,6 +2,7 @@ import { toast, toastErrore } from "./util.js";
 
 const URL_GENERATORE = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
 let caricamentoGeneratore = null;
+const LARGHEZZA_FINESTRA_PDF = 1280;  // oltre i 640 px delle regole per il telefono, abbastanza per una pagina A4 orizzontale
 
 function generatorePdf() {
   if (typeof window.html2pdf === "function") return Promise.resolve(window.html2pdf);
@@ -60,6 +61,13 @@ function stiliEsportazione() {
       box-sizing: border-box; font-size: 10pt; background: #fff; color: #000; }
     .pdf-esportazione .griglia, .pdf-esportazione .tabella-liberi { width: 100%; min-width: 0; }
     .pdf-esportazione .griglie { display: block; }
+    .pdf-esportazione .eq-freccia { display: none; }
+    /* la tabella delle statistiche ha 14 colonne: nel PDF testo e spaziature più stretti, così entra nella pagina */
+    .pdf-esportazione .tabella-stat { font-size: 7pt; }
+    .pdf-esportazione .tabella-stat th, .pdf-esportazione .tabella-stat td { padding: .3rem .35rem; }
+    .pdf-esportazione .tabella-stat thead th, .pdf-esportazione .tabella-stat td, .pdf-esportazione .tabella-stat .sort-btn { white-space: normal; }
+    .pdf-esportazione .tabella-stat .cella-rapporto { min-width: 0; }
+    .pdf-esportazione .table-scroll, .pdf-esportazione .griglia-scroll { overflow: visible; -webkit-mask-image: none; mask-image: none; }
     .pdf-esportazione.pdf-esportazione-tabellone .stampa-liberi { display: none !important; }
     .pdf-esportazione.pdf-esportazione-liberi .stampa-liberi { display: block !important; }
     .pdf-esportazione-liberi .week-tipo, .pdf-esportazione-liberi .badge-stato { display: none; }
@@ -130,8 +138,9 @@ export async function scaricaPdf(sorgenti, titolo, { orientamento = "portrait", 
     if (!sorgente?.isConnected) continue;
     area.append(sorgente.cloneNode(true));
   }
-  // Questi pulsanti contengono dati, non comandi: conserviamo nomi e date.
-  for (const pulsante of area.querySelectorAll(".cella-btn, .giorno-btn, .sort-btn")) {
+  // Questi pulsanti contengono dati, non comandi (celle, giorni, ordinamenti, righe dell'equità): conserviamo nomi e date.
+  // I comandi veri hanno sempre la classe .btn e vengono tolti qui sotto.
+  for (const pulsante of area.querySelectorAll("button:not(.btn)")) {
     const testo = document.createElement("span");
     testo.className = pulsante.className;
     testo.append(...pulsante.childNodes);
@@ -151,13 +160,26 @@ export async function scaricaPdf(sorgenti, titolo, { orientamento = "portrait", 
   try {
     const html2pdf = await generatorePdf();
     await document.fonts?.ready;
+    // Una tabella più larga del foglio non va tagliata: si allarga l'area e il generatore rimpicciolisce tutto alla
+    // larghezza della pagina (proporzioni e salti pagina restano coerenti).
+    const larghezza = Math.ceil(area.scrollWidth);
+    const troppoLarga = larghezza > area.clientWidth + 1;
+    if (troppoLarga) area.style.width = `${larghezza}px`;
     const esportazione = html2pdf().set({
       margin: 7,
       filename: nomeFile(titolo),
       image: { type: "jpeg", quality: 0.96 },
-      html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", onclone: normalizzaColori },
+      html2canvas: {
+        scale: 2, useCORS: true, backgroundColor: "#ffffff", onclone: normalizzaColori,
+        // il PDF si disegna sempre con il layout da PC, anche se lo scarichi dal telefono: le regole per lo schermo
+        // piccolo (un giorno alla volta, celle strette) non devono finire sul foglio
+        windowWidth: Math.max(larghezza, LARGHEZZA_FINESTRA_PDF),
+        // il generatore cattura di norma la sola larghezza della pagina: con una tabella più larga va detto
+        ...(troppoLarga ? { width: larghezza } : {}),
+      },
       jsPDF: { unit: "mm", format: "a4", orientation: orientamento },
-      pagebreak: { mode: ["css", "legacy"] },
+      // le righe delle tabelle e le intestazioni non si spezzano tra due pagine
+      pagebreak: { mode: ["css", "legacy"], avoid: ["tr", "h2", "h3"] },
     }).from(area);
     const canvas = await esportazione.toCanvas().get("canvas");
     await esportazione.set({ canvas: ritagliaFondoBianco(canvas) }).save();
