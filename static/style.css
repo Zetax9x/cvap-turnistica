@@ -792,6 +792,9 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
 .banner-avviso .btn { margin-left: .25rem; }
 .turni-da-coprire { margin-top: 1.75rem; border-left: 5px solid var(--warn-border); }
 .turni-da-coprire + .pannelli { margin-top: 1.25rem; }
+.coprire-sommario { cursor: pointer; }
+.coprire-sommario h2 { display: inline-flex; align-items: center; gap: .6rem; margin: 0; }
+.turni-da-coprire[open] > .coprire-sommario { margin-bottom: .75rem; }
 .coprire-intro { margin: -.25rem 0 .75rem; }
 .coprire-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: .75rem; }
 .coprire-voce {

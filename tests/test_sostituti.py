@@ -371,12 +371,12 @@ def test_api_catena(client):
                        json={"persona_id": b, "ceduto_id": notte, "sostituto_id": c}).status_code == 404
 
 
-def test_si_propone_una_sola_catena_la_migliore():
+def test_si_propongono_piu_catene_e_il_massimo_le_limita():
     from cvap.sostituti import catene_sostituzione
     persone, t, notte_b = scenario_catena()
     persone[5] = persona(5, "B due")
     notte_b2 = turno(5, giorno=0, fascia="notte", postazione=ALTRA, ruolo="autista")
     tutti = dict(giorni=GIORNI, postazioni=[SEDE, ALTRA], assegnazioni=[t, notte_b, notte_b2], persone=persone,
                  ferie={1: {GIORNI[1]}, 4: {GIORNI[0], GIORNI[1]}})
-    assert len(catene_sostituzione(t, [2, 3, 4, 5], massimo=10, **tutti)) == 2   # due scambi possibili...
-    assert len(catene_sostituzione(t, [2, 3, 4, 5], **tutti)) == 1               # ...se ne propone uno
+    assert len(catene_sostituzione(t, [2, 3, 4, 5], **tutti)) == 2               # due scambi possibili: li propone
+    assert len(catene_sostituzione(t, [2, 3, 4, 5], massimo=1, **tutti)) == 1    # il massimo li limita

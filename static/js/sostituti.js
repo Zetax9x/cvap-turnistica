@@ -14,6 +14,7 @@ const NOTA_EXTRA = "Le ore di una sostituzione sono extra: non contano nelle ore
 // settimana. Si azzerano a ogni ingresso nella vista (dipendono anche da settimane vicine, persone e divieti).
 const cache = { settimana: null, firma: null, risposte: new Map(), inVolo: new Map(), aperti: new Set() };
 let assegnando = false;
+let pannelloAperto = false;  // il pannello "Turni da coprire" parte chiuso e resta come l'utente l'ha lasciato
 
 /** Dimentica i suggerimenti salvati: da chiamare ogni volta che si entra nella vista Settimana. */
 export function azzeraSostituti() {
@@ -111,14 +112,19 @@ export function renderTurniDaCoprire(s, opzioni) {
       box) };
   });
   annunciaQuandoPronti(voci.map((v) => v.box), esito);
-  return el("section", { id: "turni-da-coprire", class: "pannello turni-da-coprire no-print", "aria-labelledby": "titolo-coprire" },
+  return el("details", {
+    id: "turni-da-coprire", class: "pannello turni-da-coprire no-print", open: pannelloAperto,
+    ontoggle: (e) => { pannelloAperto = e.currentTarget.open; },
+  },
+  el("summary", { class: "coprire-sommario" },
     el("h2", { id: "titolo-coprire", tabindex: "-1" }, "Turni da coprire",
       el("span", { class: "conteggi" }, el("span", { class: "badge badge-errore" },
-        turni.length === 1 ? "1 turno" : `${turni.length} turni`))),
+        turni.length === 1 ? "1 turno" : `${turni.length} turni`)))),
+  el("div", { class: "coprire-corpo" },
     el("p", { class: "hint coprire-intro" },
       "Queste persone sono in ferie o in malattia ma hanno già un turno. Ecco chi può prenderlo: prima chi rispetta ",
       "tutte le regole e ha meno ore. Chi non rispetta qualche regola (riposo di 11 ore, massimo 3 giorni di fila) ",
-      "è proposto lo stesso ma segnato in arancione."),
+      "è proposto lo stesso ma segnato in arancione. Per ogni turno ci sono più proposte."),
     el("p", { class: "coprire-nota-extra" }, NOTA_EXTRA),
     el("div", { class: "coprire-azioni" }, el("button", {
       type: "button", class: "btn btn-small",
@@ -126,7 +132,7 @@ export function renderTurniDaCoprire(s, opzioni) {
     }, "Stampa chi può sostituire")),
     confermata ? el("p", { class: "banner banner-info" }, "Settimana confermata: riaprila per assegnare.") : null,
     esito,
-    el("ul", { class: "coprire-lista" }, voci.map((v) => v.li)));
+    el("ul", { class: "coprire-lista" }, voci.map((v) => v.li))));
 }
 
 /** Un solo annuncio per il pannello, quando tutti i suggerimenti scaricati ora sono arrivati. */
@@ -155,6 +161,7 @@ export function avvisoTurniDaCoprire(s) {
 function vaiAlPannello() {
   const pannello = document.getElementById("turni-da-coprire");
   if (!pannello) return;
+  pannello.open = true;
   const ridotto = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   pannello.scrollIntoView({ behavior: ridotto ? "auto" : "smooth", block: "start" });
   metti(pannello.querySelector(".candidato-assegna:not(:disabled)") || document.getElementById("titolo-coprire"));
