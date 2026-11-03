@@ -21,7 +21,7 @@ export async function richiesta(percorso, corpo) {
     return dati;
   } catch (err) {
     if (err.status) throw err;
-    throw new Error("Connessione interrotta. Verifica l’esito prima di registrare un altro cambio.");
+    throw new Error("Non riusciamo a contattare il sito. Controlla la connessione e riprova. Se stavi confermando un cambio, controlla prima se è stato salvato.");
   } finally { clearTimeout(timer); }
 }
 
@@ -38,13 +38,14 @@ export function turnoScheda(t) {
 export function riepilogo(vista) {
   return el("div", { class: "cambio-riepilogo" },
     ...vista.prima.map((prima, i) => el("article", { class: "cambio-card" },
-      el("p", {}, el("strong", {}, prima.persona_nome), " → ", el("strong", {}, vista.dopo[i].persona_nome)),
+      el("p", {}, el("strong", {}, prima.persona_nome), " lascia questo turno a ", el("strong", {}, vista.dopo[i].persona_nome)),
       turnoScheda(prima))),
     vista.avvisi.length ? el("aside", { class: "cambio-avviso" },
-      el("h3", {}, "Segnalazioni"), el("p", {}, "Queste segnalazioni non impediscono il cambio e saranno comunicate ai responsabili."),
+      el("h3", {}, "Da sapere prima di confermare"), el("p", {}, "Puoi confermare anche con questi avvisi. Saranno inclusi nell’email ai responsabili."),
       el("ul", {}, ...vista.avvisi.map(v => el("li", {}, v.messaggio)))) : null,
     vista.errori.length ? el("div", { class: "cambio-errore", role: "alert" },
-      el("h3", {}, "Cambio non consentito"),
+      el("h3", {}, "Non puoi confermare questo cambio"),
+      el("p", {}, "Leggi il motivo qui sotto. Torna indietro e scegli un altro collega o un altro turno."),
       el("ul", {}, ...vista.errori.map(v => el("li", {}, v.messaggio)))) : null);
 }
 

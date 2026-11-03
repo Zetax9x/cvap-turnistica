@@ -9,6 +9,62 @@ from cvap.modello import Assegnazione, segmento_extra
 from .test_api_cambi_turno import scenario, anteprima, conferma
 
 
+@pytest.mark.parametrize('tipo,parte', [('cessione', 'collega_id'), ('scambio', 'collega_id'),
+                                      ('scambio', 'persona_id')])
+def test_qualifica_blocca_entrambi_i_lati_senza_scritture(scenario, tipo, parte):
+    c, conn, postino, corpo, _ = scenario
+    if tipo == 'cessione':
+        corpo = {**corpo, 'tipo': tipo, 'turno_ricevuto_id': None}
+    with conn:
+        conn.execute("UPDATE persone SET qualifica = 'soccorritore' WHERE id = ?", (corpo[parte],))
+        if parte == 'persona_id':
+            conn.execute("UPDATE assegnazioni SET ruolo = 'autista' WHERE id = ?", (corpo['turno_ricevuto_id'],))
+    prima = [tuple(r) for r in conn.execute('SELECT * FROM assegnazioni ORDER BY id')]
+    vista = anteprima(c, corpo)
+    assert any(e['codice'] == 'qualifica' and e['persona_id'] == corpo[parte] for e in vista['errori'])
+    assert not any(e['codice'] == 'qualifica' for e in vista['avvisi'])
+    assert conferma(c, corpo, vista).status_code == 400
+    assert [tuple(r) for r in conn.execute('SELECT * FROM assegnazioni ORDER BY id')] == prima
+    assert conn.execute('SELECT COUNT(*) FROM variazioni_turno').fetchone()[0] == 0
+    assert not postino.messaggi
+
+
+@pytest.mark.parametrize('abilitato', [False, True])
+def test_qualifica_rispetta_abilitazione_programmati(scenario, abilitato):
+    c, conn, _, corpo, _ = scenario
+    corpo = {**corpo, 'tipo': 'cessione', 'turno_ricevuto_id': None}
+    with conn:
+        conn.execute("UPDATE persone SET qualifica = 'soccorritore', autista_programmati = ? WHERE id = ?",
+                     (abilitato, corpo['collega_id']))
+        conn.execute("UPDATE assegnazioni SET postazione = 'Programmati' WHERE id = ?", (corpo['turno_id'],))
+    vista = anteprima(c, corpo)
+    assert bool([e for e in vista['errori'] if e['codice'] == 'qualifica']) is not abilitato
+    assert conferma(c, corpo, vista).status_code == (200 if abilitato else 400)
+
+
+def test_qualifica_ricontrollata_alla_conferma(scenario):
+    c, conn, _, corpo, _ = scenario
+    vista = anteprima(c, corpo)
+    with conn:
+        conn.execute("UPDATE persone SET qualifica = 'soccorritore' WHERE id = ?", (corpo['collega_id'],))
+    assert conferma(c, corpo, vista).status_code == 409
+    assert conferma(c, corpo).status_code == 400
+
+
+def test_annullamento_bloccato_se_qualifica_non_piu_adatta(scenario):
+    c, conn, _, corpo, _ = scenario
+    vid = conferma(c, corpo).json()['id']
+    with conn:
+        conn.execute("UPDATE persone SET qualifica = 'soccorritore' WHERE id = ?", (corpo['persona_id'],))
+    c.post('/api/accesso', json={'password': 'gestione'})
+    vista = c.post(f'/api/gestione-cambi-turno/{vid}/anteprima-annullamento', json={}).json()
+    assert any(e['codice'] == 'qualifica' for e in vista['errori'])
+    r = c.post(f'/api/gestione-cambi-turno/{vid}/annulla',
+               json={'versione': vista['versione'], 'chiave': str(uuid4())})
+    assert r.status_code == 400
+    assert db.get_assegnazione(conn, corpo['turno_id']).persona_id == corpo['collega_id']
+
+
 @pytest.mark.parametrize('fine,ammesso', [(21, True), (22, False)])
 def test_soglia_11_ore_anche_settimana_precedente(scenario, fine, ammesso):
     c, conn, postino, corpo, _ = scenario
@@ -33,13 +89,13 @@ def test_blocca_riposo_dopo_turno_ricevuto_per_dichiarante(scenario):
     assert conferma(c, corpo, vista).status_code == 400
 
 
-def test_assenza_ore_qualifica_restano_solo_avvisi(scenario):
+def test_assenza_e_ore_restano_solo_avvisi(scenario):
     c, conn, _, corpo, _ = scenario
     db.crea_ferie(conn, corpo['collega_id'], date(2090, 1, 2), date(2090, 1, 2))
     db.imposta_max_ore(conn, corpo['collega_id'], 1)
     vista = anteprima(c, corpo)
     codici = {v['codice'] for v in vista['avvisi']}
-    assert {'ferie', 'qualifica', 'ore_max'} <= codici
+    assert {'ferie', 'ore_max'} <= codici
     assert not vista['errori']
     assert conferma(c, corpo, vista).status_code == 200
 
@@ -219,10 +275,10 @@ def test_errore_11_ore_introdotto_dopo_anteprima_impedisce_conferma(scenario):
 def test_dipendente_disattivato_non_filtrato_e_qualifica_segnalata(scenario):
     c, conn, _, corpo, _ = scenario
     with conn:
-        conn.execute('UPDATE persone SET attivo = 0 WHERE id = ?', (corpo['collega_id'],))
+        conn.execute("UPDATE persone SET attivo = 0, qualifica = 'soccorritore' WHERE id = ?", (corpo['collega_id'],))
     assert any(p['id'] == corpo['collega_id'] for p in c.get('/api/cambi-turno/dipendenti').json())
     vista = anteprima(c, corpo)
-    assert any(a['codice'] == 'qualifica' for a in vista['avvisi'])
+    assert any(a['codice'] == 'qualifica' for a in vista['errori'])
 
 
 def test_annullamento_non_bloccato_da_semplice_correzione_del_nome(scenario):

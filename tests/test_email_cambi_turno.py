@@ -79,7 +79,7 @@ def test_rettifica_fallita_reinvio_e_vecchia_notifica_superata(scenario):
     assert r.json()['notifiche'][0]['stato'] == 'superata'
     postino.falliscono.clear()
     assert c.post(f'/api/gestione-cambi-turno/{vid}/reinvia').json()['notifica'] == 'inviata'
-    assert 'Rettifica' in postino.messaggi[-1]['Subject']
+    assert 'Cambio turno annullato' in postino.messaggi[-1]['Subject']
     assert db.get_assegnazione(conn, corpo['turno_id']).persona_id == corpo['persona_id']
 
 

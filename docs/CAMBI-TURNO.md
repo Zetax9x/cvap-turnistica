@@ -7,15 +7,15 @@ Aprire `/cambio-turno` sullo stesso indirizzo del gestionale. Nella sezione **Ca
 ## Registrare una variazione
 
 1. Selezionare il proprio nome e un turno ancora da iniziare. Sono compresi i turni nelle settimane in bozza e confermate; i turni passati o già iniziati sono esclusi.
-2. Scegliere **Ho ceduto il turno** oppure **Ho scambiato il turno**.
+2. Scegliere **Do il mio turno a un collega** oppure **Scambio il mio turno con un collega**.
 3. Indicare il collega. Per uno scambio selezionare anche il turno del collega da ricevere, eventualmente in un'altra settimana.
-4. Leggere il riepilogo e gli avvisi, quindi premere **Conferma e comunica alla responsabile**.
+4. Leggere il riepilogo e gli avvisi, quindi premere **Conferma il cambio e invia l’email**.
 
 La conferma di chi registra è sufficiente. Il tabellone si aggiorna subito; lo scambio trasferisce entrambi i turni nella stessa operazione. Le settimane conservano il proprio stato e una cessione non crea automaticamente ore di sostituzione o straordinario.
 
-Il controllo blocca una variazione che introduce o peggiora un intervallo di riposo inferiore a **11 ore** oppure sovrappone il turno ricevuto a un altro turno della stessa persona. Vale per entrambe le persone, anche oltre il confine della settimana e per sovrapposizioni parziali o turni notturni. Nello scambio i turni ceduti vengono tolti prima del controllo: scambiare due turni nello stesso orario è possibile se non ci sono altri impegni incompatibili. Le altre anomalie, comprese qualifiche, assenze e ore settimanali, compaiono come avvisi nel riepilogo e nella comunicazione.
+Il controllo blocca una variazione che introduce o peggiora un intervallo di riposo inferiore a **11 ore** oppure sovrappone il turno ricevuto a un altro turno della stessa persona. Vale per entrambe le persone, anche oltre il confine della settimana e per sovrapposizioni parziali o turni notturni. Nello scambio i turni ceduti vengono tolti prima del controllo: scambiare due turni nello stesso orario è possibile se non ci sono altri impegni incompatibili. Il cambio è bloccato anche se chi riceve un turno non ha la qualifica richiesta per quel ruolo e quella postazione, comprese le abilitazioni specifiche per i Programmati. Il controllo vale per entrambi i turni di uno scambio e anche per l’annullamento. Le altre anomalie, comprese assenze e ore settimanali, compaiono come avvisi nel riepilogo e nella comunicazione.
 
-Se si interrompe la connessione, usare **Verifica esito** o **Riprendi lo stesso invio**. La pagina conserva il riferimento dell'operazione nella sessione del browser e recupera la stessa registrazione senza ripetere il trasferimento.
+Se si interrompe la connessione, usare **Controlla il salvataggio** o **Riprova a salvare questo cambio**. La pagina conserva il riferimento dell'operazione nella sessione del browser e recupera la stessa registrazione senza ripetere il trasferimento.
 
 ## Comunicazioni e gestione
 
