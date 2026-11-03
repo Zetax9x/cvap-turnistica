@@ -14,15 +14,18 @@ log = logging.getLogger('cvap.cambi_turno')
 def componi(foto, indirizzo, tipo):
     v = foto['variazione']
     rettifica = tipo == 'rettifica'
-    titolo = 'Rettifica cambio turno' if rettifica else 'Variazione turni: ' + v['dichiarante']
-    righe = [titolo, f"Registrato da: {v['dichiarante']}", f"Data: {foto['quando']}", *v['riepilogo']]
+    titolo = 'Cambio turno annullato' if rettifica else 'Variazione turni: ' + v['dichiarante']
+    quando = datetime.fromisoformat(foto['quando']).strftime('%d/%m/%Y alle %H:%M')
+    righe = [titolo, f"Cambio registrato da: {v['dichiarante']}", f"Data: {quando}",
+             ('Il cambio è stato annullato e i turni sono tornati alle persone indicate qui sotto.' if rettifica
+              else 'Il tabellone è stato aggiornato. Qui sotto trovi chi farà ciascun turno.'), *v['riepilogo']]
     avvisi = [a['messaggio'] for a in v['avvisi']]
     if avvisi:
-        righe += ['Segnalazioni (non bloccanti):', *avvisi]
+        righe += ['Segnalazioni: il cambio è stato salvato anche in presenza di questi avvisi.', *avvisi]
     html = '<h1>' + escape(titolo) + '</h1>' + ''.join(f'<p>{escape(r)}</p>' for r in righe[1:])
     for s in foto['settimane']:
         html += f"<h2>Settimana {s['inizio']} / {s['fine']}</h2>" + email_turni._html_tabellone(s, None)
-        righe.append(f"Tabellone {s['inizio']} / {s['fine']}: vedi email HTML e PDF allegato.")
+        righe.append(f"Tabellone {s['inizio']} / {s['fine']}: trovi tutti i turni nel PDF allegato e nel corpo dell’email.")
     m = EmailMessage()
     m['To'], m['Subject'] = indirizzo, titolo
     m.set_content('\n\n'.join(righe))

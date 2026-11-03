@@ -33,23 +33,23 @@ export async function mostra(root) {
     const quando = new Date(v.creata_il).toLocaleString("it-IT", { timeZone: "Europe/Rome" });
     const box = el("article", { class: "cambio-card" },
       el("h2", {}, `#${v.id} · ${v.dati.tipo === "scambio" ? "Scambio" : "Cessione"}${v.annullata_il ? " · Annullato" : ""}`),
-      el("p", {}, `Nome dichiarato: ${v.dati.dichiarante} · ${quando}`),
+      el("p", {}, `Registrato da: ${v.dati.dichiarante} · ${quando}`),
       el("ul", {}, ...v.riepilogo.map(r => el("li", {}, r))),
       el("p", {}, notifica),
       el("details", {}, el("summary", {}, "Dettagli e notifiche"), riepilogo(v.dati),
         v.rettifica ? el("div", {}, el("h3", {}, "Rettifica"), riepilogo(v.rettifica)) : null,
         el("ul", { class: "cambio-notifiche" }, ...v.notifiche.map(n => el("li", {},
-          `${n.tipo} · ${n.destinatario || "Nessun responsabile configurato"} · ${n.stato}${n.errore ? ` · ${n.errore}` : ""}`)))));
+          `${n.tipo === "rettifica" ? "Annullamento" : "Cambio turno"} · ${n.destinatario || "Nessun indirizzo dei responsabili impostato"} · ${{inviata:"Inviata", da_inviare:"Da inviare", errore:"Invio non riuscito", in_invio:"Invio in corso", superata:"Sostituita da una comunicazione successiva"}[n.stato] || n.stato}${n.errore ? ` · ${n.errore}` : ""}`)))));
     const azioni = el("div", { class: "cambio-azioni" });
     if (v.notifica !== "inviata") azioni.append(azione("Reinvia comunicazione", async () => {
       await richiesta(`gestione-cambi-turno/${v.id}/reinvia`, {}); await carica();
     }));
     if (!v.annullata_il) azioni.append(azione("Annulla cambio…", async () => {
       const anteprima = await richiesta(`gestione-cambi-turno/${v.id}/anteprima-annullamento`, {});
-      const conferma = el("div", { class: "cambio-avviso" }, el("h3", {}, "Confermi il ripristino?"),
-        riepilogo(anteprima), el("p", {}, "Il tabellone sarà ripristinato e i responsabili riceveranno una rettifica con il PDF."));
+      const conferma = el("div", { class: "cambio-avviso" }, el("h3", {}, "Vuoi annullare questo cambio?"),
+        riepilogo(anteprima), el("p", {}, "I turni torneranno alle persone che li avevano prima del cambio. I responsabili riceveranno un’email di annullamento con il PDF aggiornato."));
       const chiave = nuovaChiave();
-      if (!anteprima.errori.length) conferma.append(azione("Conferma annullamento e invia rettifica", async () => {
+      if (!anteprima.errori.length) conferma.append(azione("Annulla il cambio e invia l’email", async () => {
         await richiesta(`gestione-cambi-turno/${v.id}/annulla`, { versione: anteprima.versione, chiave }); await carica();
       }));
       conferma.append(azione("Mantieni il cambio", async () => conferma.remove()));

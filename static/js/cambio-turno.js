@@ -57,8 +57,8 @@ function scegliPersona() {
 async function scegliTurno() {
   await esegui(async () => {
     const turni = await richiesta(`cambi-turno/turni?persona_id=${persona.id}`);
-    pagina(2, "Quale turno vuoi cambiare?", el("p", {}, `Stai registrando come ${persona.nome}.`),
-      el("p", { class: "cambio-muted" }, "Sono visibili solo i turni futuri."),
+    pagina(2, "Quale turno vuoi cambiare?", el("p", {}, `Hai scelto il nome: ${persona.nome}.`),
+      el("p", { class: "cambio-muted" }, "Scegli il turno che vuoi dare a un collega. Vedi solo i turni che devono ancora iniziare."),
       elencoTurni(turni, turno?.id, t => { turno = t; tipo = null; collega = null; ricevuto = null; scegliOperazione(); }),
       bottone("Cambia nome", scegliPersona, true));
   });
@@ -81,9 +81,10 @@ function elencoTurni(turni, selezionato, seleziona) {
 
 function scegliOperazione() {
   const sceltaTipo = el("div", { class: "cambio-scelte" },
-    bottone("Ho ceduto il turno", () => { tipo = "cessione"; ricevuto = null; scegliCollega(); }),
-    bottone("Ho scambiato il turno", () => { tipo = "scambio"; scegliCollega(); }));
-  pagina(3, "Che variazione hai concordato?", turnoScheda(turno), sceltaTipo,
+    bottone("Do il mio turno a un collega", () => { tipo = "cessione"; ricevuto = null; scegliCollega(); }),
+    bottone("Scambio il mio turno con un collega", () => { tipo = "scambio"; scegliCollega(); }));
+  pagina(3, "Cosa vuoi fare?", turnoScheda(turno),
+    el("p", {}, "Prima di proseguire, accordati con il collega. Puoi dargli il tuo turno oppure fare uno scambio: lui farà il tuo turno e tu farai il suo."), sceltaTipo,
     bottone("Indietro ai miei turni", scegliTurno, true));
 }
 
@@ -97,14 +98,14 @@ function scegliCollega() {
     if (tipo === "cessione") await mostraAnteprima();
     else {
       const turni = await richiesta(`cambi-turno/turni?persona_id=${collega.id}`);
-      pagina(3, `Quale turno di ${collega.nome} ricevi?`,
+      pagina(3, `Quale turno di ${collega.nome} farai tu?`,
         elencoTurni(turni, null, t => { ricevuto = t; esegui(mostraAnteprima); }),
         bottone("Cambia collega", scegliCollega, true));
     }
   }));
   avanti.disabled = !selettore.value;
   selettore.addEventListener("change", () => { avanti.disabled = !selettore.value; });
-  pagina(3, tipo === "cessione" ? "A chi cedi il turno?" : "Con chi hai scambiato?",
+  pagina(3, tipo === "cessione" ? "Chi farà il tuo turno?" : "Con chi scambi il turno?",
     turnoScheda(turno), el("label", { for: "collega" }, "Dipendente"), selettore, avanti,
     bottone("Indietro", scegliOperazione, true));
 }
@@ -112,14 +113,14 @@ function scegliCollega() {
 async function mostraAnteprima() {
   corpo = { tipo, persona_id: persona.id, collega_id: collega.id, turno_id: turno.id, turno_ricevuto_id: ricevuto?.id ?? null };
   vista = await richiesta("cambi-turno/anteprima", corpo);
-  const conferma = bottone("Conferma e comunica alla responsabile", () => esegui(async () => {
+  const conferma = bottone("Conferma il cambio e invia l’email", () => esegui(async () => {
     const invio = { ...corpo, versione: vista.versione, chiave: nuovaChiave() };
     memorizza(invio);
     await inviaConferma(invio);
   }));
   conferma.disabled = vista.errori.length > 0;
   pagina(4, "Controlla e conferma", riepilogo(vista),
-    el("p", {}, "Confermando aggiorni il tabellone e comunichi la variazione ai responsabili, con il PDF dei turni aggiornati."),
+    el("p", {}, "Controlla nomi, date e orari. Conferma solo se avete già concordato il cambio: il tabellone verrà aggiornato e i responsabili riceveranno un’email con il riepilogo e il PDF dei turni."),
     conferma, bottone("Indietro", scegliCollega, true),
     bottone("Ricarica i miei turni", scegliTurno, true));
 }
@@ -140,22 +141,22 @@ function mostraEsito(esito) {
     el("h2", {}, esito.annullata_il ? "Cambio annullato dalla responsabile" : "Cambio registrato"),
     el("p", {}, `Registrazione n. ${esito.id}`),
     el("ul", {}, ...esito.riepilogo.map(r => el("li", {}, r))),
-    el("p", {}, esito.notifica === "inviata" ? "Comunicazione inviata ai responsabili con il tabellone aggiornato e il PDF."
-      : "Il cambio è salvato. La comunicazione ai responsabili è da reinviare dal gestionale. Non registrare di nuovo il cambio.")),
-    bottone("Registra un’altra variazione", scegliPersona));
+    el("p", {}, esito.notifica === "inviata" ? "Il tabellone è aggiornato. L’email con il riepilogo e il PDF è stata inviata ai responsabili."
+      : "Il cambio è salvato e il tabellone è aggiornato. L’email non è stata inviata a tutti i responsabili. Avvisa la responsabile: potrà reinviarla dal gestionale. Non registrare di nuovo lo stesso cambio.")),
+    bottone("Registra un altro cambio", scegliPersona));
   root.focus();
 }
 
 function recupero(invio) {
-  pagina(4, "Verifica la registrazione", el("p", {}, "La connessione si è interrotta. Verifica l’esito oppure riprendi lo stesso invio: il cambio verrà registrato una volta sola."),
-    bottone("Verifica esito", () => esegui(async () => {
+  pagina(4, "Controlla se il cambio è stato salvato", el("p", {}, "La connessione si è interrotta e non sappiamo se il cambio è stato salvato. Premi Controlla il salvataggio. Se non risulta salvato, premi Riprova a salvare questo cambio."),
+    bottone("Controlla il salvataggio", () => esegui(async () => {
       try { mostraEsito(await richiesta(`cambi-turno/conferme/${invio.chiave}`)); }
       catch (err) {
-        if (err.status === 404) throw new Error("La registrazione non risulta ancora completata. Riprendi lo stesso invio.");
+        if (err.status === 404) throw new Error("Il cambio non risulta ancora salvato. Premi Riprova a salvare questo cambio.");
         throw err;
       }
     })),
-    bottone("Riprendi lo stesso invio", () => esegui(async () => {
+    bottone("Riprova a salvare questo cambio", () => esegui(async () => {
       try { await inviaConferma(invio); }
       catch (err) {
         // Un errore certo dal server permette di ricominciare con dati aggiornati.

@@ -29,7 +29,7 @@ def scenario(tmp_path):
     client = TestClient(create_app(path, password='gestione', postino=postino))
     conn = db.apri(path)
     a = db.crea_persona(conn, 'Anna', 'dipendente', 'autista', email='anna@example.org')['id']
-    b = db.crea_persona(conn, 'Bruno', 'dipendente', 'soccorritore', email='bruno@example.org')['id']
+    b = db.crea_persona(conn, 'Bruno', 'dipendente', 'autista', email='bruno@example.org')['id']
     db.crea_persona(conn, 'Volontario', 'volontario', 'autista')
     db.crea_destinatario(conn, 'capo@example.org', 'Responsabile', ['turni'], True)
     primo = db.crea_assegnazione(conn, Assegnazione(date(2090, 1, 2), 'Acquasanta', 'giorno', 'intero', 'autista', a))
@@ -71,7 +71,7 @@ def test_scambio_settimane_bloccate_email_e_idempotenza(scenario):
     c, conn, postino, corpo, _ = scenario
     vista = anteprima(c, corpo)
     assert not vista['errori']
-    assert any(v['codice'] == 'qualifica' for v in vista['avvisi'])
+    assert not any(v['codice'] == 'qualifica' for v in vista['avvisi'])
     chiave = str(uuid4())
     r = conferma(c, corpo, vista, chiave)
     assert r.status_code == 200, r.text
@@ -117,7 +117,7 @@ def test_cessione_errore_email_reinvio_e_annullamento(scenario):
     r = c.post(f"/api/gestione-cambi-turno/{variazione['id']}/annulla", json=dati)
     assert r.status_code == 200, r.text
     assert db.get_assegnazione(conn, corpo['turno_id']).persona_id == corpo['persona_id']
-    assert 'Rettifica' in postino.messaggi[-1]['Subject']
+    assert 'Cambio turno annullato' in postino.messaggi[-1]['Subject']
     n = len(postino.messaggi)
     assert c.post(f"/api/gestione-cambi-turno/{variazione['id']}/annulla", json=dati).status_code == 200
     assert len(postino.messaggi) == n

@@ -1,4 +1,4 @@
-"""Cessioni e scambi dichiarati dai dipendenti; riposo e sovrapposizioni bloccano l'operazione."""
+"""Cessioni e scambi: qualifica, riposo e sovrapposizioni bloccano l'operazione."""
 import hashlib
 from dataclasses import asdict, replace
 from datetime import date, datetime, time, timedelta
@@ -73,6 +73,12 @@ def _valuta(conn, prima, dopo, dati_settimana):
     coinvolti = {f['persona_id'] for f in prima + dopo}
     settimane = sorted({lunedi(date.fromisoformat(f['data'])) for f in prima})
     avvisi, errori = [], []
+    for f in dopo:
+        p = db.a_persona(dipendente(conn, f['persona_id']))
+        if not p.puo_ricoprire(f['ruolo'], f['postazione']):
+            errori.append({'codice': 'qualifica', 'persona_id': p.id,
+                           'messaggio': f"{p.nome} non ha la qualifica richiesta per svolgere questo turno come {f['ruolo']}: "
+                                        f"{descrivi(f)}. Scegli un collega o un turno compatibile con la qualifica."})
     # Riposo e sovrapposizioni si controllano nei dintorni di ogni turno.
     dintorni = {}
     for f in dopo:
@@ -122,7 +128,7 @@ def _valuta(conn, prima, dopo, dati_settimana):
         regole['contesto'] += [a for a in sostituzioni.values()
                               if a.data not in set(d.giorni) and min(abs((a.data - g).days) for g in d.giorni) <= 3]
         for v in valida_settimana(**regole):
-            if v.persona_id not in coinvolti or v.codice in {'riposo', 'sovrapposizione'}:
+            if v.persona_id not in coinvolti or v.codice in {'riposo', 'sovrapposizione', 'qualifica'}:
                 continue
             messaggio = v.messaggio
             if v.codice == 'ferie' and (v.persona_id, v.data) in d.malattia:
@@ -158,14 +164,14 @@ def anteprima(conn, corpo, dati_settimana):
     if len(prima) == 2:
         dopo.append(fotografia(conn, ids[1], replace(assegnazione(prima[1]), persona_id=pid)))
     vista = _valuta(conn, prima, dopo, dati_settimana)
-    riepilogo = [f"{f['persona_nome']} cede a {n['persona_nome']}: {descrivi(f)}" for f, n in zip(prima, dopo)]
+    riepilogo = [f"{n['persona_nome']} farà il turno di {f['persona_nome']}: {descrivi(f)}" for f, n in zip(prima, dopo)]
     return {**vista, 'tipo': corpo['tipo'], 'dichiarante': prima[0]['persona_nome'], 'riepilogo': riepilogo,
             'richiesta': {k: corpo.get(k) for k in ('tipo', 'persona_id', 'collega_id', 'turno_id', 'turno_ricevuto_id')}}
 
 
 def _controlla(vista, versione):
     if versione != vista['versione']:
-        raise HTTPException(409, 'I dati sono cambiati: ricarica e controlla il riepilogo')
+        raise HTTPException(409, 'I turni o i dati del personale sono cambiati. Aggiorna l’elenco dei turni e controlla di nuovo il riepilogo prima di confermare.')
     if vista['errori']:
         raise HTTPException(400, '; '.join(e['messaggio'] for e in vista['errori']))
 
