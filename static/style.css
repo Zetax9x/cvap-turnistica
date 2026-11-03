@@ -1621,4 +1621,8 @@ a.btn { text-decoration: none; }
   .btn-small, .extra-modifica, .toast-close { min-height: var(--tap); }
   .toast-close { min-width: var(--tap); }
   .tabella .azioni .btn + .btn { margin-left: .5rem; }
+  /* campi, selettori e pulsanti da 44 px come il resto, e le righe che aprono una sezione con un'area da toccare vera */
+  .btn, .altre-opzioni > summary, input:not([type="checkbox"]):not([type="radio"]), select { min-height: var(--tap); }
+  .nuova-persona > summary, .info-ripiegabile > summary, .ferie-passate > summary { padding-block: .7rem; }
+  .scheda, .giorno-btn, .sort-btn { display: inline-flex; align-items: center; justify-content: center; min-height: var(--tap); }
 }
