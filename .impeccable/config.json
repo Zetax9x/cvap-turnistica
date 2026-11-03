@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "static/style.css"
+        ],
+        "createdAt": "2026-11-03T14:55:32.030Z",
+        "reason": "Agent, scelta delegata dall'utente: i bordi laterali codificano lo stato con colori coerenti in tutta l'app (errore, avviso, conferma, info, extra), dichiarato nella testata del CSS; sostituirli sarebbe un redesign di banner, avvisi e voci di elenco"
+      }
+    ]
+  }
+}
