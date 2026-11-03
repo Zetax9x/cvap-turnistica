@@ -37,7 +37,9 @@ export async function mostra(root, parametro) {
       el("a", { href: "#calendario" }, "Vai al mese corrente"));
     return;
   }
-  root.append(el("p", { role: "status" }, "Verifica della copertura in corso…"));
+  root.append(el("div", { role: "status", class: "calendario-copertura-attesa" },
+    el("span", { class: "spinner", "aria-hidden": "true" }),
+    el("p", {}, "Calcolo la copertura del mese: può richiedere qualche secondo…")));
   root.setAttribute("aria-busy", "true");
   try {
     const payload = await api.calendarioCopertura(mese);

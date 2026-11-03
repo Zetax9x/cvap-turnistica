@@ -1466,6 +1466,8 @@ a.btn { text-decoration: none; }
 .calendario-copertura-ferie { background: #e5f2fb; color: #18537b; }
 .calendario-copertura-malattia { background: #f0e8fa; color: #663a87; }
 .calendario-copertura-indisponibilita { background: #f0ece4; color: #625136; }
+.calendario-copertura-attesa { display: flex; align-items: center; gap: .9rem; margin: 1.5rem 0; font-weight: 600; }
+.calendario-copertura-attesa p { margin: 0; }
 .calendario-copertura-form { margin-top: 1.25rem; }
 .calendario-copertura-campi { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .75rem; }
 .calendario-copertura-dialog { max-width: 700px; }

@@ -27,6 +27,7 @@ from .calendario import giorni_settimana, lunedi, postazioni_attive, tipo_settim
 from .festivita import festivi_periodo
 from .rotazione_festivi import riepilogo_generazione
 from .liberi import liberi_settimana
+from .cache_copertura import CacheCopertura
 from .sostituti import Candidato, candidati_sostituzione, catene_sostituzione, prova_catena
 from .riepilogo import GIORNI_MAX as GIORNI_MAX_RIEPILOGO, riepilogo_persona
 from .modello import (EXTRA, INTERO_DI, PARTI_TURNO, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, SEGMENTI, STANDBY,
@@ -614,8 +615,14 @@ def _anteprima_ferie_calendario(conn, body: FerieIn) -> dict:
             "settimane": settimane, "richiede_conferma": richiede_conferma}
 
 
-def payload_calendario_copertura(conn: sqlite3.Connection, mese: date) -> dict:
-    """Assenze nella griglia mensile e copertura preventiva di ciascuna settimana."""
+def payload_calendario_copertura(conn: sqlite3.Connection, mese: date, cache: CacheCopertura | None = None) -> dict:
+    """Assenze nella griglia mensile e copertura preventiva di ciascuna settimana (con `cache`, quella già calcolata)."""
+    def copertura(inizio: date, con_volontari: bool) -> dict:
+        if cache is None:
+            return _copertura_preventiva(conn, inizio, con_volontari=con_volontari)
+        return cache.prendi((inizio, con_volontari, date.today()),
+                            lambda: _copertura_preventiva(conn, inizio, con_volontari=con_volontari))
+
     primo = mese.replace(day=1)
     ultimo = (primo.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
     dal, al = lunedi(primo), lunedi(ultimo) + timedelta(days=6)
@@ -627,8 +634,8 @@ def payload_calendario_copertura(conn: sqlite3.Connection, mese: date) -> dict:
     riepilogo = dict.fromkeys(("dipendenti", "volontari", "da_risolvere", "da_verificare"), 0)
     inizio = dal
     while inizio <= al:
-        solo_dipendenti = _copertura_preventiva(conn, inizio, con_volontari=False)
-        con_volontari = _copertura_preventiva(conn, inizio, con_volontari=True)
+        solo_dipendenti = copertura(inizio, False)
+        con_volontari = copertura(inizio, True)
         stato = _stato_copertura(solo_dipendenti, con_volontari)
         fine = inizio + timedelta(days=6)
         settimane.append({"inizio": inizio.isoformat(), "fine": fine.isoformat(),
@@ -661,6 +668,20 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
     app = FastAPI(title="CVAP Turnistica", **nascosta)
     blocco = threading.Lock()
     app.state.blocco_scrittura = blocco
+
+    # il Calendario ricalcola 12 controlli per mese (~5 s): si tengono finché nessuna richiesta modifica i dati
+    cache_copertura = CacheCopertura()
+
+    @app.middleware("http")
+    async def invalida_cache_copertura(request: Request, chiama):
+        scrive = request.method not in ("GET", "HEAD", "OPTIONS")
+        if scrive:
+            cache_copertura.invalida()
+        try:
+            return await chiama(request)
+        finally:
+            if scrive:  # di nuovo a modifica fatta: un calcolo partito nel frattempo non resta in cache
+                cache_copertura.invalida()
 
     # --- accesso con password ---
     # chiave di firma: password + segreto casuale (da SESSIONE_SEGRETO o generato e salvato nel database),
@@ -812,7 +833,7 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
     # --- settimane ---
     @app.get("/api/calendario-copertura")
     def calendario_copertura(mese: str, conn: Conn):
-        return payload_calendario_copertura(conn, _mese(mese))
+        return payload_calendario_copertura(conn, _mese(mese), cache_copertura)
 
     @app.get("/api/settimane/{data}")
     def get_settimana(data: str, conn: Conn):
