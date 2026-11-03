@@ -384,7 +384,7 @@ def test_calendario_copertura_restituisce_mese_assenze_e_settimane_ai_bordi(clie
     inattivo = crea(client, "Inattivo")
     assert client.put(f"/api/persone/{inattivo['id']}", json={
         **inattivo, "attivo": False}).status_code == 200
-    for dal, al, motivo in [("2026-09-27", "2026-10-02", "ferie"),
+    for dal, al, motivo in [("2026-09-27", "2026-10-06", "ferie"),
                             ("2026-10-30", "2026-11-03", "malattia")]:
         assert client.post("/api/ferie", json={
             "persona_id": p["id"], "dal": dal, "al": al, "motivo": motivo}).status_code == 201
@@ -402,7 +402,8 @@ def test_calendario_copertura_restituisce_mese_assenze_e_settimane_ai_bordi(clie
     assert dati["assenze"] == [
         {"persona_id": p["id"], "data": giorno, "motivo": motivo}
         for motivo, giorni in [("ferie", ["2026-09-28", "2026-09-29", "2026-09-30",
-                                          "2026-10-01", "2026-10-02"]),
+                                          "2026-10-01", "2026-10-02", "2026-10-03",
+                                          "2026-10-04", "2026-10-05", "2026-10-06"]),
                                 ("malattia", ["2026-10-30", "2026-10-31", "2026-11-01"])]
         for giorno in giorni]
     assert dati["indisponibilita"] == [
@@ -415,6 +416,43 @@ def test_calendario_copertura_restituisce_mese_assenze_e_settimane_ai_bordi(clie
     assert dati["riepilogo"] == {"dipendenti": 0, "volontari": 0, "da_risolvere": 31, "da_verificare": 0}
     assert client.get("/api/ferie").json() == prima
     assert client.get("/api/settimane/2026-10-19").json()["assegnazioni"] == []
+
+
+def test_calendario_copertura_solver_inconclusivo_non_significa_coperto(client, monkeypatch):
+    from datetime import date
+    from types import SimpleNamespace
+    from cvap import solver
+
+    p = crea(client, "Mario")
+    assert client.post("/api/ferie", json={
+        "persona_id": p["id"], "dal": "2026-10-25", "al": "2026-10-26"
+    }).status_code == 201
+    chiamate = []
+
+    def genera(giorni, attive, dipendenti, **kwargs):
+        assert kwargs["copertura_rigida"] is True
+        chiamate.append((giorni[0], kwargs["ferie"].get(p["id"], set())))
+        return SimpleNamespace(stato="nessuna_soluzione", messaggio="Tempo esaurito")
+
+    monkeypatch.setattr(solver, "genera", genera)
+    r = client.get("/api/calendario-copertura?mese=2026-10")
+    assert r.status_code == 200, r.text
+    dati = r.json()
+    assert len(chiamate) == 10
+    assert [assenze for inizio, assenze in chiamate if inizio == date(2026, 10, 19)] == [
+        {date(2026, 10, 25)}, {date(2026, 10, 25)}]
+    assert [assenze for inizio, assenze in chiamate if inizio == date(2026, 10, 26)] == [
+        {date(2026, 10, 26)}, {date(2026, 10, 26)}]
+    assert dati["assenze"] == [
+        {"persona_id": p["id"], "data": giorno, "motivo": "ferie"}
+        for giorno in ["2026-10-25", "2026-10-26"]]
+    assert all(s["stato"] == "da_verificare" for s in dati["settimane"])
+    for settimana in dati["settimane"]:
+        for scenario in ("solo_dipendenti", "con_volontari"):
+            assert settimana[scenario] == {
+                "stato": "da_verificare", "scoperti": [], "messaggio": "Tempo esaurito"}
+    assert dati["riepilogo"] == {
+        "dipendenti": 0, "volontari": 0, "da_risolvere": 0, "da_verificare": 31}
 
 
 def test_calendario_copertura_distingue_dipendenti_volontari_e_verifica(client, monkeypatch):

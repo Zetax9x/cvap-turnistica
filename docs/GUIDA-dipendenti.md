@@ -67,8 +67,9 @@ essere **decisi dal direttivo** e **non possono essere messi in discussione**.
 
 ## 2. Come nasce il turno della settimana
 
-1. **Assenze e indisponibilità.** Il responsabile registra le ferie, le malattie e le indisponibilità comunicate
-   per quella settimana (le indisponibilità entro le 12 del venerdì).
+1. **Assenze e indisponibilità.** Il responsabile approva le ferie dal **Calendario** e registra le malattie e
+   le indisponibilità comunicate per quella settimana (le indisponibilità entro le 12 del venerdì).
+   Il Calendario mostra le assenze e controlla la copertura delle settimane interessate prima dell'approvazione.
 2. **Turni dei volontari.** Vengono inseriti i turni scelti dai volontari in base alle disponibilità comunicate
    entro le 16 del venerdì (anche mezzi turni) ed eventuali turni assegnati a mano a un dipendente. Il programma
    non sposta mai questi turni.
@@ -212,7 +213,17 @@ colleghi.
 
 ### 6.1 Ferie e malattia o infortunio
 
-- Comunicale al responsabile, che le registra come periodo dal… al….
+- Comunicale al responsabile, indicando il periodo dal… al…. Per le ferie il responsabile sceglie il dipendente
+  e le date nel **Calendario**, controlla l'anteprima e approva. Il periodo può attraversare più settimane o mesi.
+- Il Calendario distingue quattro esiti per settimana: **copertura con dipendenti**, **con volontari già
+  prenotati**, **da risolvere** (rosso) e **da verificare** quando il controllo non ha un esito conclusivo.
+  «Da verificare» non significa coperto. I volontari non ancora prenotati non sono considerati disponibili.
+- Se le ferie introducono un **rosso nuovo**, il responsabile vede l'avviso e deve scegliere esplicitamente
+  **Approva comunque** per confermare. L'avviso non blocca le ferie; un rosso già presente non richiede questa
+  conferma aggiuntiva. Il controllo e l'approvazione non spostano, cancellano o assegnano automaticamente turni:
+  eventuali sostituzioni restano da gestire dal responsabile.
+- Le **malattie** restano registrabili come assenze e visibili nel Calendario, insieme alle indisponibilità;
+  entrambe incidono sul controllo della copertura. L'approvazione dal Calendario riguarda le ferie.
 - Nei giorni di ferie o malattia non ti viene assegnato nessun turno. La notte della sera prima del primo giorno di
   ferie resta possibile, perché inizia il giorno precedente.
 - Ogni giorno di ferie o malattia vale 6 ore nel conteggio delle ore (minimo e differenza con i colleghi), ma non
@@ -236,6 +247,7 @@ colleghi.
 - Nell'elenco dei dipendenti liberi di ogni giorno, chi è indisponibile, in ferie o in malattia compare a parte,
   così è chiaro che non va chiamato.
 - Le indisponibilità restano registrate e il responsabile ne vede un riepilogo per giorno della settimana.
+  Sono visibili anche nel Calendario e vengono considerate nel controllo prima di approvare le ferie.
 
 ### 6.3 Turni esclusi
 

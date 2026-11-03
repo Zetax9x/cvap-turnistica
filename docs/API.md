@@ -106,6 +106,22 @@ Con `APP_PASSWORD` impostata (`create_app(..., password=...)`) tutte le API tran
   scenari hanno `{stato: "copribile"|"non_copribile"|"da_verificare", scoperti, messaggio?}` e non salvano turni:
   impongono la copertura completa rispettando solo i vincoli rigidi. Il primo ignora i volontari; il secondo usa le
   loro prenotazioni già registrate.
+- `GET /calendario-copertura?mese=YYYY-MM` → `{mese, dal, al, dipendenti, assenze, indisponibilita,
+  settimane, riepilogo}`. `mese` deve essere nel formato esatto indicato, tra `2000-01` e `2100-12`
+  (altrimenti 400). `dal` e `al` delimitano le settimane complete da lunedì a domenica che intersecano il mese,
+  inclusi i giorni nei mesi adiacenti. `dipendenti` contiene le persone dipendenti attive; `assenze` contiene
+  `{persona_id, data, motivo: "ferie"|"malattia"}` e `indisponibilita` contiene `{persona_id, data, parte}`.
+  Ogni settimana contiene `{inizio, fine, tipo: "A"|"B", solo_dipendenti, con_volontari, stato}`; i due scenari
+  hanno lo stesso payload della copertura preventiva. Malattie e indisponibilità sono incluse nel controllo.
+  `stato` assume quattro valori:
+  - `dipendenti`: copribile con i soli dipendenti;
+  - `volontari`: copribile con le prenotazioni dei volontari già registrate;
+  - `da_risolvere`: entrambi gli scenari risultano non copribili;
+  - `da_verificare`: nessuno scenario è copribile e almeno uno non ha un esito conclusivo dal solver.
+  `riepilogo` conta i giorni del solo mese richiesto per ciascuno dei quattro stati: un esito inconclusivo
+  non è mai contato come coperto. Lo stato riguarda l'intera settimana, anche nei giorni fuori mese.
+  Il controllo considera solo vincoli rigidi e volontari già prenotati; non presume nuove disponibilità.
+  Nessuno dei tre endpoint del Calendario modifica assegnazioni o stato di conferma delle settimane.
 - `POST /settimane/{data}/assegnazioni` `{data, postazione, fascia, segmento, ruolo, persona_id | nome_volontario}` → 201 settimana aggiornata (stesso payload di GET).
   Con `nome_volontario` (al posto di `persona_id`) il volontario si cerca per nome, senza distinguere maiuscole e spazi;
   se non esiste viene creato (qualifica = ruolo del turno), se era disattivato viene riattivato, se fa l'autista diventa
@@ -143,6 +159,21 @@ Con `APP_PASSWORD` impostata (`create_app(..., password=...)`) tutte le API tran
 - `DELETE /settimane/{data}/generati` → settimana aggiornata (rimuove solo le `generato`)
 - `PUT /settimane/{data}/indisponibilita` `{persona_id, turni: [{data: iso, parte}], max 21}` → settimana aggiornata. Sostituisce le
   indisponibilità della persona in quella settimana. 400 se confermata, date fuori settimana o persona non dipendente · 404
+- `POST /calendario-copertura/ferie/anteprima` `{persona_id, dal, al, motivo?: "ferie"}` → 200
+  `{persona_id, dal, al, settimane, richiede_conferma}` senza salvare. Ogni settimana interessata, anche per
+  periodi a cavallo di più settimane o mesi, contiene `{inizio, fine, stato_attuale, stato_proposto,
+  solo_dipendenti, con_volontari}`. I quattro stati sono quelli del Calendario; i due scenari descrivono la
+  copertura proposta dopo l'aggiunta delle ferie, includendo anche malattie e indisponibilità già presenti.
+  `richiede_conferma` è vero solo se almeno una settimana diventa `da_risolvere` e prima aveva un altro stato.
+- `POST /calendario-copertura/ferie` `{persona_id, dal, al, motivo?: "ferie", conferma_avviso?: false}` → 201
+  con lo stesso payload mensile di `GET /calendario-copertura`, per il mese di `dal`. Ricalcola l'anteprima
+  sotto lock prima di salvare: se `richiede_conferma` è vero e manca `conferma_avviso: true`, restituisce 409
+  `{detail: <payload anteprima>}` senza salvare. L'operatore può ripetere con `conferma_avviso: true`
+  tramite **Approva comunque**: il rosso avvisa ma non impedisce l'approvazione. Un rosso già presente non
+  richiede questa conferma. Salva solo il periodo di ferie; nessuna assegnazione è creata, rimossa o spostata.
+  Entrambi i POST accettano solo ferie (malattia → 422), estremi inclusi e massimo 366 giorni;
+  400 per periodo invertito, troppo lungo, sovrapposto a ferie/malattia o persona non dipendente; 404 per
+  persona assente. Per registrare malattie resta disponibile `POST /ferie`.
 - `GET /ferie` → `[{id, persona_id, dal, al, motivo}]` · `POST /ferie` `{persona_id, dal, al, motivo?}` → 201
   (`motivo`: `ferie` predefinito o `malattia`; altro → 422)
   (400 se dal > al, periodo > 366 giorni, sovrapposto ad altre ferie o malattia della persona o persona non dipendente · 404) ·
