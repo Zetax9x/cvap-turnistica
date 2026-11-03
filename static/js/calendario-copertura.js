@@ -88,15 +88,17 @@ function render() {
   for (let data = payload.dal; data <= payload.al; data = addDays(data, 1)) {
     const giorno = data;
     const settimana = payload.settimane.find((s) => s.inizio <= giorno && s.fine >= giorno);
+    const tipoSettimana = settimana ? `Settimana ${settimana.tipo}` : "Settimana da verificare";
     const assenze = assenzeGiorno(giorno);
     const indisponibilita = payload.indisponibilita.filter((i) => i.data === giorno);
     const posti = scoperti(settimana).filter((p) => p.data === giorno);
     const cella = el("button", {
       type: "button", class: `calendario-copertura-giorno${giorno.slice(0, 7) !== mese ? " calendario-copertura-esterno" : ""}`,
-      "aria-label": `${dataEstesa(giorno)}. ${STATI[settimana?.stato] || STATI.da_verificare}. ${assenze.length} assenze. ${new Set(indisponibilita.map((i) => i.persona_id)).size} indisponibili.${posti.length ? ` ${posti.length} posti scoperti.` : ""}`,
+      "aria-label": `${dataEstesa(giorno)}. ${tipoSettimana}. ${STATI[settimana?.stato] || STATI.da_verificare}. ${assenze.length} assenze. ${new Set(indisponibilita.map((i) => i.persona_id)).size} indisponibili.${posti.length ? ` ${posti.length} posti scoperti.` : ""}`,
       "aria-current": giorno === todayISO() ? "date" : null,
       onclick: () => dettaglio(giorno, settimana),
-    }, el("span", { class: "calendario-copertura-data" }, ddmm(giorno)), badge(settimana?.stato));
+    }, el("span", { class: "calendario-copertura-data" }, ddmm(giorno)),
+    el("span", { class: "calendario-copertura-assenza" }, tipoSettimana), badge(settimana?.stato));
     if (posti.length) cella.append(el("span", { class: "calendario-copertura-stato calendario-copertura-da_risolvere" }, `! ${posti.length} posti scoperti`));
     for (const motivo of ["ferie", "malattia"]) {
       const presenti = assenze.filter((a) => a.motivo === motivo);
@@ -125,7 +127,7 @@ function dettaglio(data, settimana) {
   const posti = scoperti(settimana).filter((p) => p.data === data);
   dialog.append(posti.length ? el("ul", {}, posti.map((p) => el("li", {}, testoPosto(p))))
     : el("p", {}, settimana?.stato === "da_verificare" ? "Verifica non conclusa: l’assenza di posti elencati non garantisce la copertura." : "Nessun posto scoperto segnalato per questo giorno."));
-  if (settimana) dialog.append(el("p", {}, `Settimana dal ${dataEstesa(settimana.inizio)} al ${dataEstesa(settimana.fine)}.`),
+  if (settimana) dialog.append(el("p", {}, `Settimana ${settimana.tipo} dal ${dataEstesa(settimana.inizio)} al ${dataEstesa(settimana.fine)}.`),
     el("a", { class: "btn", href: `#settimana/${settimana.inizio}`, onclick: () => dialog.close() }, "Apri settimana"));
   dialog.append(el("div", { class: "dialog-actions" }, el("button", { class: "btn", type: "button", onclick: () => dialog.close() }, "Chiudi")));
   dialog.addEventListener("close", () => { dialog.remove(); ritorno?.focus(); }, { once: true });
