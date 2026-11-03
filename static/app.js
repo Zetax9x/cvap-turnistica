@@ -6,6 +6,7 @@ import * as personale from "./js/personale.js";
 import * as dipendente from "./js/dipendente.js";
 import * as statistiche from "./js/statistiche.js";
 import * as impostazioni from "./js/impostazioni.js";
+import * as cambiTurno from "./js/cambi-turno-responsabile.js";
 import { api } from "./js/api.js";
 import { el } from "./js/util.js";
 import { osservaScorrimento } from "./js/scorrimento.js";
@@ -17,6 +18,7 @@ const VISTE = {
   personale: { modulo: personale, titolo: "Personale" },
   statistiche: { modulo: statistiche, titolo: "Statistiche" },
   impostazioni: { modulo: impostazioni, titolo: "Impostazioni" },
+  cambi: { modulo: cambiTurno, titolo: "Cambi turno" },
 };
 const PREDEFINITA = "settimana";
 

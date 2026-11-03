@@ -102,6 +102,8 @@ indisponibilità. **Invia i riepiloghi** manda a ognuno le sue parti per la sett
 
 ## Impostazioni
 
+Per registrare cessioni e scambi da smartphone, condividere il link `/cambio-turno`. Lo storico, il reinvio delle comunicazioni e gli annullamenti si trovano nella sezione **Cambi**. Vedi la [guida ai cambi turno](docs/CAMBI-TURNO.md).
+
 La **data di riferimento** indica una settimana A (solo Acquasanta e Venarotta); le settimane
 si alternano A/B a partire da lì e iniziano sempre di lunedì.
 
