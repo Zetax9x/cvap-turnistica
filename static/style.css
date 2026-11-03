@@ -329,7 +329,6 @@ input[type="checkbox"] { min-height: 0; width: 1.1rem; height: 1.1rem; accent-co
   width: 140px; text-align: left; padding: .5rem .65rem; background: var(--surface-2);
   position: sticky; left: 0; z-index: 1;
 }
-.griglia-scorri { display: none; }
 .griglia tbody .col-turno { font-weight: 400; }
 .fascia-label {
   display: flex; align-items: center; gap: .3rem;
@@ -442,9 +441,11 @@ input[type="checkbox"] { min-height: 0; width: 1.1rem; height: 1.1rem; accent-co
   display: grid; grid-template-columns: minmax(0, 1fr);
   gap: 1.25rem; margin-top: 1.75rem; align-items: start;
 }
-@media (min-width: 1150px) {
-  .pannelli { grid-template-columns: minmax(0, 1fr) minmax(0, 2.2fr); }  /* il riepilogo ore ha molte colonne: serve spazio */
-}
+/* una colonna sola: i Controlli, di solito una riga, stanno sopra il riepilogo e non lasciano mezza pagina vuota */
+.pannello-stato { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem 1.25rem; padding-block: .7rem; }
+.pannello-stato h2 { margin: 0; }
+.pannello-stato p { margin: 0; }
+.pannello-riepilogo { max-width: 1100px; }
 .pannello .tabella tbody th { white-space: nowrap; }
 .pannello, .card {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
@@ -750,7 +751,6 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
   .toolbar-spacer { display: none; }
   .altre-opzioni-menu { left: auto; right: 0; }
   .griglia .col-turno { width: 104px; }
-  .griglia-scorri { display: block; margin: 0; padding: .35rem .65rem; font-size: .78rem; color: var(--muted); background: var(--surface-2); }
   .griglia-copertura { font-size: .75rem; }
   .chip { font-size: .8rem; overflow-wrap: break-word; }
   .tabella-stat tbody th { white-space: nowrap; }
@@ -811,7 +811,7 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
   }
   body { font-size: 10pt; background: #fff; }
   .app-header, .skip-link, .toolbar, .week-nav, .passi, .pannelli, .turni-da-coprire, .report, .banner, .disponibilita, .richieste,
-  .centro-operativo, .filtri-tabellone, .copertura-preventiva, .griglia-copertura, .griglia-scorri,
+  .centro-operativo, .filtri-tabellone, .copertura-preventiva, .griglia-copertura,
   .toast-area, .overlay, dialog, #view-personale, #view-impostazioni { display: none !important; }
   main { padding: 0; max-width: none; }
   .week-header { margin-bottom: 4mm; }
@@ -1548,11 +1548,23 @@ a.btn { text-decoration: none; }
   .calendario-copertura-campi input, .calendario-copertura-campi select { width: 100%; }
 }
 
+.legenda-toggle { display: none; }
+
 /* ---------- Telefono: un giorno alla volta, comandi da dito ---------- */
 
 .selettore-giorno, .calendario-copertura-giorno-nome, .barra-principale { display: none; }
 
 @media screen and (max-width: 640px) {
+  /* Settimana: prima dei turni c'è già abbastanza. Legenda e filtri dietro un pulsante, pannelli in una riga sola */
+  .legenda-toggle { display: flex; width: 100%; justify-content: space-between; align-items: center; min-height: var(--tap); margin: .6rem 0; }
+  .disponibilita, .richieste { padding-block: .35rem; margin-bottom: .6rem; }
+  .legenda-toggle::after { content: "▾"; content: "▾" / ""; font-size: .8em; }
+  .legenda-toggle[aria-expanded="true"]::after { content: "▴"; content: "▴" / ""; }
+  .legenda-box:not(.aperta) .legenda-contenuto { display: none; }
+  .disponibilita > summary::after, .richieste > summary::after { display: none; }
+  .disponibilita > summary, .richieste > summary { align-items: center; min-height: var(--tap); }
+  .disponibilita-titolo, .richieste-titolo { font-size: 1rem; }
+
   /* Settimana: la griglia mostra solo il giorno scelto nella barra; il numero rosso sono i posti scoperti */
   .selettore-giorno { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .25rem; margin: .9rem 0 .75rem; }
   .giorno-sel {
@@ -1578,7 +1590,6 @@ a.btn { text-decoration: none; }
   .griglie[data-giorno="4"] .griglia tr > :nth-child(6),
   .griglie[data-giorno="5"] .griglia tr > :nth-child(7),
   .griglie[data-giorno="6"] .griglia tr > :nth-child(8) { display: table-cell; }
-  .griglia-scorri { display: none; }
 
   /* Calendario: un elenco di giorni, non sette colonne strette */
   .calendario-copertura-griglia { grid-template-columns: minmax(0, 1fr); gap: .35rem; }

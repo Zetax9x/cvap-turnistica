@@ -43,6 +43,7 @@ const stato = {
   coperturaPreventiva: null, // esito dell'ultima indisponibilità modificata in questa settimana
   filtroTabellone: "tutti",
   giornoMobile: null,  // {settimana, indice}: il giorno scelto su telefono, valido solo per quella settimana
+  legendaAperta: false,  // su telefono legenda e filtri partono chiusi e restano come l'utente li ha lasciati
 };
 
 let dialogCella = null;
@@ -169,7 +170,7 @@ function render() {
   if (stato.coperturaPreventiva) frammento.append(renderCoperturaPreventiva(stato.coperturaPreventiva));
   if ((s.postazioni_a_richiesta || []).length) frammento.append(renderRichieste(s));
   const speciali = postazioniSpecialiVisibili(s);
-  frammento.append(renderLegenda(speciali.length > 0), renderFiltriTabellone());
+  frammento.append(renderLegendaEFiltri(speciali.length > 0));
 
   const griglie = el("div", { class: `griglie filtro-${stato.filtroTabellone}`, "data-giorno": String(giornoMobile(s)) });
   frammento.append(renderSelettoreGiorno(s, griglie));
@@ -228,7 +229,7 @@ function renderCentroOperativo(s) {
   // Senza turni tutti i posti risultano "scoperti": non è un problema, è solo che non si è ancora generato.
   const scoperti = haTurni(s) ? contaScoperti(s) : 0;
   const statoTesto = confermata ? "Settimana confermata" : generati ? "Turni da controllare" : s.assegnazioni.length ? "Turni compilati a mano" : "Pronta per la pianificazione";
-  const prossima = confermata ? "Le modifiche sono bloccate: invia i turni via email oppure riapri la settimana se serve una modifica."
+  const prossima = confermata ? "Modifiche bloccate: invia i turni via email o riapri la settimana."
     : generati || s.assegnazioni.length ? "Controlla le celle evidenziate e conferma quando il tabellone è pronto."
       : "Segna eventuali assenze e genera una prima proposta di turni.";
   const copertura = scoperti
@@ -342,6 +343,21 @@ function renderLegenda(conSpeciali) {
     el("li", {}, el("span", { class: "scoperto" }, "scoperto"), " posto da coprire"),
     conSpeciali ? el("li", {}, el("span", { class: "non-richiesto", "aria-hidden": "true" }, "—"), " turno non richiesto") : null,
   );
+}
+
+/** Legenda e filtri del tabellone. Su telefono stanno dietro un pulsante: prima dei turni c'è già abbastanza da leggere. */
+function renderLegendaEFiltri(conSpeciali) {
+  const box = el("div", { class: `legenda-box${stato.legendaAperta ? " aperta" : ""}` });
+  const toggle = el("button", {
+    type: "button", class: "btn legenda-toggle no-print", "aria-expanded": String(!!stato.legendaAperta),
+    onclick: () => {
+      stato.legendaAperta = !stato.legendaAperta;
+      box.classList.toggle("aperta", stato.legendaAperta);
+      toggle.setAttribute("aria-expanded", String(stato.legendaAperta));
+    },
+  }, "Legenda e filtri");
+  box.append(toggle, el("div", { class: "legenda-contenuto" }, renderLegenda(conSpeciali), renderFiltriTabellone()));
+  return box;
 }
 
 function renderFiltriTabellone() {
@@ -621,9 +637,7 @@ function renderGriglia(s, postazione) {
       speciale ? el("span", { class: "griglia-sottotitolo muted" }, " · solo i turni richiesti") : null,
       el("span", { class: `griglia-copertura${mancanti ? " griglia-copertura-critica" : ""}${daCompilare ? " griglia-copertura-neutra" : ""}` },
         daCompilare ? "da compilare" : mancanti ? `${mancanti} ${mancanti === 1 ? "scoperto" : "scoperti"}` : "coperto")),
-    el("div", { class: "griglia-scroll" },
-      el("p", { class: "griglia-scorri" }, "Scorri orizzontalmente per vedere tutti i giorni"),
-      el("table", { class: "griglia" }, thead, tbody)));
+    el("div", { class: "griglia-scroll" }, el("table", { class: "griglia" }, thead, tbody)));
 }
 
 /** Posti scoperti delle `postazioni` nei `giorni` indicati. */
@@ -769,7 +783,8 @@ function renderViolazioni(s) {
     (a.livello === b.livello ? 0 : a.livello === "errore" ? -1 : 1) || String(a.data || "").localeCompare(String(b.data || "")));
   const errori = lista.filter((v) => v.livello === "errore").length;
   const avvisi = lista.length - errori;
-  const sezione = el("section", { class: "pannello", "aria-labelledby": "titolo-violazioni" },
+  // senza violazioni è una sola riga di stato: un pannello alto accanto al riepilogo lasciava una colonna vuota
+  const sezione = el("section", { class: `pannello${lista.length ? "" : " pannello-stato"}`, "aria-labelledby": "titolo-violazioni" },
     el("h2", { id: "titolo-violazioni" }, "Controlli",
       el("span", { class: "conteggi" },
         el("span", { class: "badge badge-errore" }, `${errori} errori`),
@@ -835,7 +850,7 @@ function renderRiepilogo(s) {
   }
   const righe = (s.riepilogo || []).slice().sort((a, b) =>
     (a.tipo === b.tipo ? 0 : a.tipo === "dipendente" ? -1 : 1) || b.ore - a.ore || a.nome.localeCompare(b.nome, "it"));
-  const sezione = el("section", { class: "pannello", "aria-labelledby": "titolo-riepilogo" },
+  const sezione = el("section", { class: "pannello pannello-riepilogo", "aria-labelledby": "titolo-riepilogo" },
     el("h2", { id: "titolo-riepilogo" }, "Riepilogo ore",
       media !== null && media !== undefined ? el("span", { class: "conteggi muted" }, `Media dipendenti: ${formatOre(media)} h`) : null,
       diff ? el("span", { class: `conteggi ${oltre ? "scarto-alto" : "muted"}`,
