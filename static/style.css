@@ -35,6 +35,14 @@
   --eccezione-testo: #6b3500;        /* 7-9:1 sui tre sfondi */
   --eccezione-testo-lieve: #8a4200;  /* 6,4-7,3:1 su bianco e sfondo lieve */
 
+  /* verde chiaro di «coperto»: Calendario, scambi a catena e proposta di sostituzione in stampa */
+  --ok-soft-bg: #e3f4ea;
+  --ok-soft-testo: #0d5a2e;
+  /* andamento dell'equità: sotto la media, sopra la media, in media */
+  --tendenza-giu: #16a34a;
+  --tendenza-su: #ea580c;
+  --tendenza-pari: #0284c7;
+
   --vol-bg: #cfe9d7;  --vol-border: #2f9a55;  --vol-text: #14532d;
   --man-bg: #d3e0f5;  --man-border: #2f5fc4;  --man-text: #12347d;
   --gen-bg: #eceff3;  --gen-border: #a9b3c0;  --gen-text: #1b2330;
@@ -370,13 +378,13 @@ input[type="checkbox"] { min-height: 0; width: 1.1rem; height: 1.1rem; accent-co
 .chip-generato { background: var(--gen-bg); border-color: var(--gen-border); color: var(--gen-text); }
 /* sostituzione dopo la generazione: ore extra, arancione acceso */
 .chip-sostituzione { background: var(--eccezione-bg); border-color: var(--eccezione-bordo); color: var(--eccezione-testo); }
-.ore-extra { color: #a14d00; font-weight: 700; white-space: nowrap; }
+.ore-extra { color: var(--eccezione-testo-lieve); font-weight: 700; white-space: nowrap; }
 .riep-extra {
   display: inline-block; font-size: .78rem; font-weight: 800; text-transform: uppercase; letter-spacing: .03em;
   background: var(--eccezione-bg); color: var(--eccezione-testo); border: 1px solid var(--eccezione-bordo); border-radius: 999px; padding: 0 .5rem;
 }
 .riep-ore-extra { display: block; font-size: .85rem; }
-.chip-sostituzione .chip-tag { opacity: 1; font-weight: 800; color: #a14d00; }
+.chip-sostituzione .chip-tag { opacity: 1; font-weight: 800; color: var(--eccezione-testo-lieve); }
 .chip-nome { font-weight: 650; }
 .chip-seg { font-size: .76rem; font-variant-numeric: tabular-nums; opacity: .9; }
 .chip-tag { font-size: .75rem; text-transform: uppercase; letter-spacing: .03em; opacity: .85; }
@@ -1422,9 +1430,9 @@ a.btn { text-decoration: none; }
 .eq-grafico { display: block; overflow: visible; }
 .eq-grafico .eq-base { stroke: #cbd5e1; stroke-width: 1; }
 .eq-grafico .eq-linea { fill: none; stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; }
-.eq-linea-giu .eq-linea { stroke: #16a34a; }  .eq-linea-giu .eq-punto { fill: #16a34a; }
-.eq-linea-su .eq-linea { stroke: #ea580c; }   .eq-linea-su .eq-punto { fill: #ea580c; }
-.eq-linea-pari .eq-linea { stroke: #0284c7; } .eq-linea-pari .eq-punto { fill: #0284c7; }
+.eq-linea-giu .eq-linea { stroke: var(--tendenza-giu); }  .eq-linea-giu .eq-punto { fill: var(--tendenza-giu); }
+.eq-linea-su .eq-linea { stroke: var(--tendenza-su); }   .eq-linea-su .eq-punto { fill: var(--tendenza-su); }
+.eq-linea-pari .eq-linea { stroke: var(--tendenza-pari); } .eq-linea-pari .eq-punto { fill: var(--tendenza-pari); }
 .eq-dettaglio-riga > td { background: #f8fbff; padding: .6rem 1rem 1rem; }
 .tabella-equita-dettaglio { width: auto; min-width: 36rem; background: #ffffff; }
 .tabella-equita-dettaglio caption { text-align: left; font-weight: 650; padding: .2rem 0 .4rem; }
@@ -1467,7 +1475,7 @@ a.btn { text-decoration: none; }
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
   .sost-testata { border-bottom: 3px solid #009541; padding-bottom: 2mm; margin-bottom: 3mm; }
-  .sost-testata h1 { font-size: 18pt; margin: 0; color: #0d5a2e; }
+  .sost-testata h1 { font-size: 18pt; margin: 0; color: var(--ok-soft-testo); }
   .sost-periodo { margin: .5mm 0 0; font-size: 10.5pt; color: #374151; }
   .sost-intro { margin: 0 0 4mm; font-size: 10.5pt; }
   .sost-blocco {
@@ -1478,9 +1486,9 @@ a.btn { text-decoration: none; }
   .sost-blocco h2 { font-size: 14pt; margin: .5mm 0 0; }
   .sost-dove { margin: 0; font-size: 11.5pt; font-weight: 600; }
   .sost-assente { margin: 1mm 0 3mm; }
-  .sost-proposta { margin: 0 0 3mm; padding: 2.5mm 3.5mm; border-radius: 1.5mm; background: #e3f4ea; border-left: 5px solid #009541; }
+  .sost-proposta { margin: 0 0 3mm; padding: 2.5mm 3.5mm; border-radius: 1.5mm; background: var(--ok-soft-bg); border-left: 5px solid #009541; }
   .sost-proposta-nessuna { background: #ffeec2; border-left-color: var(--eccezione-bordo); }
-  .sost-etichetta { margin: 0 0 .5mm; font-size: 9pt; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: #0d5a2e; }
+  .sost-etichetta { margin: 0 0 .5mm; font-size: 9pt; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--ok-soft-testo); }
   .sost-proposta-nessuna .sost-etichetta { color: #7a4a00; }
   .sost-scelta { margin: 0; font-size: 13pt; }
   .sost-dettaglio { margin: .8mm 0 0; font-size: 10.5pt; }
@@ -1506,8 +1514,8 @@ a.btn { text-decoration: none; }
 }
 
 /* ---------- Scambio a catena: B prende il turno, C prende quello di B (ore extra) ---------- */
-.catene { margin-bottom: .6rem; padding: .5rem .6rem; border-radius: var(--radius-sm); background: #e3f4ea; border: 1px solid #7cc39a; }
-.catene-titolo { margin: 0; color: #0d5a2e; }
+.catene { margin-bottom: .6rem; padding: .5rem .6rem; border-radius: var(--radius-sm); background: var(--ok-soft-bg); border: 1px solid #7cc39a; }
+.catene-titolo { margin: 0; color: var(--ok-soft-testo); }
 .catene-intro { margin: .1rem 0 .45rem; }
 .catena { border-left-color: #009541; }
 .catena-frase { flex-basis: 100%; }
@@ -1527,7 +1535,7 @@ a.btn { text-decoration: none; }
 .calendario-copertura-esterno { background: var(--surface-2); }  /* fuori mese: basta il grigio */
 .calendario-copertura-data { font-size: .85rem; font-weight: 700; }
 .calendario-copertura-stato, .calendario-copertura-assenza { display: inline-block; border-radius: 5px; padding: .2rem .35rem; font-size: .75rem; line-height: 1.35; overflow-wrap: anywhere; }
-.calendario-copertura-dipendenti { background: #e3f4ea; color: #0d5a2e; }
+.calendario-copertura-dipendenti { background: var(--ok-soft-bg); color: var(--ok-soft-testo); }
 .calendario-copertura-volontari { background: #e4efff; color: #174476; }
 .calendario-copertura-da_risolvere { background: #ffe3e5; color: #9b1822; font-weight: 700; }
 .calendario-copertura-da_verificare { background: #fff0cd; color: #735000; font-weight: 700; }
