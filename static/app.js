@@ -1,6 +1,7 @@
 // CVAP Turnistica — ingresso del frontend: routing a hash e montaggio delle viste.
 
 import * as settimana from "./js/settimana.js";
+import * as calendario from "./js/calendario-copertura.js";
 import * as personale from "./js/personale.js";
 import * as dipendente from "./js/dipendente.js";
 import * as statistiche from "./js/statistiche.js";
@@ -10,6 +11,7 @@ import { el } from "./js/util.js";
 
 const VISTE = {
   settimana: { modulo: settimana, titolo: "Settimana" },
+  calendario: { modulo: calendario, titolo: "Calendario" },
   dipendente: { modulo: dipendente, titolo: "Turni dipendente" },
   personale: { modulo: personale, titolo: "Personale" },
   statistiche: { modulo: statistiche, titolo: "Statistiche" },

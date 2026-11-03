@@ -378,6 +378,257 @@ def test_copertura_preventiva_con_organico_sufficiente(client):
     assert dati["con_volontari"] == {"stato": "copribile", "scoperti": []}
 
 
+def test_calendario_copertura_restituisce_mese_assenze_e_settimane_ai_bordi(client):
+    p = crea(client, "Mario")
+    crea(client, "Volontario", "volontario")
+    inattivo = crea(client, "Inattivo")
+    assert client.put(f"/api/persone/{inattivo['id']}", json={
+        **inattivo, "attivo": False}).status_code == 200
+    for dal, al, motivo in [("2026-09-27", "2026-10-06", "ferie"),
+                            ("2026-10-30", "2026-11-03", "malattia")]:
+        assert client.post("/api/ferie", json={
+            "persona_id": p["id"], "dal": dal, "al": al, "motivo": motivo}).status_code == 201
+    assert client.put("/api/settimane/2026-09-28/indisponibilita", json={
+        "persona_id": p["id"], "turni": [{"data": "2026-09-29", "parte": "notte"}]
+    }).status_code == 200
+    prima = client.get("/api/ferie").json()
+    r = client.get("/api/calendario-copertura?mese=2026-10")
+    assert r.status_code == 200, r.text
+    dati = r.json()
+    assert set(dati) == {"mese", "dal", "al", "dipendenti", "assenze", "indisponibilita",
+                         "settimane", "riepilogo"}
+    assert (dati["mese"], dati["dal"], dati["al"]) == ("2026-10", "2026-09-28", "2026-11-01")
+    assert dati["dipendenti"] == [p]
+    assert dati["assenze"] == [
+        {"persona_id": p["id"], "data": giorno, "motivo": motivo}
+        for motivo, giorni in [("ferie", ["2026-09-28", "2026-09-29", "2026-09-30",
+                                          "2026-10-01", "2026-10-02", "2026-10-03",
+                                          "2026-10-04", "2026-10-05", "2026-10-06"]),
+                                ("malattia", ["2026-10-30", "2026-10-31", "2026-11-01"])]
+        for giorno in giorni]
+    assert dati["indisponibilita"] == [
+        {"persona_id": p["id"], "data": "2026-09-29", "parte": "notte"}]
+    assert [s["inizio"] for s in dati["settimane"]] == [
+        "2026-09-28", "2026-10-05", "2026-10-12", "2026-10-19", "2026-10-26"]
+    assert dati["settimane"][-1]["fine"] == "2026-11-01"
+    assert all(s["tipo"] in ("A", "B") for s in dati["settimane"])
+    assert all(s["stato"] == "da_risolvere" for s in dati["settimane"])
+    assert dati["riepilogo"] == {"dipendenti": 0, "volontari": 0, "da_risolvere": 31, "da_verificare": 0}
+    assert client.get("/api/ferie").json() == prima
+    assert client.get("/api/settimane/2026-10-19").json()["assegnazioni"] == []
+
+
+def test_calendario_copertura_solver_inconclusivo_non_significa_coperto(client, monkeypatch):
+    from datetime import date
+    from types import SimpleNamespace
+    from cvap import solver
+
+    p = crea(client, "Mario")
+    assert client.post("/api/ferie", json={
+        "persona_id": p["id"], "dal": "2026-10-25", "al": "2026-10-26"
+    }).status_code == 201
+    chiamate = []
+
+    def genera(giorni, attive, dipendenti, **kwargs):
+        assert kwargs["copertura_rigida"] is True
+        chiamate.append((giorni[0], kwargs["ferie"].get(p["id"], set())))
+        return SimpleNamespace(stato="nessuna_soluzione", messaggio="Tempo esaurito")
+
+    monkeypatch.setattr(solver, "genera", genera)
+    r = client.get("/api/calendario-copertura?mese=2026-10")
+    assert r.status_code == 200, r.text
+    dati = r.json()
+    assert len(chiamate) == 10
+    assert [assenze for inizio, assenze in chiamate if inizio == date(2026, 10, 19)] == [
+        {date(2026, 10, 25)}, {date(2026, 10, 25)}]
+    assert [assenze for inizio, assenze in chiamate if inizio == date(2026, 10, 26)] == [
+        {date(2026, 10, 26)}, {date(2026, 10, 26)}]
+    assert dati["assenze"] == [
+        {"persona_id": p["id"], "data": giorno, "motivo": "ferie"}
+        for giorno in ["2026-10-25", "2026-10-26"]]
+    assert all(s["stato"] == "da_verificare" for s in dati["settimane"])
+    for settimana in dati["settimane"]:
+        for scenario in ("solo_dipendenti", "con_volontari"):
+            assert settimana[scenario] == {
+                "stato": "da_verificare", "scoperti": [], "messaggio": "Tempo esaurito"}
+    assert dati["riepilogo"] == {
+        "dipendenti": 0, "volontari": 0, "da_risolvere": 0, "da_verificare": 31}
+
+
+def test_calendario_copertura_distingue_dipendenti_volontari_e_verifica(client, monkeypatch):
+    from cvap import app as api
+
+    scenari = [("copribile", "da_verificare"), ("non_copribile", "copribile"),
+               ("non_copribile", "non_copribile"), ("da_verificare", "non_copribile"),
+               ("non_copribile", "da_verificare"), ("da_verificare", "copribile")]
+    chiamate = []
+
+    def controllo(conn, inizio, con_volontari):
+        from datetime import date
+
+        indice = (inizio - date(2026, 2, 23)).days // 7
+        chiamate.append((inizio.isoformat(), con_volontari))
+        return {"stato": scenari[indice][int(con_volontari)], "scoperti": []}
+
+    monkeypatch.setattr(api, "_copertura_preventiva", controllo)
+    r = client.get("/api/calendario-copertura?mese=2026-03")
+    assert r.status_code == 200, r.text
+    dati = r.json()
+    assert len(chiamate) == 12
+    assert [s["stato"] for s in dati["settimane"]] == [
+        "dipendenti", "volontari", "da_risolvere", "da_verificare", "da_verificare", "volontari"]
+    assert dati["riepilogo"] == {"dipendenti": 1, "volontari": 9, "da_risolvere": 7, "da_verificare": 14}
+    assert all(chiamate[i][0] == chiamate[i + 1][0] and
+               chiamate[i][1:] == (False,) and chiamate[i + 1][1:] == (True,)
+               for i in range(0, 12, 2))
+
+
+@pytest.mark.parametrize("mese", ["2026-1", "202610", "2026-10-01", "2026-00", "2026-13",
+                                  "1999-12", "2101-01", "", "2026-10 "])
+def test_calendario_copertura_rifiuta_mese_non_valido(client, mese):
+    r = client.get("/api/calendario-copertura", params={"mese": mese})
+    assert r.status_code == 400, r.text
+    assert "Data" in r.json()["detail"] or "Mese" in r.json()["detail"]
+
+
+def test_anteprima_ferie_calendario_non_salva_e_include_malattie(client, monkeypatch):
+    from datetime import date
+    from types import SimpleNamespace
+    from cvap import solver
+
+    p = crea(client, "Mario")
+    malato = crea(client, "Malato")
+    volontario = crea(client, "Prenotato", "volontario", "soccorritore")
+    crea(client, "Non prenotato", "volontario", "soccorritore")
+    assert prenota(client, LUNEDI_A, volontario["id"]).status_code == 201
+    assert client.post("/api/ferie", json={
+        "persona_id": malato["id"], "dal": LUNEDI_A, "al": LUNEDI_A,
+        "motivo": "malattia"}).status_code == 201
+    assert client.put(f"/api/settimane/{LUNEDI_A}/indisponibilita", json={
+        "persona_id": malato["id"], "turni": [{"data": "2026-10-20", "parte": "notte"}]
+    }).status_code == 200
+    prima = client.get("/api/ferie").json()
+    settimana = client.get(f"/api/settimane/{LUNEDI_A}").json()
+    chiamate = []
+
+    def genera(giorni, attive, dipendenti, **kwargs):
+        chiamate.append((giorni, dipendenti, kwargs))
+        return SimpleNamespace(stato="ottimo")
+
+    monkeypatch.setattr(solver, "genera", genera)
+    body = {"persona_id": p["id"], "dal": "2026-10-25", "al": "2026-10-26"}
+    r = client.post("/api/calendario-copertura/ferie/anteprima", json=body)
+    assert r.status_code == 200, r.text
+    dati = r.json()
+    assert dati["richiede_conferma"] is False
+    assert [s["inizio"] for s in dati["settimane"]] == [LUNEDI_A, LUNEDI_B]
+    assert all(s["stato_attuale"] == s["stato_proposto"] == "dipendenti" for s in dati["settimane"])
+    assert len(chiamate) == 8
+    for giorni, dipendenti, kwargs in chiamate:
+        assert kwargs["copertura_rigida"] is True
+        assert {x.id for x in dipendenti} == {p["id"], malato["id"]}
+        assert {a.persona_id for a in kwargs["fissi"]} <= {volontario["id"]}
+        if giorni[0].isoformat() == LUNEDI_A:
+            assert kwargs["ferie"][malato["id"]] == {date(2026, 10, 19)}
+            assert kwargs["indisponibili"][malato["id"]] == {(date(2026, 10, 20), "notte")}
+    assert [c[2]["ferie"].get(p["id"], set()) for c in chiamate] == [
+        set(), set(), {date(2026, 10, 25)}, {date(2026, 10, 25)},
+        set(), set(), {date(2026, 10, 26)}, {date(2026, 10, 26)}]
+    assert client.get("/api/ferie").json() == prima
+    assert client.get(f"/api/settimane/{LUNEDI_A}").json() == settimana
+
+
+def test_ferie_calendario_turno_manual_dipendente_richiede_sostituto_reale(client):
+    from datetime import date
+    from cvap.calendario import giorni_settimana
+    from cvap.slot import unita_da_coprire
+
+    p = crea(client, "Unico dipendente")
+    posti = unita_da_coprire(giorni_settimana(date.fromisoformat(LUNEDI_A)),
+                            ["Acquasanta", "Venarotta"], [])
+    for i, posto in enumerate(posti):
+        persona = p if i == 0 else crea(client, f"Prenotato {i}", "volontario", posto.ruolo)
+        r = prenota(client, LUNEDI_A, persona["id"], data=posto.data.isoformat(),
+                    postazione=posto.postazione, fascia=posto.fascia,
+                    segmento=posto.segmento, ruolo=posto.ruolo)
+        assert r.status_code == 201, r.text
+    prima = client.get(f"/api/settimane/{LUNEDI_A}").json()["assegnazioni"]
+    body = {"persona_id": p["id"], "dal": LUNEDI_A, "al": "2026-10-25"}
+    r = client.post("/api/calendario-copertura/ferie/anteprima", json=body)
+    assert r.status_code == 200, r.text
+    settimana = r.json()["settimane"][0]
+    assert settimana["stato_attuale"] == "volontari"
+    assert settimana["stato_proposto"] == "da_risolvere"
+    assert settimana["con_volontari"]["scoperti"]
+    assert r.json()["richiede_conferma"] is True
+    r = client.post("/api/calendario-copertura/ferie", json=body)
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["richiede_conferma"] is True
+    assert client.get("/api/ferie").json() == []
+    assert client.get(f"/api/settimane/{LUNEDI_A}").json()["assegnazioni"] == prima
+
+
+@pytest.mark.parametrize("attuale", ["dipendenti", "volontari", "da_verificare", "da_risolvere"])
+@pytest.mark.parametrize("proposto", ["dipendenti", "volontari", "da_verificare", "da_risolvere"])
+def test_approvazione_ferie_calendario_richiede_conferma_solo_per_nuovo_rosso(
+        client, monkeypatch, attuale, proposto):
+    from cvap import app as api
+
+    p = crea(client, "Mario")
+    body = {"persona_id": p["id"], "dal": LUNEDI_A, "al": LUNEDI_A}
+    assert prenota(client, LUNEDI_A, p["id"], data="2026-10-20", ruolo="autista").status_code == 201
+    assert client.post(f"/api/settimane/{LUNEDI_A}/conferma").status_code == 200
+    prima = client.get(f"/api/settimane/{LUNEDI_A}").json()
+    chiamate = []
+    richiede = attuale != "da_risolvere" and proposto == "da_risolvere"
+
+    def controllo(conn, inizio, con_volontari, ferie_override=None):
+        chiamate.append(client.app.state.blocco_scrittura.locked())
+        scenario = attuale if ferie_override is None else proposto
+        stato = "non_copribile"
+        if scenario == "dipendenti" or (scenario == "volontari" and con_volontari):
+            stato = "copribile"
+        elif scenario == "da_verificare":
+            stato = "da_verificare"
+        return {"stato": stato, "scoperti": []}
+
+    monkeypatch.setattr(api, "_copertura_preventiva", controllo)
+    anteprima = client.post("/api/calendario-copertura/ferie/anteprima", json=body)
+    assert anteprima.status_code == 200, anteprima.text
+    assert not any(chiamate)
+    assert anteprima.json()["richiede_conferma"] == richiede
+    chiamate.clear()
+    r = client.post("/api/calendario-copertura/ferie", json=body)
+    assert all(chiamate) and chiamate  # ricalcolo anche senza un'anteprima precedente, sotto lock
+    if richiede:
+        assert r.status_code == 409, r.text
+        assert r.json()["detail"] == anteprima.json()
+        assert client.get("/api/ferie").json() == []
+        r = client.post("/api/calendario-copertura/ferie", json={**body, "conferma_avviso": True})
+    assert r.status_code == 201, r.text
+    assert r.json()["mese"] == "2026-10"
+    assert r.json()["assenze"] == [{"persona_id": p["id"], "data": LUNEDI_A, "motivo": "ferie"}]
+    assert len(client.get("/api/ferie").json()) == 1
+    dopo = client.get(f"/api/settimane/{LUNEDI_A}").json()
+    assert dopo["stato"] == prima["stato"] == "confermata"
+    assert dopo["assegnazioni"] == prima["assegnazioni"]
+
+
+@pytest.mark.parametrize("route", ["/api/calendario-copertura/ferie/anteprima", "/api/calendario-copertura/ferie"])
+def test_ferie_calendario_validazione_e_solo_ferie(client, route):
+    p = crea(client, "Mario")
+    v = crea(client, "Volontario", "volontario")
+    body = {"persona_id": p["id"], "dal": LUNEDI_A, "al": LUNEDI_A}
+    for modifica, codice in [({"persona_id": 9999}, 404), ({"persona_id": v["id"]}, 400),
+                            ({"al": "2026-10-18"}, 400), ({"al": "2027-10-20"}, 400),
+                            ({"motivo": "malattia"}, 422)]:
+        r = client.post(route, json={**body, **modifica})
+        assert r.status_code == codice, r.text
+    assert client.post("/api/ferie", json={**body, "motivo": "malattia"}).status_code == 201
+    assert client.post(route, json=body).status_code == 400
+    assert len(client.get("/api/ferie").json()) == 1
+
+
 def test_ferie_non_valide(client):
     p = crea(client, "Mario")
     v = crea(client, "Anna", "volontario", "soccorritore")

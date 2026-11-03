@@ -186,6 +186,14 @@ class FerieIn(BaseModel):
     motivo: Literal["ferie", "malattia"] = "ferie"  # malattia = malattia o infortunio: stesso conteggio
 
 
+class FerieCalendarioIn(FerieIn):
+    motivo: Literal["ferie"] = "ferie"
+
+
+class ConfermaFerieCalendarioIn(FerieCalendarioIn):
+    conferma_avviso: bool = False
+
+
 class SostituisciIn(BaseModel):
     persona_id: Id
 
@@ -253,6 +261,12 @@ def _data(valore: str) -> date:
     if not DATA_MIN <= d <= DATA_MAX:
         raise _errore(f"Data fuori intervallo ({DATA_MIN.year}-{DATA_MAX.year})")
     return d
+
+
+def _mese(valore: str) -> date:
+    if not re.fullmatch(r"[0-9]{4}-[0-9]{2}", valore):
+        raise _errore(f"Mese non valido: {valore!r} (formato atteso AAAA-MM)")
+    return _data(f"{valore}-01")
 
 
 def _iso(d: date | None) -> str | None:
@@ -521,15 +535,20 @@ def _verifica_modificabile(conn, inizio: date) -> None:
         raise _errore("La settimana è confermata: riaprila per modificarla")
 
 
-def _copertura_preventiva(conn, inizio: date, con_volontari: bool) -> dict:
+def _copertura_preventiva(conn, inizio: date, con_volontari: bool,
+                         ferie_override: dict[int, set[date]] | None = None) -> dict:
     """Verifica senza salvare se tutti i posti possono essere coperti."""
     from . import solver  # OR-Tools è pesante: serve solo quando si chiede il controllo
 
     d = _dati_settimana(conn, inizio)
+    ferie = d.ferie if ferie_override is None else ferie_override
+    # I turni di chi è assente restano salvati, ma il controllo deve cercare un sostituto.
     fissi = [a for _, a in d.righe if a.origine != "generato"
+             and a.data not in ferie.get(a.persona_id, ())
              and (con_volontari or d.persone.get(a.persona_id, {}).get("tipo") == "dipendente")]
     argomenti = dict(
-        fissi=fissi, contesto=d.contesto, ferie=d.ferie, indisponibili=d.indisponibili,
+        fissi=fissi, contesto=d.contesto, ferie=ferie,
+        indisponibili=d.indisponibili,
         fabbisogno=d.fabbisogno, scarto_ore_max=d.scarto_ore_max,
         tempo_max=TEMPO_MAX_COPERTURA_PREVENTIVA, workers=worker_generatore(),
     )
@@ -543,6 +562,89 @@ def _copertura_preventiva(conn, inizio: date, con_volontari: bool) -> dict:
     spiegazione = solver.genera(d.giorni, d.attive, db.dipendenti_attivi(conn), **argomenti)
     return {"stato": "non_copribile", "scoperti": [_unita_json(u) for u in spiegazione.scoperti],
             "messaggio": ris.messaggio}
+
+
+def _stato_copertura(solo_dipendenti: dict, con_volontari: dict) -> str:
+    if solo_dipendenti["stato"] == "copribile":
+        return "dipendenti"
+    if con_volontari["stato"] == "copribile":
+        return "volontari"
+    if "da_verificare" in (solo_dipendenti["stato"], con_volontari["stato"]):
+        return "da_verificare"
+    return "da_risolvere"
+
+
+def _valida_ferie(conn, body: FerieIn) -> dict:
+    p = db.get_persona(conn, body.persona_id)
+    if p is None:
+        raise HTTPException(404, "Persona non trovata")
+    if p["tipo"] != "dipendente":
+        raise _errore("Le ferie si inseriscono solo per i dipendenti")
+    if body.dal > body.al:
+        raise _errore("La data di inizio delle ferie è dopo quella di fine")
+    if (body.al - body.dal).days >= FERIE_GIORNI_MAX:
+        raise _errore(f"Periodo di ferie troppo lungo (massimo {FERIE_GIORNI_MAX} giorni)")
+    if db.ferie_sovrapposte(conn, body.persona_id, body.dal, body.al):
+        raise _errore(f"{p['nome']} ha già ferie o malattia in quel periodo")
+    return p
+
+
+def _anteprima_ferie_calendario(conn, body: FerieIn) -> dict:
+    settimane = []
+    richiede_conferma = False
+    inizio = lunedi(body.dal)
+    while inizio <= body.al:
+        fine = inizio + timedelta(days=6)
+        attuale = _stato_copertura(
+            _copertura_preventiva(conn, inizio, con_volontari=False),
+            _copertura_preventiva(conn, inizio, con_volontari=True))
+        ferie = db.ferie_periodo(conn, inizio, fine)
+        giorni = ferie.setdefault(body.persona_id, set())
+        dal, al = max(inizio, body.dal), min(fine, body.al)
+        giorni.update(dal + timedelta(days=i) for i in range((al - dal).days + 1))
+        solo_dipendenti = _copertura_preventiva(conn, inizio, con_volontari=False, ferie_override=ferie)
+        con_volontari = _copertura_preventiva(conn, inizio, con_volontari=True, ferie_override=ferie)
+        proposto = _stato_copertura(solo_dipendenti, con_volontari)
+        richiede_conferma |= attuale != "da_risolvere" and proposto == "da_risolvere"
+        settimane.append({"inizio": inizio.isoformat(), "fine": fine.isoformat(),
+                          "stato_attuale": attuale, "stato_proposto": proposto,
+                          "solo_dipendenti": solo_dipendenti, "con_volontari": con_volontari})
+        inizio += timedelta(days=7)
+    return {"persona_id": body.persona_id, "dal": body.dal.isoformat(), "al": body.al.isoformat(),
+            "settimane": settimane, "richiede_conferma": richiede_conferma}
+
+
+def payload_calendario_copertura(conn: sqlite3.Connection, mese: date) -> dict:
+    """Assenze nella griglia mensile e copertura preventiva di ciascuna settimana."""
+    primo = mese.replace(day=1)
+    ultimo = (primo.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    dal, al = lunedi(primo), lunedi(ultimo) + timedelta(days=6)
+    malattia = db.giorni_malattia(conn, dal, al)
+    assenze = [{**x, "motivo": "malattia" if (x["persona_id"], date.fromisoformat(x["data"])) in malattia
+                else "ferie"} for x in _giorni_json(db.ferie_periodo(conn, dal, al))]
+    indisponibili = db.indisponibili_periodo(conn, dal, al)
+    settimane = []
+    riepilogo = dict.fromkeys(("dipendenti", "volontari", "da_risolvere", "da_verificare"), 0)
+    inizio = dal
+    while inizio <= al:
+        solo_dipendenti = _copertura_preventiva(conn, inizio, con_volontari=False)
+        con_volontari = _copertura_preventiva(conn, inizio, con_volontari=True)
+        stato = _stato_copertura(solo_dipendenti, con_volontari)
+        fine = inizio + timedelta(days=6)
+        settimane.append({"inizio": inizio.isoformat(), "fine": fine.isoformat(),
+                          "tipo": tipo_settimana(inizio, db.get_riferimento_a(conn)),
+                          "solo_dipendenti": solo_dipendenti, "con_volontari": con_volontari, "stato": stato})
+        riepilogo[stato] += (min(fine, ultimo) - max(inizio, primo)).days + 1
+        inizio += timedelta(days=7)
+    return {
+        "mese": primo.strftime("%Y-%m"), "dal": dal.isoformat(), "al": al.isoformat(),
+        "dipendenti": [p for p in db.lista_persone(conn) if p["tipo"] == "dipendente" and p["attivo"]],
+        "assenze": assenze,
+        "indisponibilita": [{"persona_id": pid, "data": d.isoformat(), "parte": parte}
+                            for pid, turni in sorted(indisponibili.items())
+                            for d, parte in sorted(turni, key=lambda t: (t[0], PARTI_TURNO.index(t[1])))],
+        "settimane": settimane, "riepilogo": riepilogo,
+    }
 
 
 # --- app ---------------------------------------------------------------------
@@ -708,6 +810,10 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
         return Response(status_code=204)
 
     # --- settimane ---
+    @app.get("/api/calendario-copertura")
+    def calendario_copertura(mese: str, conn: Conn):
+        return payload_calendario_copertura(conn, _mese(mese))
+
     @app.get("/api/settimane/{data}")
     def get_settimana(data: str, conn: Conn):
         return payload_settimana(conn, lunedi(_data(data)))
@@ -1080,19 +1186,24 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
 
     @app.post("/api/ferie", status_code=201)
     def crea_ferie(body: FerieIn, conn: Conn):
-        p = db.get_persona(conn, body.persona_id)
-        if p is None:
-            raise HTTPException(404, "Persona non trovata")
-        if p["tipo"] != "dipendente":
-            raise _errore("Le ferie si inseriscono solo per i dipendenti")
-        if body.dal > body.al:
-            raise _errore("La data di inizio delle ferie è dopo quella di fine")
-        if (body.al - body.dal).days >= FERIE_GIORNI_MAX:
-            raise _errore(f"Periodo di ferie troppo lungo (massimo {FERIE_GIORNI_MAX} giorni)")
         with scrittura():
-            if db.ferie_sovrapposte(conn, body.persona_id, body.dal, body.al):
-                raise _errore(f"{p['nome']} ha già ferie o malattia in quel periodo")
+            _valida_ferie(conn, body)
             return db.crea_ferie(conn, body.persona_id, body.dal, body.al, body.motivo)
+
+    @app.post("/api/calendario-copertura/ferie/anteprima")
+    def anteprima_ferie_calendario(body: FerieCalendarioIn, conn: Conn):
+        _valida_ferie(conn, body)
+        return _anteprima_ferie_calendario(conn, body)
+
+    @app.post("/api/calendario-copertura/ferie", status_code=201)
+    def approva_ferie_calendario(body: ConfermaFerieCalendarioIn, conn: Conn):
+        with scrittura():
+            _valida_ferie(conn, body)
+            anteprima = _anteprima_ferie_calendario(conn, body)
+            if anteprima["richiede_conferma"] and not body.conferma_avviso:
+                raise HTTPException(409, detail=anteprima)
+            db.crea_ferie(conn, body.persona_id, body.dal, body.al, "ferie")
+            return payload_calendario_copertura(conn, body.dal)
 
     @app.get("/api/ferie/{ferie_id}/turni")
     def turni_durante_assenza(ferie_id: IdPath, conn: Conn):
