@@ -30,6 +30,66 @@ function nomeFile(titolo) {
   return `${base || "turnistica"}.pdf`;
 }
 
+/** Riusa gli stili cartacei, limitandoli alla copia esportata. */
+function stiliEsportazione() {
+  const regole = [];
+  const visita = (elenco, stampa = false) => {
+    for (const regola of elenco) {
+      if (regola.type === CSSRule.MEDIA_RULE) {
+        if (regola.conditionText === "print") visita(regola.cssRules, true);
+      } else if (stampa && regola.type === CSSRule.STYLE_RULE) {
+        const selettori = regola.selectorText.split(",").map((selettore) => {
+          const s = selettore.trim();
+          return /^(?:body|:root)(?=[\s.#:[>]|$)/.test(s)
+            ? s.replace(/^(?:body|:root)/, ".pdf-esportazione")
+            : `.pdf-esportazione ${s}`;
+        });
+        regole.push(`${selettori.join(",")} { ${regola.style.cssText} }`);
+      }
+    }
+  };
+  for (const foglio of document.styleSheets) {
+    // I fogli esterni non accessibili non contengono gli stili dell'applicazione.
+    try { visita(foglio.cssRules); } catch (err) {
+      if (err.name !== "SecurityError") throw err;
+    }
+  }
+  const stile = document.createElement("style");
+  stile.textContent = regole.join("\n") + `
+    .pdf-esportazione { position: relative; z-index: auto; padding: 0; margin: 0;
+      box-sizing: border-box; font-size: 10pt; background: #fff; color: #000; }
+    .pdf-esportazione .griglia, .pdf-esportazione .tabella-liberi { width: 100%; min-width: 0; }
+    .pdf-esportazione .griglie { display: block; }
+    .pdf-esportazione.pdf-esportazione-tabellone .stampa-liberi { display: none !important; }
+    .pdf-esportazione.pdf-esportazione-liberi .stampa-liberi { display: block !important; }
+    .pdf-esportazione-liberi .week-tipo, .pdf-esportazione-liberi .badge-stato { display: none; }
+    .pdf-esportazione .griglia-blocco[hidden] { display: block; }
+  `;
+  return stile;
+}
+
+// Il paginatore può aggiungere spazio fino al bordo del foglio: non esportare
+// una pagina finale bianca dovuta agli arrotondamenti fra pixel e millimetri.
+function ritagliaFondoBianco(canvas) {
+  const contesto = canvas.getContext("2d");
+  for (let fondo = canvas.height; fondo > 0; fondo -= 128) {
+    const cima = Math.max(0, fondo - 128);
+    const { data } = contesto.getImageData(0, cima, canvas.width, fondo - cima);
+    for (let i = data.length - 4; i >= 0; i -= 4) {
+      if (data[i + 3] && (data[i] < 250 || data[i + 1] < 250 || data[i + 2] < 250)) {
+        const altezza = Math.min(canvas.height, cima + Math.floor(i / 4 / canvas.width) + 3);
+        if (altezza === canvas.height) return canvas;
+        const ritaglio = document.createElement("canvas");
+        ritaglio.width = canvas.width;
+        ritaglio.height = altezza;
+        ritaglio.getContext("2d").drawImage(canvas, 0, 0);
+        return ritaglio;
+      }
+    }
+  }
+  return canvas;
+}
+
 // html2canvas non interpreta i colori CSS moderni: li risolviamo con il browser
 // nella sola copia destinata al PDF, inclusi gradienti e ombre.
 function normalizzaColori(documento) {
@@ -61,12 +121,21 @@ function normalizzaColori(documento) {
 }
 
 /** Scarica un PDF del contenuto già visibile, senza aprire il dialogo di stampa del browser. */
-export async function scaricaPdf(sorgenti, titolo, { orientamento = "portrait" } = {}) {
+export async function scaricaPdf(sorgenti, titolo, { orientamento = "portrait", modalita = "" } = {}) {
   const area = document.createElement("article");
-  area.className = `pdf-esportazione pdf-esportazione-${orientamento}`;
+  area.className = `pdf-esportazione pdf-esportazione-${orientamento} pdf-esportazione-${modalita}`;
+  if (modalita === "liberi") area.classList.add("stampa-liberi-attiva");
+  area.style.width = `${(orientamento === "landscape" ? 297 : 210) - 14}mm`;
   for (const sorgente of (Array.isArray(sorgenti) ? sorgenti : [sorgenti])) {
     if (!sorgente?.isConnected) continue;
     area.append(sorgente.cloneNode(true));
+  }
+  // Questi pulsanti contengono dati, non comandi: conserviamo nomi e date.
+  for (const pulsante of area.querySelectorAll(".cella-btn, .giorno-btn, .sort-btn")) {
+    const testo = document.createElement("span");
+    testo.className = pulsante.className;
+    testo.append(...pulsante.childNodes);
+    pulsante.replaceWith(testo);
   }
   area.querySelectorAll(".no-print, button, input, select, textarea").forEach((nodo) => nodo.remove());
   if (!area.childElementCount) throw new Error("Non ci sono dati da esportare in PDF.");
@@ -77,21 +146,26 @@ export async function scaricaPdf(sorgenti, titolo, { orientamento = "portrait" }
   area.style.zIndex = "auto";
   contenitore.append(area);
   document.body.append(contenitore);
+  const stile = stiliEsportazione();
+  document.head.append(stile);
   try {
     const html2pdf = await generatorePdf();
     await document.fonts?.ready;
-    await html2pdf().set({
+    const esportazione = html2pdf().set({
       margin: 7,
       filename: nomeFile(titolo),
       image: { type: "jpeg", quality: 0.96 },
       html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", onclone: normalizzaColori },
       jsPDF: { unit: "mm", format: "a4", orientation: orientamento },
       pagebreak: { mode: ["css", "legacy"] },
-    }).from(area).save();
+    }).from(area);
+    const canvas = await esportazione.toCanvas().get("canvas");
+    await esportazione.set({ canvas: ritagliaFondoBianco(canvas) }).save();
     toast("PDF scaricato.", "ok");
   } catch (err) {
     toastErrore(err);
   } finally {
     contenitore.remove();
+    stile.remove();
   }
 }

@@ -1198,12 +1198,13 @@ function renderStampaLiberi(s) {
 
 function stampaGriglia() {
   annullaStampaSostituti();
-  scaricaPdf(stato.root, `tabellone-${stato.settimana.inizio}`, { orientamento: "landscape" });
+  scaricaPdf(stato.root, `tabellone-${stato.settimana.inizio}`, { orientamento: "landscape", modalita: "tabellone" });
 }
 
 function stampaLiberi() {
   annullaStampaSostituti();
-  scaricaPdf(stato.root.querySelector(".stampa-liberi"), `liberi-${stato.settimana.inizio}`);
+  scaricaPdf([stato.root.querySelector(".week-header"), stato.root.querySelector(".stampa-liberi")],
+    `liberi-${stato.settimana.inizio}`, { orientamento: "landscape", modalita: "liberi" });
 }
 
 // ---------------------------------------------------------------- Assistenze ed Extra
