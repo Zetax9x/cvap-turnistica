@@ -677,7 +677,7 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
   .brand-logo { height: 40px; }
   .nav {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; margin: 0;
-    display: grid; grid-template-columns: repeat(5, 1fr);
+    display: grid; grid-template-columns: repeat(6, 1fr);
     background: var(--surface); border-top: 1px solid var(--border);
     padding-bottom: env(safe-area-inset-bottom);
   }
@@ -1441,3 +1441,38 @@ a.btn { text-decoration: none; }
 .catena { border-left-color: #009541; }
 .catena-frase { flex-basis: 100%; }
 .catene-oppure { margin: .3rem 0 .35rem; font-size: .9rem; font-weight: 600; color: var(--muted); }
+
+/* ---------- Calendario della copertura e approvazione ferie ---------- */
+.calendario-copertura-header, .calendario-copertura-nav { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.calendario-copertura-header { justify-content: space-between; margin-bottom: .75rem; }
+.calendario-copertura-header h1 { margin: 0; text-transform: capitalize; }
+.calendario-copertura-riepilogo { display: flex; flex-wrap: wrap; gap: .6rem 1rem; margin: 1rem 0; font-size: .85rem; }
+.calendario-copertura-griglia { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .35rem; }
+.calendario-copertura-intestazione { text-align: center; font-weight: 700; padding: .4rem; background: var(--surface-2); border-radius: var(--radius-sm); }
+.calendario-copertura-giorno { display: flex; flex-direction: column; align-items: flex-start; gap: .35rem; min-width: 0; min-height: 155px; padding: .6rem; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; text-align: left; cursor: pointer; }
+.calendario-copertura-giorno:hover { background: var(--surface-2); border-color: var(--accent); }
+.calendario-copertura-giorno:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.calendario-copertura-giorno[aria-current="date"] { border: 2px solid var(--accent); }
+.calendario-copertura-esterno { background: var(--surface-2); border-style: dashed; }
+.calendario-copertura-data { font-size: .85rem; font-weight: 700; }
+.calendario-copertura-stato, .calendario-copertura-assenza { display: inline-block; border-radius: 5px; padding: .2rem .35rem; font-size: .75rem; line-height: 1.35; overflow-wrap: anywhere; }
+.calendario-copertura-dipendenti { background: #e3f4ea; color: #0d5a2e; }
+.calendario-copertura-volontari { background: #e4efff; color: #174476; }
+.calendario-copertura-da_risolvere { background: #ffe3e5; color: #9b1822; font-weight: 700; }
+.calendario-copertura-da_verificare { background: #fff0cd; color: #735000; font-weight: 700; }
+.calendario-copertura-ferie { background: #e5f2fb; color: #18537b; }
+.calendario-copertura-malattia { background: #f0e8fa; color: #663a87; }
+.calendario-copertura-indisponibilita { background: #f0ece4; color: #625136; }
+.calendario-copertura-form { margin-top: 1.25rem; }
+.calendario-copertura-campi { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .75rem; }
+.calendario-copertura-dialog { max-width: 700px; }
+.calendario-copertura-dialog li, .calendario-copertura-anteprima li { margin-bottom: .35rem; }
+.calendario-copertura-anteprima { margin-top: 1rem; }
+@media (max-width: 700px) {
+  .calendario-copertura-griglia { gap: .2rem; }
+  .calendario-copertura-giorno { padding: .25rem; min-height: 150px; gap: .3rem; }
+  .calendario-copertura-data { font-size: .7rem; }
+  .calendario-copertura-stato, .calendario-copertura-assenza { font-size: .65rem; padding: .15rem; }
+  .calendario-copertura-campi > .campo { min-width: 0; flex: 1 1 100%; }
+  .calendario-copertura-campi input, .calendario-copertura-campi select { width: 100%; }
+}

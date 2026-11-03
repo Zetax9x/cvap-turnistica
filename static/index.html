@@ -19,6 +19,7 @@
       <span class="brand-text">Turnistica</span>
     </div>
     <nav class="nav" aria-label="Sezioni">
+      <a href="#calendario" data-view="calendario"><svg class="nav-icona" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 2v6M17 2v6M3 11h18M7 15h3M14 15h3"/></svg><span>Calendario</span></a>
       <a href="#settimana" data-view="settimana"><svg class="nav-icona" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3v3M17 3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></svg><span>Settimana</span></a>
       <a href="#dipendente" data-view="dipendente"><svg class="nav-icona" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg><span><span class="nav-testo-lungo">Turni dipendente</span><span class="nav-testo-breve">Dipendente</span></span></a>
       <a href="#personale" data-view="personale"><svg class="nav-icona" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c2.4.6 4 2.4 4 5.2"/></svg><span>Personale</span></a>
@@ -28,6 +29,7 @@
   </header>
 
   <main id="main" tabindex="-1">
+    <section id="view-calendario" class="view" aria-label="Calendario" hidden></section>
     <section id="view-settimana" class="view" aria-label="Settimana"></section>
     <section id="view-dipendente" class="view" aria-label="Turni dipendente" hidden></section>
     <section id="view-personale" class="view" aria-label="Personale" hidden></section>

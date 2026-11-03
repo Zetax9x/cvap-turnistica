@@ -1,10 +1,11 @@
 // Client REST per il backend CVAP (vedi docs/API.md).
 
 export class ApiError extends Error {
-  constructor(message, status) {
+  constructor(message, status, detail) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.detail = detail;
   }
 }
 
@@ -46,7 +47,7 @@ async function richiesta(metodo, percorso, corpo) {
     // sessione scaduta o mai aperta: l'app mostra la schermata della password
     window.dispatchEvent(new CustomEvent("cvap:accesso-richiesto"));
   }
-  if (!risposta.ok) throw new ApiError(dettaglio(body, risposta.status), risposta.status);
+  if (!risposta.ok) throw new ApiError(dettaglio(body, risposta.status), risposta.status, body?.detail);
   return body;
 }
 
@@ -130,6 +131,9 @@ export const api = {
   eliminaExtra: (id) => richiesta("DELETE", `/extra/${enc(id)}`),
 
   ferie: () => richiesta("GET", "/ferie"),
+  calendarioCopertura: (mese) => richiesta("GET", `/calendario-copertura?${new URLSearchParams({ mese })}`),
+  anteprimaFerieCalendario: (dati) => richiesta("POST", "/calendario-copertura/ferie/anteprima", dati),
+  approvaFerieCalendario: (dati) => richiesta("POST", "/calendario-copertura/ferie", dati),
   creaFerie: (dati) => richiesta("POST", "/ferie", dati),
   eliminaFerie: (id) => richiesta("DELETE", `/ferie/${enc(id)}`),
   // Turni già assegnati alla persona nei giorni di quell'assenza: [{id, data, postazione, fascia, segmento, ruolo, settimana, ore}]
