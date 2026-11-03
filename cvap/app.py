@@ -255,6 +255,12 @@ def _data(valore: str) -> date:
     return d
 
 
+def _mese(valore: str) -> date:
+    if not re.fullmatch(r"[0-9]{4}-[0-9]{2}", valore):
+        raise _errore(f"Mese non valido: {valore!r} (formato atteso AAAA-MM)")
+    return _data(f"{valore}-01")
+
+
 def _iso(d: date | None) -> str | None:
     return d.isoformat() if d else None
 
@@ -545,6 +551,46 @@ def _copertura_preventiva(conn, inizio: date, con_volontari: bool) -> dict:
             "messaggio": ris.messaggio}
 
 
+def payload_calendario_copertura(conn: sqlite3.Connection, mese: date) -> dict:
+    """Assenze nella griglia mensile e copertura preventiva di ciascuna settimana."""
+    primo = mese.replace(day=1)
+    ultimo = (primo.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    dal, al = lunedi(primo), lunedi(ultimo) + timedelta(days=6)
+    malattia = db.giorni_malattia(conn, dal, al)
+    assenze = [{**x, "motivo": "malattia" if (x["persona_id"], date.fromisoformat(x["data"])) in malattia
+                else "ferie"} for x in _giorni_json(db.ferie_periodo(conn, dal, al))]
+    indisponibili = db.indisponibili_periodo(conn, dal, al)
+    settimane = []
+    riepilogo = dict.fromkeys(("dipendenti", "volontari", "da_risolvere", "da_verificare"), 0)
+    inizio = dal
+    while inizio <= al:
+        solo_dipendenti = _copertura_preventiva(conn, inizio, con_volontari=False)
+        con_volontari = _copertura_preventiva(conn, inizio, con_volontari=True)
+        if solo_dipendenti["stato"] == "copribile":
+            stato = "dipendenti"
+        elif con_volontari["stato"] == "copribile":
+            stato = "volontari"
+        elif "da_verificare" in (solo_dipendenti["stato"], con_volontari["stato"]):
+            stato = "da_verificare"
+        else:
+            stato = "da_risolvere"
+        fine = inizio + timedelta(days=6)
+        settimane.append({"inizio": inizio.isoformat(), "fine": fine.isoformat(),
+                          "tipo": tipo_settimana(inizio, db.get_riferimento_a(conn)),
+                          "solo_dipendenti": solo_dipendenti, "con_volontari": con_volontari, "stato": stato})
+        riepilogo[stato] += (min(fine, ultimo) - max(inizio, primo)).days + 1
+        inizio += timedelta(days=7)
+    return {
+        "mese": primo.strftime("%Y-%m"), "dal": dal.isoformat(), "al": al.isoformat(),
+        "dipendenti": [p for p in db.lista_persone(conn) if p["tipo"] == "dipendente" and p["attivo"]],
+        "assenze": assenze,
+        "indisponibilita": [{"persona_id": pid, "data": d.isoformat(), "parte": parte}
+                            for pid, turni in sorted(indisponibili.items())
+                            for d, parte in sorted(turni, key=lambda t: (t[0], PARTI_TURNO.index(t[1])))],
+        "settimane": settimane, "riepilogo": riepilogo,
+    }
+
+
 # --- app ---------------------------------------------------------------------
 
 def create_app(db_path: str, password: str | None = None, postino=None) -> FastAPI:
@@ -708,6 +754,10 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
         return Response(status_code=204)
 
     # --- settimane ---
+    @app.get("/api/calendario-copertura")
+    def calendario_copertura(mese: str, conn: Conn):
+        return payload_calendario_copertura(conn, _mese(mese))
+
     @app.get("/api/settimane/{data}")
     def get_settimana(data: str, conn: Conn):
         return payload_settimana(conn, lunedi(_data(data)))
