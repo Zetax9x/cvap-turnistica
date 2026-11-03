@@ -19,6 +19,8 @@ Se si interrompe la connessione, usare **Verifica esito** o **Riprendi lo stesso
 
 ## Comunicazioni e gestione
 
+Nel riepilogo, accanto alla conferma, **Invia email di test a me** invia esclusivamente a `squarciayuri@gmail.com` il riepilogo e il tabellone simulato, nel corpo dell'email e nel PDF. Oggetto e PDF riportano **TEST**. Il test non modifica turni, settimane o storico e lascia disponibile la conferma normale. Usa la configurazione SMTP del gestionale e condivide il limite di 10 prove all'ora con le altre email di prova. Anche il test richiede un'anteprima aggiornata e senza errori bloccanti.
+
 In **Impostazioni → Riepiloghi via email** configurare gli indirizzi con la spunta **Responsabile**; usare la configurazione SMTP già prevista dal gestionale. Per ciascuna variazione, questi indirizzi ricevono il riepilogo, gli eventuali avvisi e il tabellone completo delle settimane interessate, sia nel corpo dell'email sia in un PDF allegato. Ogni settimana del PDF inizia su una nuova pagina.
 
 Il riepilogo ai dipendenti interessati è rinviato a una fase successiva.
@@ -38,7 +40,7 @@ Al primo avvio vengono aggiunti il registro `variazioni_turno`, la coda `notific
 Verifiche mirate:
 
 ```powershell
-.venv\Scripts\python.exe -m pytest tests/test_cambi_turno.py tests/test_api_cambi_turno.py tests/test_email_cambi_turno.py tests/test_pdf_cambi_turno.py tests/test_accesso.py -q
+.venv\Scripts\python.exe -m pytest tests/test_cambi_turno.py tests/test_api_cambi_turno.py tests/test_email_cambi_turno.py tests/test_pdf_cambi_turno.py tests/test_prova_cambi_turno.py tests/test_accesso.py -q
 ```
 
 Il modello attuale registra gli orari a ore intere: la soglia di riposo è verificata con 10 e 11 ore; l'esclusione dei turni iniziati viene verificata anche passando dalle 7:59 alle 8:00. L'adattatore libSQL è verificato con un database locale; il servizio remoto e l'invio SMTP reale vanno verificati nell'ambiente di pubblicazione.

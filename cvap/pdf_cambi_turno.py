@@ -11,10 +11,11 @@ from . import email_turni as tabellone
 from .modello import EXTRA
 
 
-def genera(settimane, rettifica=False):
+def genera(settimane, rettifica=False, *, prova=False):
     out = BytesIO()
     doc = SimpleDocTemplate(out, pagesize=landscape(A4), rightMargin=22, leftMargin=22,
-                            topMargin=22, bottomMargin=24, title='Tabellone turni aggiornato')
+                            topMargin=22, bottomMargin=24,
+                            title='TEST - Simulazione turni' if prova else 'Tabellone turni aggiornato')
     stile = getSampleStyleSheet()
     cella = ParagraphStyle('cella', fontName='Helvetica', fontSize=8, leading=11)
     def testo(s):
@@ -24,6 +25,8 @@ def genera(settimane, rettifica=False):
         if n:
             elementi.append(PageBreak())
         titolo = ('Rettifica - ' if rettifica else '') + f"Tabellone {s['inizio']} / {s['fine']}"
+        if prova:
+            titolo = 'TEST - Simulazione - ' + titolo
         elementi.extend([Paragraph(titolo, stile['Heading1']),
                           Paragraph(f"Settimana {s['tipo']} - {escape(s['stato'])}", stile['Normal']), Spacer(1, 10)])
         for posto in tabellone._postazioni(s):
