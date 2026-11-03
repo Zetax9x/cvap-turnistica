@@ -8,6 +8,7 @@ import * as statistiche from "./js/statistiche.js";
 import * as impostazioni from "./js/impostazioni.js";
 import { api } from "./js/api.js";
 import { el } from "./js/util.js";
+import { osservaScorrimento } from "./js/scorrimento.js";
 
 const VISTE = {
   settimana: { modulo: settimana, titolo: "Settimana" },
@@ -108,6 +109,7 @@ function aggiornaEsci() {
   nav.after(esci);
 }
 
+osservaScorrimento(document.getElementById("main"));
 window.addEventListener("cvap:accesso-richiesto", mostraAccesso);
 window.addEventListener("hashchange", () => { if (!document.getElementById("accesso")) instrada(); });
 

@@ -172,7 +172,9 @@ function rigaLettura(p) {
     el("td", {}, el("span", { class: `badge badge-${p.tipo}` }, etichetta("tipo", p.tipo))),
     el("td", {}, etichetta("qualifica", p.qualifica)),
     el("td", {}, p.autista_programmati
-      ? el("span", { class: "badge badge-programmati", title: DESCR_AUTISTA_PROG }, "Sì")
+      // nella colonna basta "Sì" (l'intestazione dice di cosa); nella scheda del telefono, senza intestazione, il nome intero
+      ? el("span", { class: "badge badge-programmati", title: DESCR_AUTISTA_PROG },
+        el("span", { class: "solo-colonna" }, "Sì"), el("span", { class: "solo-scheda" }, "Autista programmati"))
       : el("span", { class: "muted" }, "No")),
     el("td", { class: "cella-email" }, p.email || el("span", { class: "muted" }, "—")),
     el("td", {}, p.attivo ? el("span", { class: "badge badge-attivo" }, "Attivo") : el("span", { class: "badge badge-inattivo" }, "Non attivo")),

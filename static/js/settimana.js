@@ -42,6 +42,7 @@ const stato = {
   richAperta: {},      // lunedì ISO -> pannello richieste Standby/Programmati aperto/chiuso
   coperturaPreventiva: null, // esito dell'ultima indisponibilità modificata in questa settimana
   filtroTabellone: "tutti",
+  giornoMobile: null,  // {settimana, indice}: il giorno scelto su telefono, valido solo per quella settimana
 };
 
 let dialogCella = null;
@@ -110,6 +111,18 @@ function vaiA(data) {
   location.hash = `#settimana/${mondayOf(data)}`;
 }
 
+/** ← e → cambiano settimana, solo nella vista Settimana e mai mentre si scrive, si sceglie in un menu o c'è una finestra aperta. */
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  if (e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+  if (!stato.root || !stato.root.isConnected || stato.root.hidden || !stato.data) return;
+  if (document.querySelector("dialog[open]")) return;
+  const t = e.target instanceof Element ? e.target : null;
+  if (t && t.closest("input, select, textarea, [contenteditable], .table-scroll, .griglia-scroll")) return;  // le frecce lì hanno già un significato
+  e.preventDefault();
+  vaiA(addDays(stato.data, e.key === "ArrowLeft" ? -7 : 7));
+});
+
 function aggiorna(settimana) {
   // risposta arrivata dopo un cambio di settimana: non va mostrata
   if (!settimana || mondayOf(settimana.inizio) !== stato.data) return;
@@ -146,7 +159,8 @@ function render() {
   // A settimana confermata i quattro passi sono tutti fatti: non dicono più nulla e spingono giù il tabellone.
   frammento.append(renderTestata(s), renderCentroOperativo(s));
   if (s.stato !== "confermata") frammento.append(renderPassi(s));
-  frammento.append(renderToolbar(s));
+  const toolbar = renderToolbar(s);
+  frammento.append(toolbar);
   const avvisoCoprire = avvisoTurniDaCoprire(s);
   if (avvisoCoprire) frammento.append(avvisoCoprire);
   const report = s.report ? renderReport(s.report) : null;
@@ -157,7 +171,8 @@ function render() {
   const speciali = postazioniSpecialiVisibili(s);
   frammento.append(renderLegenda(speciali.length > 0), renderFiltriTabellone());
 
-  const griglie = el("div", { class: `griglie filtro-${stato.filtroTabellone}` });
+  const griglie = el("div", { class: `griglie filtro-${stato.filtroTabellone}`, "data-giorno": String(giornoMobile(s)) });
+  frammento.append(renderSelettoreGiorno(s, griglie));
   for (const postazione of s.postazioni) griglie.append(renderGriglia(s, postazione));
   if (!s.postazioni.length) griglie.append(el("p", { class: "muted" }, "Nessuna postazione attiva in questa settimana."));
   for (const postazione of speciali) griglie.append(renderGriglia(s, postazione));
@@ -170,6 +185,7 @@ function render() {
   if (daCoprire) frammento.append(daCoprire);
   frammento.append(el("div", { class: "pannelli" }, renderViolazioni(s), renderRiepilogo(s)));
   if (haTurni(s)) frammento.append(renderStampaLiberi(s));
+  frammento.append(renderBarraPrincipale(s, toolbar));  // ultima: resta in fondo alla vista e si ferma sopra il menu
   clear(stato.root).append(frammento);
   if (dialogLiberi && dialogLiberi.open) {
     if (haTurni(s) && s.giorni.includes(dialogLiberi.dataset.data)) renderDialogLiberi(); else dialogLiberi.close();
@@ -182,9 +198,9 @@ function renderTestata(s) {
     onchange: (e) => { if (e.target.value) vaiA(e.target.value); },
   });
   const nav = el("div", { class: "week-nav", role: "group", "aria-label": "Navigazione settimane" },
-    el("button", { type: "button", class: "btn btn-freccia", onclick: () => vaiA(addDays(stato.data, -7)), "aria-label": "Settimana precedente", title: "Settimana precedente" }, "‹"),
+    el("button", { type: "button", class: "btn btn-freccia", onclick: () => vaiA(addDays(stato.data, -7)), "aria-label": "Settimana precedente", title: "Settimana precedente (←)", "aria-keyshortcuts": "ArrowLeft" }, "‹"),
     el("button", { type: "button", class: "btn", onclick: () => vaiA(todayISO()) }, "Oggi"),
-    el("button", { type: "button", class: "btn btn-freccia", onclick: () => vaiA(addDays(stato.data, 7)), "aria-label": "Settimana successiva", title: "Settimana successiva" }, "›"),
+    el("button", { type: "button", class: "btn btn-freccia", onclick: () => vaiA(addDays(stato.data, 7)), "aria-label": "Settimana successiva", title: "Settimana successiva (→)", "aria-keyshortcuts": "ArrowRight" }, "›"),
     el("label", { class: "sr-only", for: "settimana-data" }, "Vai alla settimana del giorno"),
     inputData,
   );
@@ -248,6 +264,36 @@ function renderPassi(s) {
     }));
 }
 
+/** L'azione che porta avanti la settimana: Genera, poi Conferma, poi Invia. Sta nella toolbar e, su telefono, nella barra fissa. */
+function azionePrincipale(s) {
+  const haGenerati = s.assegnazioni.some((a) => a.origine === "generato");
+  if (s.stato === "confermata") return { testo: "Invia i turni via email", onclick: () => apriInvio(stato.data) };
+  if (haGenerati || s.assegnazioni.length) return { testo: "Conferma settimana", onclick: onConferma };
+  return { testo: "Genera turni", onclick: onGenera };
+}
+
+let osservatoreBarra = null;
+
+/**
+ * Su telefono, dopo aver controllato la griglia l'azione principale è lontana in alto: questa barra la ripete sopra il
+ * menu, ma solo quando il pulsante della toolbar è fuori dallo schermo (così non ce ne sono due insieme). Su schermi
+ * larghi il CSS la nasconde.
+ */
+function renderBarraPrincipale(s, toolbar) {
+  const principale = azionePrincipale(s);
+  const barra = el("div", { class: "barra-principale no-print", role: "group", "aria-label": "Azione principale", hidden: true },
+    el("button", { type: "button", class: "btn btn-primary btn-grande", disabled: stato.occupato, onclick: principale.onclick }, principale.testo));
+  if (osservatoreBarra) osservatoreBarra.disconnect();
+  const pulsante = toolbar.querySelector(".btn-primary");
+  if (pulsante && "IntersectionObserver" in window) {
+    // il margine tiene conto della testata fissa in alto e del menu fisso in basso, che coprono parte dello schermo
+    osservatoreBarra = new IntersectionObserver(([voce]) => { barra.hidden = voce.isIntersecting; },
+      { rootMargin: "-60px 0px -70px 0px" });
+    osservatoreBarra.observe(pulsante);
+  }
+  return barra;
+}
+
 function renderToolbar(s) {
   const confermata = s.stato === "confermata";
   const haGenerati = s.assegnazioni.some((a) => a.origine === "generato");
@@ -276,11 +322,8 @@ function renderToolbar(s) {
         title: "Scarica un PDF con chi è libero ogni giorno della settimana",
       }, "Scarica PDF liberi"),
       el("button", { type: "button", class: "btn", onclick: stampaGriglia }, "Scarica PDF tabellone")));
-  const primaria = confermata
-    ? el("button", { type: "button", class: "btn btn-primary btn-grande", disabled: dis, onclick: () => apriInvio(stato.data) }, "Invia i turni via email")
-    : haGenerati || s.assegnazioni.length
-      ? el("button", { type: "button", class: "btn btn-primary btn-grande", disabled: dis, onclick: onConferma }, "Conferma settimana")
-      : el("button", { type: "button", class: "btn btn-primary btn-grande", disabled: dis, onclick: onGenera }, "Genera turni");
+  const principale = azionePrincipale(s);
+  const primaria = el("button", { type: "button", class: "btn btn-primary btn-grande", disabled: dis, onclick: principale.onclick }, principale.testo);
   return el("div", { class: "toolbar", role: "group", "aria-label": "Azioni settimana" },
     primaria,
     !confermata && haGenerati ? el("button", { type: "button", class: "btn", disabled: dis, onclick: onGenera }, "Rigenera turni") : null,
@@ -583,16 +626,56 @@ function renderGriglia(s, postazione) {
       el("table", { class: "griglia" }, thead, tbody)));
 }
 
-function contaScopertiPostazione(s, postazione) {
+/** Posti scoperti delle `postazioni` nei `giorni` indicati. */
+function contaScopertiIn(s, postazioni, giorni) {
   let totale = 0;
-  for (const riga of righeGriglia(postazione)) {
-    for (const data of s.giorni) {
-      const cella = { data, postazione, fascia: riga.fascia, ruolo: riga.ruolo };
-      if (riga.segmento) cella.segmento = riga.segmento;
-      totale += coperturaCella(s, cella, assegnazioniCella(s, cella)).nMancanti;
+  for (const postazione of postazioni) {
+    for (const riga of righeGriglia(postazione)) {
+      for (const data of giorni) {
+        const cella = { data, postazione, fascia: riga.fascia, ruolo: riga.ruolo };
+        if (riga.segmento) cella.segmento = riga.segmento;
+        totale += coperturaCella(s, cella, assegnazioniCella(s, cella)).nMancanti;
+      }
     }
   }
   return totale;
+}
+
+function contaScopertiPostazione(s, postazione) {
+  return contaScopertiIn(s, [postazione], s.giorni);
+}
+
+/** Giorno (0-6) mostrato su telefono: quello scelto per questa settimana, altrimenti oggi se c'è, altrimenti lunedì. */
+function giornoMobile(s) {
+  if (stato.giornoMobile && stato.giornoMobile.settimana === s.inizio) return stato.giornoMobile.indice;
+  const oggi = s.giorni.indexOf(todayISO());
+  return oggi >= 0 ? oggi : 0;
+}
+
+/**
+ * Su telefono la griglia mostra un giorno alla volta: questa barra sceglie quale. Sopra ogni giorno, il numero di
+ * posti scoperti (il CSS la nasconde su schermi larghi, dove la griglia mostra tutta la settimana).
+ */
+function renderSelettoreGiorno(s, griglie) {
+  const daCompilare = !haTurni(s);
+  const attivo = Number(griglie.dataset.giorno);
+  const postazioni = [...s.postazioni, ...postazioniSpecialiVisibili(s)];
+  const bottoni = s.giorni.map((g, i) => {
+    const scoperti = daCompilare ? 0 : contaScopertiIn(s, postazioni, [g]);
+    return el("button", {
+      type: "button", class: `giorno-sel${i >= 5 ? " weekend" : ""}`, "aria-pressed": String(i === attivo),
+      "aria-label": `${GIORNI_BREVI[i]} ${ddmm(g)}${scoperti ? `, ${scoperti} ${scoperti === 1 ? "posto scoperto" : "posti scoperti"}` : ""}`,
+      onclick: () => {
+        stato.giornoMobile = { settimana: s.inizio, indice: i };
+        griglie.dataset.giorno = String(i);
+        bottoni.forEach((b, k) => b.setAttribute("aria-pressed", String(k === i)));
+      },
+    },
+    el("span", { class: "giorno-sel-nome" }, GIORNI_BREVI[i]),
+    el("span", { class: "giorno-sel-num" }, String(Number(g.slice(8)))),
+    scoperti ? el("span", { class: "giorno-sel-scoperti", "aria-hidden": "true" }, String(scoperti)) : null);
+  });
+  return el("div", { class: "selettore-giorno no-print", role: "group", "aria-label": "Giorno da mostrare" }, bottoni);
 }
 
 /** Il segmento va indicato sul chip solo se diverso dal turno della riga. */
@@ -788,7 +871,7 @@ function renderRiepilogo(s) {
       estremo ? el("span", { class: "sr-only" }, ` (${estremo}: differenza oltre ${formatOre(limite)} ore)`) : null),
     );
   }));
-  sezione.append(el("div", { class: "table-scroll" }, el("table", { class: "tabella" },
+  sezione.append(el("div", { class: "table-scroll" }, el("table", { class: "tabella tabella-ore" },
     el("thead", {}, el("tr", {},
       el("th", { scope: "col" }, "Persona"),
       el("th", { scope: "col" }, "Tipo"),

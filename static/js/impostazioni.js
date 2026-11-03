@@ -22,6 +22,19 @@ const A_RICHIESTA = ["Standby", "Programmati"];
 let root = null;
 let caricamentoScheda = 0;  // numero del caricamento della scheda Generali: i salvataggi lo riusano
 const dati = { imp: null, persone: [], divieti: [], postazioni: [] };
+const sezioniAperte = new Set();  // sezioni ripiegabili che l'utente ha aperto: restano tali dopo ogni ridisegno
+
+/** Sezione che si apre e si chiude: il titolo resta visibile con il valore attuale accanto, il resto si apre a richiesta. */
+function sezioneRipiegabile(id, titoloId, titolo, riassunto, ...contenuto) {
+  return el("details", {
+    id, class: "card sezione-ripiegabile", open: sezioniAperte.has(id),
+    ontoggle: (e) => { if (e.currentTarget.open) sezioniAperte.add(id); else sezioniAperte.delete(id); },
+  },
+  el("summary", { class: "sezione-sommario" },
+    el("h2", { id: titoloId, class: "card-title" }, titolo),
+    el("span", { class: "sezione-riassunto muted" }, riassunto)),
+  ...contenuto);
+}
 
 /** `numero`: il caricamento della scheda; se nel frattempo si è passati all'altra scheda non si ridisegna. */
 async function carica(numero = caricamentoScheda, salvata = null) {
@@ -154,6 +167,7 @@ function renderIndice() {
       onclick: () => {
         const sezione = document.getElementById(id);
         if (!sezione) return;
+        if (sezione.tagName === "DETAILS") sezione.open = true;  // le sezioni ripiegate si aprono prima del salto
         sezione.scrollIntoView({ behavior: "smooth", block: "start" });
         const titolo = sezione.querySelector("h2");
         if (titolo) { titolo.tabIndex = -1; titolo.focus({ preventScroll: true }); }
@@ -231,8 +245,9 @@ function renderScarto(imp) {
 
 function renderMassimiOre() {
   const dip = dipendentiAttivi();
-  const sezione = el("section", { id: "imp-parametri", class: "card", "aria-labelledby": "titolo-parametri" },
-    el("h2", { id: "titolo-parametri", class: "card-title" }, "Parametri dipendenti"));
+  const conMassimo = dip.filter((p) => p.max_ore_settimana).length;
+  const sezione = sezioneRipiegabile("imp-parametri", "titolo-parametri", "Parametri dipendenti",
+    conMassimo ? `${conMassimo} con un massimo personale` : "nessun massimo personale");
   if (!dip.length) {
     sezione.append(el("p", { class: "muted" }, "Nessun dipendente attivo. Aggiungilo nella sezione Personale."));
     return sezione;
@@ -297,8 +312,8 @@ function etichettaDivieto(d) {
 
 function renderDivieti() {
   const dip = dipendentiAttivi();
-  const sezione = el("section", { id: "imp-divieti", class: "card", "aria-labelledby": "titolo-divieti" },
-    el("h2", { id: "titolo-divieti", class: "card-title" }, "Divieti dei dipendenti"),
+  const sezione = sezioneRipiegabile("imp-divieti", "titolo-divieti", "Divieti dei dipendenti",
+    dati.divieti.length === 1 ? "1 divieto" : dati.divieti.length ? `${dati.divieti.length} divieti` : "nessun divieto",
     el("p", { class: "hint" }, "Turni che un dipendente non può fare: il generatore non glieli assegna e "
       + "i turni inseriti a mano vengono segnalati."));
 
@@ -311,7 +326,7 @@ function renderDivieti() {
         el("th", { scope: "col" }, "Dipendente"),
         el("th", { scope: "col" }, "Postazione"),
         el("th", { scope: "col" }, "Turno"),
-        el("th", { scope: "col" }, el("span", { class: "sr-only" }, "Azioni")))),
+        el("th", { scope: "col", class: "azioni" }, el("span", { class: "sr-only" }, "Azioni")))),
       el("tbody", {}, dati.divieti.map((d) => {
         const e = etichettaDivieto(d);
         const btn = el("button", {

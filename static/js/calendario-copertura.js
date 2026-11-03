@@ -82,13 +82,14 @@ function render() {
     el("a", { class: "btn", href: `#calendario/${spostaMese(mese, 1)}`, "aria-label": "Mese successivo" }, "→"));
   root.append(el("div", { class: "calendario-copertura-header" },
     el("h1", {}, parseISO(`${mese}-01`).toLocaleDateString("it-IT", { month: "long", year: "numeric" })), navigazione),
-  el("p", { class: "muted" }, "Copertura preventiva dell’intera settimana. I volontari sono quelli già prenotati. Le malattie sono visibili nel dettaglio del giorno."));
+  el("p", { class: "muted" }, "Copertura preventiva dell’intera settimana. I volontari sono quelli già prenotati. Le malattie sono visibili nel dettaglio del giorno. Un giorno senza etichetta di copertura è coperto dai dipendenti."));
   root.append(el("div", { class: "calendario-copertura-riepilogo", "aria-label": "Giorni del mese per copertura" },
     Object.keys(STATI).map((s) => el("div", {}, badge(s), ` ${payload.riepilogo[s] || 0} giorni`))));
   const griglia = el("div", { class: "calendario-copertura-griglia", "aria-label": "Giorni del calendario" });
   griglia.append(...GIORNI_BREVI.map((g) => el("div", { class: "calendario-copertura-intestazione", "aria-hidden": "true" }, g)));
   for (let data = payload.dal; data <= payload.al; data = addDays(data, 1)) {
     const giorno = data;
+    const indice = (parseISO(giorno).getDay() + 6) % 7;  // 0 = lunedì
     const settimana = payload.settimane.find((s) => s.inizio <= giorno && s.fine >= giorno);
     const tipoSettimana = settimana ? `Settimana ${settimana.tipo}` : "Settimana da verificare";
     const assenze = assenzeGiorno(giorno);
@@ -99,8 +100,12 @@ function render() {
       "aria-label": `${dataEstesa(giorno)}. ${tipoSettimana}. ${STATI[settimana?.stato] || STATI.da_verificare}. ${assenze.length} assenze. ${new Set(indisponibilita.map((i) => i.persona_id)).size} indisponibili.${posti.length ? ` ${posti.length} posti scoperti.` : ""}`,
       "aria-current": giorno === todayISO() ? "date" : null,
       onclick: () => dettaglio(giorno, settimana),
-    }, el("span", { class: "calendario-copertura-data" }, ddmm(giorno)),
-    el("span", { class: "calendario-copertura-assenza" }, tipoSettimana), badge(settimana?.stato));
+    }, el("span", { class: "calendario-copertura-data" },
+      // su telefono non c'è la riga con i nomi dei giorni: il nome sta accanto alla data
+      el("span", { class: "calendario-copertura-giorno-nome" }, `${GIORNI_BREVI[indice]} `), ddmm(giorno)),
+    // il tipo di settimana basta una volta per riga; la copertura si scrive solo quando non è quella normale
+    indice === 0 ? el("span", { class: "calendario-copertura-assenza calendario-copertura-tipo" }, tipoSettimana) : null,
+    settimana?.stato === "dipendenti" ? null : badge(settimana?.stato));
     if (posti.length) cella.append(el("span", { class: "calendario-copertura-stato calendario-copertura-da_risolvere" }, `! ${posti.length} posti scoperti`));
     for (const motivo of ["ferie", "malattia"]) {
       const presenti = assenze.filter((a) => a.motivo === motivo);
