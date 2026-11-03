@@ -1,6 +1,9 @@
 {
   "enabledPlugins": {
     "caveman@caveman": true,
-    "context7@claude-plugins-official": true
+    "context7@claude-plugins-official": true,
+    "superpowers@anthropic-plugin-directory": true,
+    "impeccable@impeccable": true,
+    "frontend-design@anthropic-plugin-directory": true
   }
 }
