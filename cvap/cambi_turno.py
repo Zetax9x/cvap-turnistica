@@ -1,4 +1,4 @@
-"""Cessioni e scambi dichiarati dai dipendenti; soltanto il riposo blocca l'operazione."""
+"""Cessioni e scambi dichiarati dai dipendenti; riposo e sovrapposizioni bloccano l'operazione."""
 import hashlib
 from dataclasses import asdict, replace
 from datetime import date, datetime, time, timedelta
@@ -73,7 +73,7 @@ def _valuta(conn, prima, dopo, dati_settimana):
     coinvolti = {f['persona_id'] for f in prima + dopo}
     settimane = sorted({lunedi(date.fromisoformat(f['data'])) for f in prima})
     avvisi, errori = [], []
-    # Per i riposi bastano i dintorni di ogni turno; le settimane lontane non vanno caricate in mezzo.
+    # Riposo e sovrapposizioni si controllano nei dintorni di ogni turno.
     dintorni = {}
     for f in dopo:
         d = date.fromisoformat(f['data'])
@@ -83,25 +83,30 @@ def _valuta(conn, prima, dopo, dati_settimana):
     prima_map = dict(dintorni)
     dintorni.update(sostituzioni)
 
-    def riposi(righe):
+    def conflitti(righe):
         out = {}
         for (ia, a), (ib, b) in combinations(sorted(righe.items(), key=lambda x: (x[1].inizio, x[0])), 2):
             if a.persona_id != b.persona_id or not ({ia, ib} & sostituzioni.keys()):
                 continue
             pausa = b.inizio - a.fine
-            if 0 <= pausa < ORE_RIPOSO_MIN:
+            if pausa < ORE_RIPOSO_MIN:
                 out[(a.persona_id, ia, ib)] = pausa
         return out
 
-    precedenti = riposi(prima_map)
-    for chiave, pausa in riposi(dintorni).items():
+    precedenti = conflitti(prima_map)
+    for chiave, pausa in conflitti(dintorni).items():
         if chiave in precedenti and pausa >= precedenti[chiave]:
             continue
         pid, ia, ib = chiave
         nome = dipendente(conn, pid)['nome']
         fa, fb = fotografia(conn, ia, dintorni[ia]), fotografia(conn, ib, dintorni[ib])
-        errori.append({'codice': 'riposo', 'persona_id': pid,
-                       'messaggio': f"{nome}: {pausa} ore di riposo tra {descrivi(fa)} e {descrivi(fb)}. Servono almeno 11 ore."})
+        if pausa < 0:
+            codice = 'sovrapposizione'
+            messaggio = f"{nome} è già impegnato in un altro turno nello stesso orario: {descrivi(fa)} e {descrivi(fb)}."
+        else:
+            codice = 'riposo'
+            messaggio = f"{nome}: {pausa} ore di riposo tra {descrivi(fa)} e {descrivi(fb)}. Servono almeno 11 ore."
+        errori.append({'codice': codice, 'persona_id': pid, 'messaggio': messaggio})
 
     for settimana in settimane:
         d = dati_settimana(conn, settimana)
@@ -117,7 +122,7 @@ def _valuta(conn, prima, dopo, dati_settimana):
         regole['contesto'] += [a for a in sostituzioni.values()
                               if a.data not in set(d.giorni) and min(abs((a.data - g).days) for g in d.giorni) <= 3]
         for v in valida_settimana(**regole):
-            if v.persona_id not in coinvolti or v.codice == 'riposo':
+            if v.persona_id not in coinvolti or v.codice in {'riposo', 'sovrapposizione'}:
                 continue
             messaggio = v.messaggio
             if v.codice == 'ferie' and (v.persona_id, v.data) in d.malattia:

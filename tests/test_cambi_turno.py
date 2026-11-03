@@ -1,5 +1,5 @@
 """Regole concordate, atomicità e modifiche concorrenti sui cambi turno."""
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -33,17 +33,92 @@ def test_blocca_riposo_dopo_turno_ricevuto_per_dichiarante(scenario):
     assert conferma(c, corpo, vista).status_code == 400
 
 
-def test_sovrapposizione_assenza_ore_qualifica_sono_solo_avvisi(scenario):
+def test_assenza_ore_qualifica_restano_solo_avvisi(scenario):
     c, conn, _, corpo, _ = scenario
-    db.crea_assegnazione(conn, Assegnazione(date(2090, 1, 2), 'Venarotta', 'giorno', 'intero',
-                                         'soccorritore', corpo['collega_id']))
     db.crea_ferie(conn, corpo['collega_id'], date(2090, 1, 2), date(2090, 1, 2))
     db.imposta_max_ore(conn, corpo['collega_id'], 1)
     vista = anteprima(c, corpo)
     codici = {v['codice'] for v in vista['avvisi']}
-    assert {'sovrapposizione', 'ferie', 'qualifica', 'ore_max'} <= codici
+    assert {'ferie', 'qualifica', 'ore_max'} <= codici
     assert not vista['errori']
     assert conferma(c, corpo, vista).status_code == 200
+
+
+@pytest.mark.parametrize('tipo,parte', [('cessione', 'collega_id'), ('scambio', 'collega_id'),
+                                      ('scambio', 'persona_id')])
+@pytest.mark.parametrize('sovrapposto', ['intero', 'parziale', 'notte_precedente'])
+def test_blocca_turno_sovrapposto_per_entrambe_le_persone(scenario, tipo, parte, sovrapposto):
+    c, conn, postino, corpo, _ = scenario
+    if tipo == 'cessione':
+        corpo = {**corpo, 'tipo': tipo, 'turno_ricevuto_id': None}
+    giorno = date(2090, 1, 16) if parte == 'persona_id' else date(2090, 1, 2)
+    if sovrapposto == 'intero':
+        postazione = 'Acquasanta' if parte == 'persona_id' else 'Venarotta'
+        turno = Assegnazione(giorno, postazione, 'giorno', 'intero', 'soccorritore', corpo[parte])
+    else:
+        if sovrapposto == 'notte_precedente':
+            giorno -= timedelta(days=1)
+        inizio, fine = (20, 33) if sovrapposto == 'notte_precedente' else (12, 16)
+        fascia = 'notte' if sovrapposto == 'notte_precedente' else 'giorno'
+        turno = Assegnazione(giorno, 'Assistenze ed Extra', fascia,
+                             segmento_extra(99, inizio, fine), 'soccorritore', corpo[parte])
+    db.crea_assegnazione(conn, turno)
+    vista = anteprima(c, corpo)
+    assert any(e['codice'] == 'sovrapposizione' and e['persona_id'] == corpo[parte]
+               for e in vista['errori'])
+    assert not any(a['codice'] == 'sovrapposizione' for a in vista['avvisi'])
+    r = conferma(c, corpo, vista)
+    assert r.status_code == 400, r.text
+    assert db.get_assegnazione(conn, corpo['turno_id']).persona_id == corpo['persona_id']
+    if tipo == 'scambio':
+        assert db.get_assegnazione(conn, corpo['turno_ricevuto_id']).persona_id == corpo['collega_id']
+    assert conn.execute('SELECT COUNT(*) AS n FROM variazioni_turno').fetchone()['n'] == 0
+    assert not postino.messaggi
+
+
+def test_scambio_nello_stesso_orario_esclude_i_turni_ceduti(scenario):
+    c, conn, _, corpo, _ = scenario
+    with conn:
+        conn.execute('UPDATE assegnazioni SET data = ? WHERE id = ?',
+                     ('2090-01-02', corpo['turno_ricevuto_id']))
+    vista = anteprima(c, corpo)
+    assert not vista['errori']
+    assert conferma(c, corpo, vista).status_code == 200
+
+
+def test_sovrapposizione_pregressa_non_coinvolta_non_blocca(scenario):
+    c, conn, _, corpo, _ = scenario
+    for postazione in ('Venarotta', 'Acquasanta'):
+        db.crea_assegnazione(conn, Assegnazione(date(2090, 1, 5), postazione, 'giorno', 'intero',
+                                             'soccorritore', corpo['collega_id']))
+    assert not anteprima(c, corpo)['errori']
+    assert conferma(c, corpo).status_code == 200
+
+
+def test_sovrapposizione_introdotta_dopo_anteprima_impedisce_conferma(scenario):
+    c, conn, postino, corpo, _ = scenario
+    vista = anteprima(c, corpo)
+    db.crea_assegnazione(conn, Assegnazione(date(2090, 1, 2), 'Venarotta', 'giorno', 'intero',
+                                         'soccorritore', corpo['collega_id']))
+    assert conferma(c, corpo, vista).status_code == 409
+    assert conferma(c, corpo).status_code == 400
+    assert db.get_assegnazione(conn, corpo['turno_id']).persona_id == corpo['persona_id']
+    assert not postino.messaggi
+
+
+def test_annullamento_blocca_sovrapposizione_nel_ripristino(scenario):
+    c, conn, postino, corpo, _ = scenario
+    vid = conferma(c, corpo).json()['id']
+    db.crea_assegnazione(conn, Assegnazione(date(2090, 1, 2), 'Venarotta', 'giorno', 'intero',
+                                         'autista', corpo['persona_id']))
+    c.post('/api/accesso', json={'password': 'gestione'})
+    vista = c.post(f'/api/gestione-cambi-turno/{vid}/anteprima-annullamento').json()
+    assert any(e['codice'] == 'sovrapposizione' for e in vista['errori'])
+    r = c.post(f'/api/gestione-cambi-turno/{vid}/annulla',
+               json={'versione': vista['versione'], 'chiave': str(uuid4())})
+    assert r.status_code == 400, r.text
+    assert db.get_assegnazione(conn, corpo['turno_id']).persona_id == corpo['collega_id']
+    assert len(postino.messaggi) == 1
 
 
 def test_riposo_pregresso_non_coinvolto_non_blocca(scenario):

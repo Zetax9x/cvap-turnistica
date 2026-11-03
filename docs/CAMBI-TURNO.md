@@ -13,7 +13,7 @@ Aprire `/cambio-turno` sullo stesso indirizzo del gestionale. Nella sezione **Ca
 
 La conferma di chi registra è sufficiente. Il tabellone si aggiorna subito; lo scambio trasferisce entrambi i turni nella stessa operazione. Le settimane conservano il proprio stato e una cessione non crea automaticamente ore di sostituzione o straordinario.
 
-Il controllo blocca una variazione che introduce o peggiora un intervallo di riposo inferiore a **11 ore** per una delle due persone, anche oltre il confine della settimana. Le altre anomalie, comprese sovrapposizioni, qualifiche, assenze e ore settimanali, compaiono come avvisi nel riepilogo e nella comunicazione.
+Il controllo blocca una variazione che introduce o peggiora un intervallo di riposo inferiore a **11 ore** oppure sovrappone il turno ricevuto a un altro turno della stessa persona. Vale per entrambe le persone, anche oltre il confine della settimana e per sovrapposizioni parziali o turni notturni. Nello scambio i turni ceduti vengono tolti prima del controllo: scambiare due turni nello stesso orario è possibile se non ci sono altri impegni incompatibili. Le altre anomalie, comprese qualifiche, assenze e ore settimanali, compaiono come avvisi nel riepilogo e nella comunicazione.
 
 Se si interrompe la connessione, usare **Verifica esito** o **Riprendi lo stesso invio**. La pagina conserva il riferimento dell'operazione nella sessione del browser e recupera la stessa registrazione senza ripetere il trasferimento.
 
@@ -27,7 +27,7 @@ La sezione gestionale **Cambi** richiede l'accesso previsto per il resto del ges
 
 Se manca la configurazione SMTP, manca un responsabile o fallisce il PDF/invio, il cambio resta salvato e la comunicazione risulta **da reinviare**. Sistemare la configurazione e usare **Reinvia comunicazione**: il tabellone non viene modificato di nuovo e i destinatari già raggiunti non ricevono un secondo invio. I tentativi interrotti durante l'invio sono recuperabili dopo cinque minuti. Il reinvio usa la fotografia del tabellone conservata al momento della variazione.
 
-**Annulla cambio…** mostra un'anteprima del ripristino. Dopo la conferma ripristina entrambi i turni, conserva lo storico e invia una rettifica con il PDF. Se i turni sono stati successivamente modificati, il ripristino automatico è impedito; anche il ripristino deve rispettare le 11 ore. Una vecchia notifica ancora pendente viene superata dalla rettifica.
+**Annulla cambio…** mostra un'anteprima del ripristino. Dopo la conferma ripristina entrambi i turni, conserva lo storico e invia una rettifica con il PDF. Se i turni sono stati successivamente modificati, il ripristino automatico è impedito; anche il ripristino deve rispettare le 11 ore e non introdurre sovrapposizioni con altri turni. Una vecchia notifica ancora pendente viene superata dalla rettifica.
 
 ## Installazione e verifiche
 

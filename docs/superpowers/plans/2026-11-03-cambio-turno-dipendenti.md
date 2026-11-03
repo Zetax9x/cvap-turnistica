@@ -22,9 +22,9 @@
 - Percorso riservato ai dipendenti, esclusi i volontari.
 - Due operazioni: cessione a un altro dipendente oppure scambio con un turno di un altro dipendente.
 - Scambi consentiti anche tra settimane diverse.
-- Unico vincolo organizzativo bloccante: violazione delle **11 ore di riposo**.
+- Vincoli organizzativi bloccanti: violazione delle **11 ore di riposo** e sovrapposizione con altri turni del dipendente. Il secondo vincolo è stato richiesto nell'aggiornamento successivo alla prima consegna.
 - Controllo del riposo per entrambe le persone, prima e dopo i turni coinvolti, anche oltre i confini settimanali.
-- Altre anomalie vengono segnalate, senza bloccare: ore, qualifiche, assenze, sovrapposizioni e altre regole dell'app.
+- Altre anomalie vengono segnalate, senza bloccare: ore, qualifiche, assenze e altre regole dell'app.
 - Basta la conferma di chi registra. Nessuna seconda accettazione e nessuna approvazione preventiva della responsabile.
 - Riepilogo prima della conferma. Nessuna modifica durante la compilazione.
 - Alla conferma: aggiornamento automatico del tabellone e comunicazione via email ai responsabili con la variazione e il nuovo tabellone, sia nel corpo dell'email sia come PDF allegato.
@@ -71,7 +71,7 @@
 
 - Nomi, tipo di operazione e dettaglio di ogni turno prima e dopo.
 - Anomalie non bloccanti leggibili prima della conferma.
-- Se il riposo è insufficiente: persone e turni interessati, intervallo di riposo e pulsante di conferma non disponibile.
+- Se il riposo è insufficiente o ci sono turni sovrapposti: persone e turni interessati, motivo del blocco e pulsante di conferma non disponibile.
 - Pulsanti «Indietro» e «Conferma e comunica alla responsabile».
 
 ### Schermata 5 — Esito
@@ -91,10 +91,10 @@
 ## 4. Regole di validazione
 
 - Calcolare prima la situazione completa risultante, togliendo le assegnazioni originali e inserendo quelle trasferite.
-- Verificare i riposi introdotti o peggiorati dall'operazione; anomalie pregresse non coinvolte non devono bloccarla.
+- Verificare riposi e sovrapposizioni introdotti o peggiorati dall'operazione per entrambe le persone; anomalie pregresse non coinvolte non devono bloccarla.
 - Esattamente 11 ore: ammesso. Meno di 11 ore tra turni distinti non sovrapposti: bloccato.
 - Usare il modello temporale del progetto per turni notturni e cambio di settimana; verificare anche la resa delle date nell'interfaccia Europe/Rome.
-- Tenere distinte sovrapposizione e riposo insufficiente: la sovrapposizione resta un avviso secondo la decisione dell'utente. Non riutilizzare indiscriminatamente un controllo che riunisca entrambi come errore bloccante.
+- Tenere distinti i messaggi per sovrapposizione e riposo insufficiente: entrambi bloccano. Rimuovere i turni ceduti prima del controllo e considerare anche sovrapposizioni parziali o notti iniziate il giorno prima.
 - Non applicare filtri sui candidati che nascondano dipendenti per qualifiche, ore o altri vincoli non bloccanti.
 - Anteprima e conferma usano la stessa logica; alla conferma ricalcolare sul database corrente.
 - Se i turni sono cambiati dopo l'anteprima, chiedere di ricaricare e rivedere il riepilogo; non sovrascrivere silenziosamente.
@@ -104,7 +104,7 @@
 
 - Mostrare il cambio registrato e l'anteprima del ripristino prima della conferma di annullamento.
 - Verificare che le assegnazioni siano ancora quelle risultanti dal cambio; se sono state ulteriormente modificate, fermare il ripristino e spiegare quali turni richiedono intervento manuale.
-- Ricontrollare il riposo nella situazione ripristinata secondo le stesse regole del cambio: turni vicini aggiunti successivamente possono aver modificato la compatibilità.
+- Ricontrollare riposo e sovrapposizioni nella situazione ripristinata secondo le stesse regole del cambio: turni vicini aggiunti successivamente possono aver modificato la compatibilità.
 - Ripristinare entrambe le assegnazioni in un'unica transazione, anche tra settimane diverse, e ricalcolare le ore.
 - Conservare la variazione originale, registrare chi ha annullato nel contesto gestionale disponibile, quando e il collegamento alla rettifica; non cancellare lo storico.
 - Generare una nuova comunicazione di rettifica ai responsabili con riepilogo e tabelloni ripristinati nel corpo e nel PDF; stesso trattamento degli errori email.
@@ -183,7 +183,7 @@ Prefisso pubblico: `/api/cambi-turno`.
 
 - `GET /dipendenti`: identificativo e nome dei dipendenti selezionabili.
 - `GET /turni?persona_id=...&settimana=...`: assegnazioni selezionabili e relativa versione.
-- `POST /anteprima`: tipo, dichiarante, collega, turno ceduto e, per scambio, turno ricevuto. Risposta con riepilogo, avvisi, errori di riposo e riferimento alla versione vista.
+- `POST /anteprima`: tipo, dichiarante, collega, turno ceduto e, per scambio, turno ricevuto. Risposta con riepilogo, avvisi, errori di riposo/sovrapposizione e riferimento alla versione vista.
 - `POST /conferme`: stessi dati, riferimento dell'anteprima e chiave della richiesta. Risposta con identificativo variazione ed esito della notifica.
 - `GET /conferme/{riferimento}`: recupero del solo esito della propria operazione tramite riferimento non enumerabile, senza esporre il registro completo.
 
@@ -217,7 +217,7 @@ Risposte coerenti per dati invalidi, turni mancanti e conflitto con modifiche su
 - [x] Scrivere casi per riposo di 10 e di 11 ore esatte, turni notturni e confini settimanali. Il modello ammette ore intere: il caso 10 ore e 59 minuti non è rappresentabile senza modificarlo.
 - [x] Scrivere casi in cui il riposo viola le regole soltanto per la controparte e dopo un turno ricevuto.
 - [x] Implementare simulazione delle assegnazioni risultanti e controllo dei turni vicini di entrambe le persone.
-- [x] Verificare che ore, qualifiche, assenze e sovrapposizioni restino avvisi e non filtri o blocchi impliciti.
+- [x] Verificare che ore, qualifiche e assenze restino avvisi e non filtri o blocchi impliciti; le sovrapposizioni bloccano dopo l'aggiornamento richiesto dall'utente.
 - [x] Collegare conferma e anteprima alla medesima validazione.
 - [x] Eseguire `python -m pytest tests/test_cambi_turno.py -q`.
 
@@ -314,7 +314,7 @@ L'automazione browser sarà usata soltanto se già disponibile e utile; nessuna 
 - [x] Sono visibili tutti i turni ancora da svolgere anche nelle settimane bloccate, senza mostrare i turni passati.
 - [x] Cessione e scambio funzionano anche su settimane diverse, dopo un riepilogo esplicito.
 - [x] La conferma di chi registra è sufficiente.
-- [x] Un riposo insufficiente per una delle due persone blocca; le altre anomalie concordate sono avvisi.
+- [x] Un riposo insufficiente o la sovrapposizione con un altro turno per una delle due persone blocca; le altre anomalie concordate sono avvisi.
 - [x] Il tabellone cambia una volta sola e gli scambi sono atomici.
 - [x] Le settimane conservano lo stato originario, anche bloccato; statistiche e totali leggono le nuove assegnazioni, senza trasformare automaticamente una cessione in straordinario.
 - [x] I responsabili ricevono variazione e tabelloni aggiornati nel corpo e in PDF, oppure il gestionale mostra la notifica pendente e consente il reinvio.

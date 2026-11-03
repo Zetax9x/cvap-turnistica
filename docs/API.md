@@ -215,7 +215,7 @@ Percorsi pubblici senza password, prefisso `/api/cambi-turno`:
 
 - `GET /dipendenti` → `[{id, nome}]`, soli dipendenti, anche disattivati; nessuna email o dato anagrafico aggiuntivo.
 - `GET /turni?persona_id=...&settimana=YYYY-MM-DD` → turni non ancora iniziati; `settimana` facoltativa. Comprende settimane in bozza e confermate. Ogni turno contiene identificativi, persona/nome, data, postazione, fascia, segmento, ruolo, origine, orario, inizio/fine ISO e revisione.
-- `POST /anteprima` `{tipo: "cessione"|"scambio", persona_id, collega_id, turno_id, turno_ricevuto_id?}` → `{prima, dopo, avvisi, errori, versione, settimane, riepilogo, richiesta, ...}`. La versione è l'impronta della simulazione; `errori` contiene i soli blocchi di riposo introdotti o peggiorati, gli altri controlli sono `avvisi`.
+- `POST /anteprima` `{tipo: "cessione"|"scambio", persona_id, collega_id, turno_id, turno_ricevuto_id?}` → `{prima, dopo, avvisi, errori, versione, settimane, riepilogo, richiesta, ...}`. La versione è l'impronta della simulazione; `errori` contiene i blocchi di riposo e sovrapposizione introdotti o peggiorati per entrambe le persone, gli altri controlli sono `avvisi`. I turni ceduti sono esclusi prima di verificare gli impegni risultanti.
 - `POST /conferme` stesso corpo più `{versione, chiave: UUID}` → `{id, creata_il, annullata_il, notifica: "inviata"|"da_reinviare", riepilogo}`. Ricontrolla titolarità, istante di inizio, versione e riposi nella transazione; trasferisce le assegnazioni e salva registro e notifiche insieme. La stessa chiave con gli stessi dati restituisce la registrazione già creata. SMTP dopo il commit.
 - `GET /conferme/{riferimento: UUID}` → stesso esito, per recuperare una risposta persa; 404 se non registrata.
 
@@ -226,7 +226,7 @@ Percorsi gestionali, prefisso `/api/gestione-cambi-turno`, soggetti alla passwor
 - `POST /{id}/anteprima-annullamento` → simulazione del ripristino, compresa la versione; 409 se già annullato o assegnazioni modificate successivamente.
 - `POST /{id}/annulla` `{versione, chiave: UUID}` → esito gestionale. Ripristino atomico, audit e rettifica con PDF; ripetizione della stessa chiave idempotente.
 
-Errori: 400 per dati incompatibili con l'operazione, turni già iniziati o riposo insufficiente; 409 per versione superata o turni modificati; 422 per struttura dei dati non valida. Un errore SMTP/PDF conserva la variazione e la notifica pendente. Le notifiche sono separate per destinatario; i tentativi interrotti diventano recuperabili dopo cinque minuti.
+Errori: 400 per dati incompatibili con l'operazione, turni già iniziati, riposo insufficiente o sovrapposizione con altri turni; 409 per versione superata o turni modificati; 422 per struttura dei dati non valida. Un errore SMTP/PDF conserva la variazione e la notifica pendente. Le notifiche sono separate per destinatario; i tentativi interrotti diventano recuperabili dopo cinque minuti.
 
 Moduli: `cambi_turno.py` (simulazione e trasferimenti), `db_cambi_turno.py` (registro/transazioni), `api_cambi_turno.py` (router), `email_cambi_turno.py` (coda e messaggi), `pdf_cambi_turno.py` (ReportLab). Tabelle aggiunte da `db.py`: `variazioni_turno`, `notifiche_variazioni`, `revisioni_cambi_turno`; i trigger delle assegnazioni registrano le revisioni per rilevare anche modifiche poi ripristinate. L'origine delle assegnazioni e lo stato delle settimane restano invariati.
 

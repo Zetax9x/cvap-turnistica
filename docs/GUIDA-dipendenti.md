@@ -274,7 +274,7 @@ Nello scambio, invece, chi cede un suo turno e ne prende un altro non fa ore ext
 
 Apri il link `/cambio-turno` del gestionale da smartphone. Scegli il tuo nome, il turno da modificare e se lo hai ceduto o scambiato; indica il collega e, per lo scambio, il turno che ricevi. Dopo il riepilogo premi **Conferma e comunica alla responsabile**. Basta la conferma di chi registra: il tabellone si aggiorna e i responsabili ricevono la comunicazione con il tabellone e il PDF.
 
-Sono disponibili tutti i turni ancora da iniziare, anche nelle settimane bloccate e in bozza. Un riposo inferiore a 11 ore introdotto dal cambio impedisce la conferma; le altre anomalie compaiono come avvisi. Questa registrazione conserva il tipo di conteggio delle ore del turno: una cessione non diventa automaticamente straordinario. Il riepilogo via email ai dipendenti sarà valutato successivamente.
+Sono disponibili tutti i turni ancora da iniziare, anche nelle settimane bloccate e in bozza. La conferma è impedita se il cambio introduce un riposo inferiore a 11 ore oppure se una delle due persone è già impegnata in un altro turno che si sovrappone a quello ricevuto, anche solo in parte. Nello scambio i turni ceduti non contano come altri impegni. Le altre anomalie compaiono come avvisi. Questa registrazione conserva il tipo di conteggio delle ore del turno: una cessione non diventa automaticamente straordinario. Il riepilogo via email ai dipendenti sarà valutato successivamente.
 
 Se la connessione si interrompe, usa **Verifica esito** o **Riprendi lo stesso invio**. Se la comunicazione risulta da reinviare, il cambio è già salvato: il responsabile può reinviarla da **Cambi**. Per i dettagli vedi la [guida ai cambi turno](CAMBI-TURNO.md).
 
