@@ -118,25 +118,9 @@ async function mostraAnteprima() {
     await inviaConferma(invio);
   }));
   conferma.disabled = vista.errori.length > 0;
-  const esitoProva = el("p", { role: "status", tabindex: -1, hidden: true });
-  const prova = bottone("Invia email di test a me", () => esegui(async () => {
-    esitoProva.hidden = false;
-    esitoProva.textContent = "Invio dell’email di test in corso…";
-    try {
-      const esito = await richiesta("cambi-turno/email/prova", { ...corpo, versione: vista.versione });
-      esitoProva.textContent = `Email di test inviata a ${esito.inviata_a}. Il cambio non è stato registrato e il tabellone non è stato modificato.`;
-      esitoProva.focus();
-    } catch (err) {
-      esitoProva.hidden = true;
-      throw err;
-    }
-  }), true);
-  prova.disabled = vista.errori.length > 0;
   pagina(4, "Controlla e conferma", riepilogo(vista),
     el("p", {}, "Confermando aggiorni il tabellone e comunichi la variazione ai responsabili, con il PDF dei turni aggiornati."),
-    conferma, prova,
-    el("p", {}, "Il test invia solo a squarciayuri@gmail.com il riepilogo e il tabellone simulato con PDF, senza modificare i turni."),
-    esitoProva, bottone("Indietro", scegliCollega, true),
+    conferma, bottone("Indietro", scegliCollega, true),
     bottone("Ricarica i miei turni", scegliTurno, true));
 }
 

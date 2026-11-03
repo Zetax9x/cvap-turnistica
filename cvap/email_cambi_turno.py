@@ -6,26 +6,16 @@ from email import message_from_string, policy
 from email.message import EmailMessage
 from html import escape
 
-from fastapi import HTTPException
-
 from . import db_cambi_turno as registro, email_turni, pdf_cambi_turno
 
 log = logging.getLogger('cvap.cambi_turno')
-DESTINATARIO_PROVA = 'squarciayuri@gmail.com'
 
 
-def componi(foto, indirizzo, tipo, *, prova=False):
+def componi(foto, indirizzo, tipo):
     v = foto['variazione']
     rettifica = tipo == 'rettifica'
     titolo = 'Rettifica cambio turno' if rettifica else 'Variazione turni: ' + v['dichiarante']
-    if prova:
-        titolo = 'TEST - ' + titolo
-    righe = [titolo]
-    if prova:
-        righe.append('Email di test: il cambio non è stato registrato e il tabellone reale non è stato modificato. '
-                     'I tabelloni mostrano una simulazione.')
-    righe += [f"{'Simulazione di' if prova else 'Registrato da'}: {v['dichiarante']}",
-              f"Data: {foto['quando']}", *v['riepilogo']]
+    righe = [titolo, f"Registrato da: {v['dichiarante']}", f"Data: {foto['quando']}", *v['riepilogo']]
     avvisi = [a['messaggio'] for a in v['avvisi']]
     if avvisi:
         righe += ['Segnalazioni (non bloccanti):', *avvisi]
@@ -37,21 +27,9 @@ def componi(foto, indirizzo, tipo, *, prova=False):
     m['To'], m['Subject'] = indirizzo, titolo
     m.set_content('\n\n'.join(righe))
     m.add_alternative('<!doctype html><html lang="it"><body>' + html + '</body></html>', subtype='html')
-    pdf = pdf_cambi_turno.genera(foto['settimane'], rettifica, prova=prova)
-    m.add_attachment(pdf, maintype='application', subtype='pdf',
-                     filename='tabellone-simulato-test.pdf' if prova else 'tabellone-aggiornato.pdf')
+    pdf = pdf_cambi_turno.genera(foto['settimane'], rettifica)
+    m.add_attachment(pdf, maintype='application', subtype='pdf', filename='tabellone-aggiornato.pdf')
     return m
-
-
-def invia_prova(foto, postino):
-    try:
-        messaggio = componi(foto, DESTINATARIO_PROVA, 'variazione', prova=True)
-        errore = postino.invia([messaggio]).get(DESTINATARIO_PROVA, 'Invio non confermato')
-    except Exception:
-        log.exception('Email di prova del cambio turno non completata')
-        raise HTTPException(502, 'Preparazione PDF o invio email di test non riusciti. Nessun cambio registrato.') from None
-    if errore:
-        raise HTTPException(502, 'Invio email di test non riuscito. Nessun cambio registrato.')
 
 
 def invia_pendenti(conn, vid, postino):

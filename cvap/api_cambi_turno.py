@@ -1,10 +1,9 @@
 """API della pagina dipendenti e registro riservato del gestionale."""
 import sqlite3
-import time
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from . import db, cambi_turno, db_cambi_turno as registro, email_cambi_turno
@@ -19,11 +18,8 @@ class CambioIn(BaseModel):
     turno_ricevuto_id: Id | None = None
 
 
-class ProvaIn(CambioIn):
+class ConfermaIn(CambioIn):
     versione: Annotated[str, Field(pattern=r'^[a-f0-9]{64}$')]
-
-
-class ConfermaIn(ProvaIn):
     chiave: UUID
 
 
@@ -32,7 +28,7 @@ class AnnullaIn(BaseModel):
     chiave: UUID
 
 
-def crea_router(connessione, scrittura, dati_settimana, payload_settimana, postino, limite_prove):
+def crea_router(connessione, scrittura, dati_settimana, payload_settimana, postino):
     router = APIRouter()
     Conn = Annotated[sqlite3.Connection, Depends(connessione)]
     pubblico = '/api/cambi-turno'
@@ -49,17 +45,6 @@ def crea_router(connessione, scrittura, dati_settimana, payload_settimana, posti
     @router.post(pubblico + '/anteprima')
     def anteprima(body: CambioIn, conn: Conn):
         return cambi_turno.anteprima(conn, body.model_dump(), dati_settimana)
-
-    @router.post(pubblico + '/email/prova')
-    def prova_email(body: ProvaIn, conn: Conn):
-        with scrittura():
-            foto = cambi_turno.prepara_prova(conn, body.model_dump(), dati_settimana, payload_settimana)
-            if not postino.configurato:
-                raise HTTPException(400, 'Invio SMTP non configurato')
-            if not db.registra_prova_email(conn, time.time(), limite_prove, 3600):
-                raise HTTPException(429, f'Troppe email di prova: al massimo {limite_prove} all’ora. Riprova più tardi')
-            email_cambi_turno.invia_prova(foto, postino)
-            return {'inviata_a': email_cambi_turno.DESTINATARIO_PROVA, 'simulazione': True}
 
     @router.post(pubblico + '/conferme')
     def conferma(body: ConfermaIn, conn: Conn):
