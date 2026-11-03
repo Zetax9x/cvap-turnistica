@@ -248,10 +248,11 @@ input[type="checkbox"] { min-height: 0; width: 1.1rem; height: 1.1rem; accent-co
   margin-bottom: 1rem;
 }
 .toolbar-spacer { flex: 1; }
+.toolbar > .btn { min-height: var(--tap); }  /* stessa altezza del pulsante principale e di «Altre opzioni» */
 .altre-opzioni { position: relative; }
 .altre-opzioni > summary {
   list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: .35rem;
-  min-height: 40px; padding: .4rem .9rem; border-radius: var(--radius-sm); font-weight: 600; color: var(--muted);
+  min-height: var(--tap); padding: .4rem .9rem; border-radius: var(--radius-sm); font-weight: 600; color: var(--muted);
   border: 1px solid var(--border-strong);
 }
 .altre-opzioni > summary::-webkit-details-marker { display: none; }
@@ -473,11 +474,11 @@ input[type="checkbox"] { min-height: 0; width: 1.1rem; height: 1.1rem; accent-co
 .sezione-ripiegabile > summary::-webkit-details-marker { display: none; }
 .sezione-ripiegabile > summary h2 { margin: 0; }
 /* con display:flex il triangolo del browser sparisce: la freccia si disegna qui, e ruota quando la sezione è aperta */
-.sezione-ripiegabile > summary::before {
+.sezione-ripiegabile > summary::before, .coprire-sommario::before {
   content: ""; flex: none; width: .6rem; height: .7rem; margin: 0 .1rem 0 .15rem;
   background: var(--muted); clip-path: polygon(0 0, 100% 50%, 0 100%);
 }
-.sezione-ripiegabile[open] > summary::before { transform: rotate(90deg); }
+.sezione-ripiegabile[open] > summary::before, .turni-da-coprire[open] > .coprire-sommario::before { transform: rotate(90deg); }
 .sezione-ripiegabile[open] > summary { margin-bottom: .75rem; }
 .sezione-riassunto { font-size: .9rem; }
 .modifiche-non-salvate {
@@ -722,7 +723,7 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
 /* telefono: menu in basso, a portata di pollice */
 @media (max-width: 640px) {
   html { scroll-padding-bottom: 84px; }
-  body { font-size: 15px; padding-bottom: calc(68px + env(safe-area-inset-bottom)); }
+  body { font-size: 16px; padding-bottom: calc(68px + env(safe-area-inset-bottom)); }
   h1, .week-title h1 { font-size: 1.35rem; }
   .app-header { min-height: 52px; }
   .brand-logo { height: 40px; }
@@ -848,7 +849,8 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
 .banner-avviso .btn { margin-left: .25rem; }
 .turni-da-coprire { margin-top: 1.75rem; border-left: 5px solid var(--warn-border); }
 .turni-da-coprire + .pannelli { margin-top: 1.25rem; }
-.coprire-sommario { cursor: pointer; }
+.coprire-sommario { cursor: pointer; display: flex; align-items: center; gap: .5rem; list-style: none; min-height: var(--tap); }
+.coprire-sommario::-webkit-details-marker { display: none; }
 .coprire-sommario h2 { display: inline-flex; align-items: center; gap: .6rem; margin: 0; }
 .turni-da-coprire[open] > .coprire-sommario { margin-bottom: .75rem; }
 .coprire-intro { margin: -.25rem 0 .75rem; }
