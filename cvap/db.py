@@ -73,6 +73,42 @@ CREATE TABLE IF NOT EXISTS assegnazioni (
     origine TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_assegnazioni_data ON assegnazioni(data);
+CREATE TABLE IF NOT EXISTS variazioni_turno (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chiave TEXT NOT NULL UNIQUE,
+    creata_il TEXT NOT NULL,
+    dati TEXT NOT NULL,
+    annullata_il TEXT,
+    chiave_annullamento TEXT UNIQUE,
+    rettifica TEXT
+);
+CREATE TABLE IF NOT EXISTS notifiche_variazioni (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    variazione_id INTEGER NOT NULL REFERENCES variazioni_turno(id),
+    tipo TEXT NOT NULL,
+    destinatario TEXT NOT NULL DEFAULT '',
+    fotografia TEXT NOT NULL,
+    messaggio TEXT,
+    stato TEXT NOT NULL DEFAULT 'da_inviare',
+    tentativi INTEGER NOT NULL DEFAULT 0,
+    errore TEXT,
+    aggiornata_il TEXT,
+    UNIQUE(variazione_id, tipo, destinatario)
+);
+CREATE TABLE IF NOT EXISTS revisioni_cambi_turno (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    assegnazione_id INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_revisioni_cambi_turno ON revisioni_cambi_turno(assegnazione_id, id);
+CREATE TRIGGER IF NOT EXISTS cambi_turno_inserimento AFTER INSERT ON assegnazioni BEGIN
+    INSERT INTO revisioni_cambi_turno(assegnazione_id) VALUES (NEW.id);
+END;
+CREATE TRIGGER IF NOT EXISTS cambi_turno_modifica AFTER UPDATE ON assegnazioni BEGIN
+    INSERT INTO revisioni_cambi_turno(assegnazione_id) VALUES (NEW.id);
+END;
+CREATE TRIGGER IF NOT EXISTS cambi_turno_eliminazione AFTER DELETE ON assegnazioni BEGIN
+    INSERT INTO revisioni_cambi_turno(assegnazione_id) VALUES (OLD.id);
+END;
 CREATE TABLE IF NOT EXISTS ferie (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     persona_id INTEGER NOT NULL REFERENCES persone(id),

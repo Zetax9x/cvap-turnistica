@@ -270,6 +270,14 @@ Chi fa una sostituzione fa **ore extra**: valgono le regole di riposo e dei gior
 entrano nel confronto delle ore con i colleghi, né nel minimo di 36 ore, né nel limite di 72, né nello storico.
 Nello scambio, invece, chi cede un suo turno e ne prende un altro non fa ore extra: ha solo cambiato turno.
 
+### 6.5 Registrare una cessione o uno scambio concordato
+
+Apri il link `/cambio-turno` del gestionale da smartphone. Scegli il tuo nome, il turno da modificare e se lo hai ceduto o scambiato; indica il collega e, per lo scambio, il turno che ricevi. Dopo il riepilogo premi **Conferma e comunica alla responsabile**. Basta la conferma di chi registra: il tabellone si aggiorna e i responsabili ricevono la comunicazione con il tabellone e il PDF.
+
+Sono disponibili tutti i turni ancora da iniziare, anche nelle settimane bloccate e in bozza. Un riposo inferiore a 11 ore introdotto dal cambio impedisce la conferma; le altre anomalie compaiono come avvisi. Questa registrazione conserva il tipo di conteggio delle ore del turno: una cessione non diventa automaticamente straordinario. Il riepilogo via email ai dipendenti sarà valutato successivamente.
+
+Se la connessione si interrompe, usa **Verifica esito** o **Riprendi lo stesso invio**. Se la comunicazione risulta da reinviare, il cambio è già salvato: il responsabile può reinviarla da **Cambi**. Per i dettagli vedi la [guida ai cambi turno](CAMBI-TURNO.md).
+
 ## 7. Ascoli, Standby e Programmati
 
 ### 7.1 Ascoli (settimane B)

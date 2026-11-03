@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, BeforeValidator, Field, StringConstraints, model_validator
 
-from . import accesso, api_equita, api_festivita, api_storico_festivi, dati_festivi, db, db_festivita, email_turni
+from . import accesso, api_cambi_turno, api_equita, api_festivita, api_storico_festivi, dati_festivi, db, db_festivita, email_turni
 from .api_comune import DATA_MAX, DATA_MIN, DataValida, Id, IdPath, Nome, errore as _errore
 from .posta import PostinoBloccato, PostinoSmtp
 from .calendario import giorni_settimana, lunedi, postazioni_attive, tipo_settimana
@@ -701,7 +701,9 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
 
     @app.middleware("http")
     async def richiedi_accesso(request: Request, chiama):
-        if request.url.path.startswith("/api/") and request.url.path not in libere and not autenticato(request):
+        percorso = request.url.path
+        cambio_pubblico = percorso.startswith('/api/cambi-turno/')
+        if percorso.startswith("/api/") and percorso not in libere and not cambio_pubblico and not autenticato(request):
             return JSONResponse({"detail": "Accesso richiesto: inserisci la password"}, status_code=401)
         return await chiama(request)
 
@@ -749,6 +751,7 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
     app.include_router(api_festivita.crea_router(connessione))
     app.include_router(api_storico_festivi.crea_router(connessione))
     app.include_router(api_equita.crea_router(connessione, _settimana_passata))
+    app.include_router(api_cambi_turno.crea_router(connessione, scrittura, _dati_settimana, payload_settimana, postino))
 
     # --- persone ---
     @app.get("/api/persone")
@@ -1435,6 +1438,10 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
 
     # --- statici ---
     app.mount("/static", StaticFiles(directory=STATIC_DIR, check_dir=False), name="static")
+
+    @app.get('/cambio-turno', include_in_schema=False)
+    def pagina_cambio_turno():
+        return FileResponse(STATIC_DIR / 'cambio-turno.html')
 
     @app.get("/", include_in_schema=False)
     def index():
