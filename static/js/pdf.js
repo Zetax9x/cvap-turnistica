@@ -1,5 +1,28 @@
 import { toast, toastErrore } from "./util.js";
 
+const URL_GENERATORE = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
+let caricamentoGeneratore = null;
+
+function generatorePdf() {
+  if (typeof window.html2pdf === "function") return Promise.resolve(window.html2pdf);
+  if (caricamentoGeneratore) return caricamentoGeneratore;
+
+  caricamentoGeneratore = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = URL_GENERATORE;
+    script.async = true;
+    script.onload = () => typeof window.html2pdf === "function"
+      ? resolve(window.html2pdf)
+      : reject(new Error("Il generatore PDF non è stato caricato correttamente."));
+    script.onerror = () => reject(new Error("Impossibile caricare il generatore PDF. Controlla la connessione e riprova."));
+    document.head.append(script);
+  }).catch((err) => {
+    caricamentoGeneratore = null;
+    throw err;
+  });
+  return caricamentoGeneratore;
+}
+
 function nomeFile(titolo) {
   const base = String(titolo || "turnistica")
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
@@ -9,10 +32,6 @@ function nomeFile(titolo) {
 
 /** Scarica un PDF del contenuto già visibile, senza aprire il dialogo di stampa del browser. */
 export async function scaricaPdf(sorgenti, titolo, { orientamento = "portrait" } = {}) {
-  if (typeof window.html2pdf !== "function") {
-    throw new Error("Il generatore PDF non è disponibile. Controlla la connessione e riprova.");
-  }
-
   const area = document.createElement("article");
   area.className = `pdf-esportazione pdf-esportazione-${orientamento}`;
   for (const sorgente of (Array.isArray(sorgenti) ? sorgenti : [sorgenti])) {
@@ -24,8 +43,9 @@ export async function scaricaPdf(sorgenti, titolo, { orientamento = "portrait" }
 
   document.body.append(area);
   try {
+    const html2pdf = await generatorePdf();
     await document.fonts?.ready;
-    await window.html2pdf().set({
+    await html2pdf().set({
       margin: 7,
       filename: nomeFile(titolo),
       image: { type: "jpeg", quality: 0.96 },
