@@ -541,10 +541,13 @@ def _copertura_preventiva(conn, inizio: date, con_volontari: bool,
     from . import solver  # OR-Tools è pesante: serve solo quando si chiede il controllo
 
     d = _dati_settimana(conn, inizio)
+    ferie = d.ferie if ferie_override is None else ferie_override
+    # I turni di chi è assente restano salvati, ma il controllo deve cercare un sostituto.
     fissi = [a for _, a in d.righe if a.origine != "generato"
+             and a.data not in ferie.get(a.persona_id, ())
              and (con_volontari or d.persone.get(a.persona_id, {}).get("tipo") == "dipendente")]
     argomenti = dict(
-        fissi=fissi, contesto=d.contesto, ferie=d.ferie if ferie_override is None else ferie_override,
+        fissi=fissi, contesto=d.contesto, ferie=ferie,
         indisponibili=d.indisponibili,
         fabbisogno=d.fabbisogno, scarto_ore_max=d.scarto_ore_max,
         tempo_max=TEMPO_MAX_COPERTURA_PREVENTIVA, workers=worker_generatore(),

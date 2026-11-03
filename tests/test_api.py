@@ -500,6 +500,36 @@ def test_anteprima_ferie_calendario_non_salva_e_include_malattie(client, monkeyp
     assert client.get(f"/api/settimane/{LUNEDI_A}").json() == settimana
 
 
+def test_ferie_calendario_turno_manual_dipendente_richiede_sostituto_reale(client):
+    from datetime import date
+    from cvap.calendario import giorni_settimana
+    from cvap.slot import unita_da_coprire
+
+    p = crea(client, "Unico dipendente")
+    posti = unita_da_coprire(giorni_settimana(date.fromisoformat(LUNEDI_A)),
+                            ["Acquasanta", "Venarotta"], [])
+    for i, posto in enumerate(posti):
+        persona = p if i == 0 else crea(client, f"Prenotato {i}", "volontario", posto.ruolo)
+        r = prenota(client, LUNEDI_A, persona["id"], data=posto.data.isoformat(),
+                    postazione=posto.postazione, fascia=posto.fascia,
+                    segmento=posto.segmento, ruolo=posto.ruolo)
+        assert r.status_code == 201, r.text
+    prima = client.get(f"/api/settimane/{LUNEDI_A}").json()["assegnazioni"]
+    body = {"persona_id": p["id"], "dal": LUNEDI_A, "al": "2026-10-25"}
+    r = client.post("/api/calendario-copertura/ferie/anteprima", json=body)
+    assert r.status_code == 200, r.text
+    settimana = r.json()["settimane"][0]
+    assert settimana["stato_attuale"] == "volontari"
+    assert settimana["stato_proposto"] == "da_risolvere"
+    assert settimana["con_volontari"]["scoperti"]
+    assert r.json()["richiede_conferma"] is True
+    r = client.post("/api/calendario-copertura/ferie", json=body)
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["richiede_conferma"] is True
+    assert client.get("/api/ferie").json() == []
+    assert client.get(f"/api/settimane/{LUNEDI_A}").json()["assegnazioni"] == prima
+
+
 @pytest.mark.parametrize("attuale", ["dipendenti", "volontari", "da_verificare", "da_risolvere"])
 @pytest.mark.parametrize("proposto", ["dipendenti", "volontari", "da_verificare", "da_risolvere"])
 def test_approvazione_ferie_calendario_richiede_conferma_solo_per_nuovo_rosso(
