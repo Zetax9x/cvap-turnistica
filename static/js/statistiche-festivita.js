@@ -106,7 +106,7 @@ function renderMesi() {
     el("label", { for: id }, "Mostra i prossimi "),
     el("select", {
       id, onchange: (e) => { stato.mesi = Number(e.currentTarget.value); carica(); },
-    }, [6, 12, 24].map((m) => el("option", { value: String(m), selected: m === stato.mesi }, `${m} mesi`))));
+    }, [1, 2, 6, 12, 24].map((m) => el("option", { value: String(m), selected: m === stato.mesi }, `${m} mesi`))));
 }
 
 function turniCheContano(f) {
