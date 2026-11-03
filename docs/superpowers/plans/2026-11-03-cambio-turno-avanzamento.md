@@ -11,7 +11,7 @@
 ## Realizzato
 
 - Pagina pubblica `/cambio-turno`, selezione del nome, turni futuri anche in bozza/confermati, cessione e scambio, riepilogo e conferma.
-- Controllo delle 11 ore su entrambe le persone; altre anomalie come avvisi. Inclusi dipendenti disattivati e turni extra.
+- Controllo delle 11 ore e delle sovrapposizioni con altri turni su entrambe le persone; altre anomalie come avvisi. Inclusi dipendenti disattivati e turni extra.
 - Trasferimenti atomici, idempotenza con UUID, recupero dopo risposta persa, verifica di versione e registro delle revisioni.
 - Email ai soli responsabili con riepilogo, avvisi, tabellone HTML e PDF; coda persistente e reinvio per destinatario.
 - Sezione **Cambi** nel gestionale con storico, filtri, reinvio e annullamento con rettifica e PDF.
@@ -19,7 +19,7 @@
 
 ## Verifiche
 
-- Test mirati: 39 casi nei quattro nuovi moduli di test e in `tests/test_accesso.py`.
+- Prima consegna: 39 test mirati nei quattro nuovi moduli di test e in `tests/test_accesso.py`.
 - Casi verificati: soglia 10/11 ore, notte e confine settimana, riposo dopo il turno ricevuto, rollback, richieste concorrenti, idempotenza, conteggio senza straordinario, annullamento con riposo insufficiente o turni modificati, errore PDF/SMTP, esito parziale, recupero dopo riavvio e reinvio del messaggio originale.
 - Adattatore libSQL: database locale, conferma idempotente e annullamento riusciti; nessuna connessione al servizio remoto.
 - Browser Chrome con dati fittizi: scambio tra settimane, cessione, aggiornamento dei turni e annullamento; larghezze 360/390 px e desktop, nessuno scorrimento orizzontale o errore JavaScript. Controlli tattili delle nuove schermate di almeno 44 px.
@@ -34,3 +34,11 @@
 - Il modello memorizza ore intere; non è stata introdotta una nuova precisione degli orari per simulare il caso 10h59.
 - La pubblicazione e il collaudo di SMTP/Turso remoti non sono stati eseguiti. Nessun push o commit creato.
 - Una modifica a `static/js/pdf.js` comparsa durante il lavoro appartiene al workspace condiviso e non è stata alterata da questa implementazione.
+
+## Aggiornamento successivo: sovrapposizioni bloccanti
+
+- Richiesta dell'utente dopo la prima consegna: oltre alle 11 ore, impedire il cambio se il dipendente è già impegnato in un altro turno nello stesso orario.
+- Controllo nella stessa simulazione usata da anteprima, conferma atomica e annullamento, per entrambe le persone. Sovrapposizioni totali, parziali e notturne bloccano; i turni ceduti vengono esclusi prima del controllo. Le anomalie pregresse non coinvolte non bloccano altri cambi.
+- Messaggio del riepilogo aggiornato per mostrare entrambi i motivi di blocco.
+- Nuovi casi mirati: cessione e due lati dello scambio, notte dal giorno prima, scambio simultaneo valido, anomalia pregressa indipendente, conflitto comparso dopo l'anteprima e annullamento incompatibile. Guide e contratto API allineati.
+- Verifica dell'aggiornamento: 36 test superati in `tests/test_cambi_turno.py` e `tests/test_api_cambi_turno.py`; sintassi del modulo JavaScript comune e controllo degli spazi con Git riusciti.

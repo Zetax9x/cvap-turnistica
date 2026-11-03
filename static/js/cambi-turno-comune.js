@@ -44,7 +44,7 @@ export function riepilogo(vista) {
       el("h3", {}, "Segnalazioni"), el("p", {}, "Queste segnalazioni non impediscono il cambio e saranno comunicate ai responsabili."),
       el("ul", {}, ...vista.avvisi.map(v => el("li", {}, v.messaggio)))) : null,
     vista.errori.length ? el("div", { class: "cambio-errore", role: "alert" },
-      el("h3", {}, "Riposo insufficiente"),
+      el("h3", {}, "Cambio non consentito"),
       el("ul", {}, ...vista.errori.map(v => el("li", {}, v.messaggio)))) : null);
 }
 
