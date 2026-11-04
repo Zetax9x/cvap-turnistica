@@ -59,6 +59,7 @@ class SettimanaPassata:
     max_ore: dict[int, int] = field(default_factory=dict)  # id -> massimo ore a settimana
     # id -> ore extra delle sostituzioni, tenute fuori da `assegnazioni` (vedi `senza_sostituzioni`)
     ore_sostituzioni: dict[int, int] = field(default_factory=dict)
+    generata: bool = False  # conserva la settimana anche se tutti i turni sono stati tolti
 
 
 def senza_sostituzioni(assegnazioni) -> tuple[list[Assegnazione], dict[int, int]]:
@@ -77,7 +78,7 @@ def dalla_prima_generata(settimane: list[SettimanaPassata]) -> list[SettimanaPas
 
     Quelle prima, inserite solo a mano per avviare il sistema, fanno da contesto ma non entrano nei conteggi."""
     for i, s in enumerate(settimane):
-        if any(a.origine == "generato" for a in s.assegnazioni):
+        if s.generata or any(a.origine == "generato" for a in s.assegnazioni):
             return settimane[i:]
     return []
 
@@ -95,7 +96,7 @@ def indisponibilita_per_giorno(richieste: set[tuple[date, str]]) -> list[dict]:
 
 def solo_generate(settimane: list[SettimanaPassata]) -> list[SettimanaPassata]:
     """Le settimane con turni generati: le sole che contano nelle statistiche."""
-    return [s for s in settimane if any(a.origine == "generato" for a in s.assegnazioni)]
+    return [s for s in settimane if s.generata or any(a.origine == "generato" for a in s.assegnazioni)]
 
 
 def calcola_storico(settimane: list[SettimanaPassata]) -> dict[int, StoricoPersona]:

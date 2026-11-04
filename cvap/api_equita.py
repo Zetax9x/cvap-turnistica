@@ -2,7 +2,7 @@
 import sqlite3
 from collections.abc import Callable
 from datetime import date, timedelta
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends
 
@@ -23,7 +23,7 @@ def postazioni_vietate(conn) -> dict[int, set[str]]:
     return out
 
 
-def rotazioni_festivita(conn, al: date | None) -> list[Rotazione]:
+def rotazioni_festivita(conn, al: date | None, versione: str = "effettivi") -> list[Rotazione]:
     """Una rotazione per ogni festività attiva, con lo storico degli ultimi 5 anni fino alla fine del periodo.
 
     Fine del periodo: il giorno dopo `al`, ma non oltre quella delle statistiche (dopo l'ultima settimana salvata o
@@ -35,7 +35,7 @@ def rotazioni_festivita(conn, al: date | None) -> list[Rotazione]:
     riferimento = riferimento_statistiche(conn)
     if al is not None:
         riferimento = min(riferimento, al + timedelta(days=1))
-    conti = conti_festivita(conn, riferimento, festivita)
+    conti = conti_festivita(conn, riferimento, festivita, versione=versione)
     return [rotazione_festivita(f, conti.get(f["id"], {})) for f in festivita]
 
 
@@ -46,16 +46,17 @@ def crea_router(connessione: Callable, settimana_passata: Callable[..., Settiman
     Conn = Annotated[sqlite3.Connection, Depends(connessione)]
 
     @router.get("/api/statistiche/equita")
-    def quadro_equita(conn: Conn, dal: DataValida | None = None, al: DataValida | None = None):
+    def quadro_equita(conn: Conn, dal: DataValida | None = None, al: DataValida | None = None,
+                      versione: Literal["generati", "effettivi"] = "effettivi"):
         al_richiesto = al  # None senza data: la fine dei festivi è quella delle statistiche
         dal, al = dal or DATA_MIN, al or DATA_MAX
         if dal > al:
             raise errore("La data di inizio è dopo quella di fine")
         # le settimane che si sovrappongono al periodo; contano solo quelle con turni generati (come le statistiche)
         righe = [r for r in db.lista_settimane(conn) if lunedi(dal) <= date.fromisoformat(r["inizio"]) <= al]
-        settimane = [(date.fromisoformat(r["inizio"]), settimana_passata(conn, r)) for r in righe]
+        settimane = [(date.fromisoformat(r["inizio"]), settimana_passata(conn, r, versione=versione)) for r in righe]
         quadro = equita(settimane, db.lista_persone(conn), postazioni_vietate(conn),
-                        extra=rotazioni_festivita(conn, al_richiesto))
+                        extra=rotazioni_festivita(conn, al_richiesto, versione=versione))
         contate = [inizio.isoformat() for inizio, s in settimane if solo_generate([s])]
         return {"settimane": contate, "rotazioni": [{"chiave": k, **v} for k, v in quadro.items()]}
 

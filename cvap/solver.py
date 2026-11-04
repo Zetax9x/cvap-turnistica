@@ -133,6 +133,7 @@ def genera(
     scarto_ore_max: int = SCARTO_ORE_MAX,
     festivi: FestiviSettimana | None = None,
     copertura_rigida: bool = False,
+    contesto_generati: Sequence[Assegnazione] | None = None,
 ) -> Risultato:
     """Genera i turni dei dipendenti.
 
@@ -146,11 +147,15 @@ def genera(
     `festivi`: i turni festivi della settimana con lo storico di ogni festività (cvap/rotazione_festivi.py).
     `copertura_rigida`: se vero, non ammette posti scoperti. Serve ai controlli preventivi e non
     modifica il comportamento del generatore normale, che invece segnala i posti scoperti migliori possibili.
+    `contesto` contiene gli impegni effettivi delle settimane vicine, usati per i vincoli.
+    `contesto_generati` contiene il programma originale, usato per le penalità di distribuzione;
+    se omesso coincide con `contesto`. Lo storico e i conti festivi devono riferirsi ai generati.
     """
     avvio = time.monotonic()
     storico = storico or {}
     ferie, indisponibili = ferie or {}, indisponibili or {}
     fissi, contesto = list(fissi), list(contesto)
+    contesto_generati = contesto if contesto_generati is None else list(contesto_generati)
     dipendenti = [p for p in persone if p.dipendente and giorni_disponibili(giorni, ferie.get(p.id, set()))]
     crediti = {p.id: ore_ferie(giorni, ferie.get(p.id, set())) for p in dipendenti}
     unita = unita_da_coprire(giorni, postazioni, fissi, fabbisogno)
@@ -167,7 +172,7 @@ def genera(
 
     ferie_di = {p.id: set(ferie.get(p.id, ())) for p in dipendenti}
     m = _Modello(giorni, unita, dipendenti, fissi, contesto, storico, crediti, ferie_di, indisponibili,
-                 scarto_ore_max, festivi, copertura_rigida)
+                 scarto_ore_max, festivi, copertura_rigida, contesto_generati)
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = tempo_max
     solver.parameters.num_search_workers = workers
@@ -375,7 +380,8 @@ class _Modello:
         return any((u.data, parte) in indisp for parte in parti_turno(u.fascia, u.segmento))
 
     def __init__(self, giorni, unita, dipendenti, fissi, contesto, storico, crediti, ferie, indisponibili,
-                 scarto_ore_max=SCARTO_ORE_MAX, festivi=None, copertura_rigida=False):
+                 scarto_ore_max=SCARTO_ORE_MAX, festivi=None, copertura_rigida=False,
+                 contesto_generati=None):
         self.model = cp_model.CpModel()
         self.giorni = giorni
         self.unita = unita
@@ -393,6 +399,9 @@ class _Modello:
         self.fissi_di: dict[int, list[Assegnazione]] = defaultdict(list)
         for a in fissi + contesto:
             self.fissi_di[a.persona_id].append(a)
+        self.fissi_equita_di: dict[int, list[Assegnazione]] = defaultdict(list)
+        for a in fissi + (contesto if contesto_generati is None else contesto_generati):
+            self.fissi_equita_di[a.persona_id].append(a)
         # per ore ed equità (weekend, Ascoli, sedi, festività): le sostituzioni sono extra e non contano;
         # per riposi e sovrapposizioni restano in fissi_di
         self.fissi_settimana = [a for a in fissi if not ore_extra(a)]
@@ -515,9 +524,12 @@ class _Modello:
             for fascia in ("giorno", "notte"):
                 lavorato = {}
                 note = {a.data for a in self.fissi_di[p.id] if a.fascia == fascia}
+                note_generati = {a.data for a in self.fissi_equita_di[p.id] if a.fascia == fascia}
+                distribuzione = {}
                 for d in giorni:
                     vars_d = [v for u, v in self._vars_di(p.id, lambda u, d=d: u.data == d and u.fascia == fascia)]
                     lavorato[d] = (sum(vars_d) if vars_d else 0) + (1 if d in note else 0)
+                    distribuzione[d] = (sum(vars_d) if vars_d else 0) + (1 if d in note_generati else 0)
                 for i in range(len(giorni)):
                     finestra4 = giorni[i:i + MAX_CONSECUTIVI + 1]
                     if len(finestra4) == MAX_CONSECUTIVI + 1 and set(finestra4) & settimana:
@@ -526,7 +538,7 @@ class _Modello:
                             self.model.Add(espr <= MAX_CONSECUTIVI)
                     finestra3 = giorni[i:i + 3]
                     if len(finestra3) == 3 and set(finestra3) & settimana:
-                        espr = sum(lavorato[d] for d in finestra3)
+                        espr = sum(distribuzione[d] for d in finestra3)
                         if not isinstance(espr, int):
                             tre = self.model.NewBoolVar("")
                             self.model.Add(espr - 2 <= tre)

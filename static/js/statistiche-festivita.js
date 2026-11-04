@@ -6,7 +6,7 @@
 import { api } from "./api.js";
 import { el, clear, dataEstesa, etichetta, toast, toastErrore, todayISO } from "./util.js";
 import { scaricaPdf } from "./pdf.js";
-import { focusTitolo, nuovoCaricamento, renderSchede, superato } from "./statistiche.js";
+import { focusTitolo, nuovoCaricamento, renderSchede, superato, titoloVersione, versioneStatistiche } from "./statistiche.js";
 
 const stato = {
   root: null, mesi: 12, prossime: [], lavorate: null, anno: null, salvataggi: Promise.resolve(),
@@ -35,7 +35,7 @@ async function carica() {
   const vogliaAllAvvio = new Map([...stato.voglia].map(([chiave, s]) =>
     [chiave, { revisione: s.revisione, inCorso: s.inCorso }]));
   try {
-    const [prossime, lavorate] = await Promise.all([api.prossimeFestivita(stato.mesi), api.festivitaLavorate(stato.anno)]);
+    const [prossime, lavorate] = await Promise.all([api.prossimeFestivita(stato.mesi, versioneStatistiche()), api.festivitaLavorate(stato.anno, versioneStatistiche())]);
     if (superato(numero)) return;
     riconciliaVoglia(prossime, vogliaAllAvvio);
     stato.prossime = prossime;
@@ -79,13 +79,13 @@ function render() {
   salvaAperture();
   const root = clear(stato.root);
   root.append(renderSchede("festivita"), el("header", { class: "view-header" },
-    el("h1", {}, "Festività: a chi tocca"),
+    el("h1", {}, titoloVersione("Festività: a chi tocca")),
     el("p", { class: "muted" },
       "Per ogni festività dei prossimi mesi, l'ordine in cui toccherebbe lavorarla: in alto chi ha la precedenza, "
       + "cioè chi l'ha lavorata meno volte negli ultimi 5 anni o non la lavora da più tempo. Chi l'ha lavorata "
       + "l'anno scorso scende verso il fondo. Chi vuole lavorarla riceve prima quei turni.")));
   root.append(el("p", { class: "banner banner-info ordine-indicazione" },
-    "È un'indicazione, non il turno definitivo: chi lavora davvero dipende anche dai riposi, dalle ore della "
+    "L'ordine qui usa la versione scelta; il generatore usa sempre i Generati. È un'indicazione: chi lavora dipende anche dai riposi, dalle ore della "
     + "settimana, dalle ferie e dai posti da autista e da soccorritore (per questo c'è la qualifica)."));
   root.append(renderMesi());
   if (!stato.prossime.length) {
@@ -142,6 +142,7 @@ function renderFestivita(f) {
   const sezione = pannello("festivita-prossima", titoloId,
     el("summary", {}, el("h2", { id: titoloId }, `${f.nome} · ${dataEstesa(f.data)}`)),
     el("div", { class: "festivita-contenuto" },
+    el("p", { class: "muted" }, titoloVersione("Turni")),
     el("p", { class: "muted" }, `Importanza: ${IMPORTANZA[f.peso] || f.peso} · Turni che contano: ${turniCheContano(f)}`),
       fasce.length ? el("div", { class: "festivita-fasce" }, fasce.map((fascia) => renderFascia(f, fascia, titoloId)))
         : el("p", { class: "muted" }, "Nessuna fascia selezionata per questa festività."),
@@ -200,7 +201,7 @@ async function avviaStampa(targets, controllo) {
   for (const target of targets) target.classList.add("festivita-da-stampare");
   for (const p of pannelli) p.open = true;
   try {
-    await scaricaPdf(targets, stato.stampa.tutte ? "festivita" : "festivita-a-chi-tocca", { orientamento: "landscape" });
+    await scaricaPdf(targets, titoloVersione(stato.stampa.tutte ? "festivita" : "festivita-a-chi-tocca"), { orientamento: "landscape" });
   } catch (err) {
     ripristinaStampa();
     toastErrore(err);
@@ -354,7 +355,7 @@ function renderLavorate() {
 async function caricaAnno(anno, menuAnno) {
   const numero = nuovoCaricamento();
   try {
-    const dati = await api.festivitaLavorate(anno);
+    const dati = await api.festivitaLavorate(anno, versioneStatistiche());
     if (superato(numero)) return;
     stato.anno = anno;  // solo se il caricamento riesce
     stato.lavorate = dati;

@@ -51,14 +51,12 @@ def assegnazione(f):
 def turni_futuri(conn, pid, settimana=None):
     dipendente(conn, pid)
     ora = adesso()
-    sql = 'SELECT id FROM assegnazioni WHERE persona_id = ? AND data >= ?'
-    parametri = [pid, ora.date().isoformat()]
+    dal, al = ora.date(), date.max
     if settimana:
         primo = lunedi(settimana)
-        sql += ' AND data >= ? AND data <= ?'
-        parametri.extend([primo.isoformat(), (primo + timedelta(days=6)).isoformat()])
-    righe = conn.execute(sql + ' ORDER BY data, id', parametri).fetchall()
-    return sorted([f for r in righe if (f := fotografia(conn, r['id']))['inizio'] > ora.isoformat()],
+        dal, al = max(dal, primo), primo + timedelta(days=6)
+    righe = db.assegnazioni_persona(conn, pid, dal, al)
+    return sorted([f for aid, a in righe if (f := fotografia(conn, aid, a))['inizio'] > ora.isoformat()],
                   key=lambda f: (f['inizio'], f['postazione'], f['ruolo'], f['id']))
 
 
@@ -178,8 +176,8 @@ def _controlla(vista, versione):
 
 def _trasferisci(conn, foto):
     for f in foto:
-        # UPDATE mantiene identificativo, origine contabile e posto nel tabellone.
-        conn.execute('UPDATE assegnazioni SET persona_id = ? WHERE id = ?', (f['persona_id'], f['id']))
+        # La base generata resta invariata; audit e titolare effettivo sono atomici.
+        db.imposta_titolare_effettivo(conn, f['id'], f['persona_id'])
 
 
 def conferma(conn, corpo, dati_settimana, payload_settimana):

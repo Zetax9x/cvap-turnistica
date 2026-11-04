@@ -703,14 +703,14 @@ def test_malattia_a_cavallo_di_due_settimane_e_mista_alle_ferie(client):
     assert r["ore_ferie"] == 18 and r["ore_malattia"] == 12
 
 
-def test_turno_in_malattia_e_segnalato_come_malattia(client):
+def test_turno_in_malattia_non_puo_essere_assegnato_a_mano(client):
     p = crea(client, "Mario", qualifica="autista")
     client.post("/api/ferie", json={"persona_id": p["id"], "dal": "2026-10-20", "al": "2026-10-20",
                                     "motivo": "malattia"})
-    prenota(client, LUNEDI_A, p["id"], data="2026-10-20")
-    s = client.get(f"/api/settimane/{LUNEDI_A}").json()
-    [v] = [v for v in s["violazioni"] if v["codice"] == "ferie"]
-    assert "è in malattia" in v["messaggio"]
+    r = prenota(client, LUNEDI_A, p["id"], data="2026-10-20")
+    assert r.status_code == 400
+    assert "malattia" in r.json()["detail"]
+    assert client.get(f"/api/settimane/{LUNEDI_A}").json()["assegnazioni"] == []
 
 
 def test_migrazione_colonna_motivo_delle_ferie(tmp_path):
@@ -893,9 +893,11 @@ def test_statistiche_contano_solo_le_settimane_generate(client):
     assert client.post(f"/api/settimane/{terza}/genera", json={"tempo_max": 5}).status_code == 200
     assert client.delete(f"/api/settimane/{terza}/generati").status_code == 200
     stats = {x["persona_id"]: x for x in client.get("/api/statistiche").json()}
-    assert all(x["settimane"] == 1 for x in stats.values() if x["tipo"] == "dipendente")
+    assert all(x["settimane"] == 2 for x in stats.values() if x["tipo"] == "dipendente")
     assert sum(x["ore_totali"] for x in stats.values()) == 672
     assert vol["id"] not in stats
+    originali = client.get("/api/statistiche?versione=generati").json()
+    assert sum(x["ore_totali"] for x in originali) == 1344
 
 
 def test_settimana_manuale_di_avvio_e_solo_contesto_per_il_generatore(client, monkeypatch):

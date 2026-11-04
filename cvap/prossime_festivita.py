@@ -73,7 +73,7 @@ def _nel_periodo(dati: dict, riferimento: date) -> dict:
             "importati": [r for r in dati["importati"] if dal.year <= r["anno"] <= riferimento.year]}
 
 
-def prossime(conn: sqlite3.Connection, oggi: date, mesi: int) -> list[dict]:
+def prossime(conn: sqlite3.Connection, oggi: date, mesi: int, versione: str = "effettivi") -> list[dict]:
     """Le festività attive in [oggi, oggi + mesi), con i dipendenti attivi in ordine di precedenza a lavorarle."""
     festivita = db_festivita.festivita_attive(conn)
     fine = aggiungi_mesi(oggi, mesi) - timedelta(days=1)
@@ -84,7 +84,7 @@ def prossime(conn: sqlite3.Connection, oggi: date, mesi: int) -> list[dict]:
     nomi = {pid: p["nome"] for pid, p in persone.items()}
     riferimenti = sorted({lunedi(d) for d, _ in voci})
     dati = _solo_turni_festivi(festivita, dati_festivi.dati_conti(conn, inizio_periodo(riferimenti[0]),
-                                                                  riferimenti[-1]))
+                                                                  riferimenti[-1], versione=versione))
     dati_per_riferimento = {r: _nel_periodo(dati, r) for r in riferimenti}
     conti = {r: conta_festivita(festivita, r, **dati_per_riferimento[r]) for r in riferimenti}
     festivita_per_fascia = {
@@ -134,7 +134,7 @@ def _anni(conn, prima: date | None, oggi: date) -> list[int]:
     return sorted(anni, reverse=True)
 
 
-def lavorate_anno(conn: sqlite3.Connection, anno: int, oggi: date) -> dict:
+def lavorate_anno(conn: sqlite3.Connection, anno: int, oggi: date, versione: str = "effettivi") -> dict:
     """Chi ha lavorato ogni festività dell'anno: dallo storico importato prima della prima settimana generata, dal
     programma dopo (solo dipendenti, come nella rotazione). Festività: le attive che cadono nell'anno più quelle con
     dati."""
@@ -157,7 +157,7 @@ def lavorate_anno(conn: sqlite3.Connection, anno: int, oggi: date) -> dict:
         gruppo = [f for f in tutte if f["attiva"] or f["stata_attiva"]]
         dal, al = date(anno, 1, 1) - timedelta(days=1), date(anno, 12, 31)
         mappa = turni_festivi(gruppo, dal, al)
-        for _, a in db.assegnazioni_periodo(conn, max(dal, prima - timedelta(days=1)), al):
+        for _, a in db.assegnazioni_periodo(conn, max(dal, prima - timedelta(days=1)), al, versione=versione):
             fid = mappa.get((a.data, a.fascia))
             p = persone.get(a.persona_id)
             if fid is None or p is None or p["tipo"] != "dipendente" or ore_extra(a):

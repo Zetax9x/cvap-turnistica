@@ -4,7 +4,7 @@
 
 import { api } from "./api.js";
 import { el, clear, dataLunga, formatOre, formatSaldo } from "./util.js";
-import { bottoneStampa, focusTitolo, nuovoCaricamento, renderSchede, superato } from "./statistiche.js";
+import { bottoneStampa, focusTitolo, nuovoCaricamento, renderSchede, superato, titoloVersione, versioneStatistiche } from "./statistiche.js";
 
 // dal/al: periodo applicato; bozza: date scritte nel modulo e non ancora applicate (restano tra un ridisegno e l'altro)
 const stato = { root: null, dati: null, dal: "", al: "", bozza: { dal: "", al: "" }, aperte: new Set() };
@@ -24,7 +24,7 @@ export async function mostra(root) {
 async function carica() {
   const numero = nuovoCaricamento();
   try {
-    const dati = await api.statisticheEquita(stato.dal, stato.al);
+    const dati = await api.statisticheEquita(stato.dal, stato.al, versioneStatistiche());
     if (superato(numero)) return;
     stato.dati = dati;
     render();
@@ -44,7 +44,7 @@ function render() {
   const { settimane } = stato.dati;
   const rotazioni = stato.dati.rotazioni.filter((r) => !r.festivita);  // le festività hanno la loro pagina
   root.append(renderSchede("equita"), el("header", { class: "view-header" },
-    el("div", { class: "view-header-riga" }, el("h1", {}, "Equità dei turni"), bottoneStampa("equità dei turni")),
+    el("div", { class: "view-header-riga" }, el("h1", {}, titoloVersione("Equità dei turni")), bottoneStampa("equità dei turni")),
     el("p", { class: "muted" },
       "Per ogni tipo di turno: chi ha fatto più della sua parte e chi meno, quanto sono lontani tra loro e se la "
       + "distanza si sta riducendo. La parte di ognuno tiene conto delle settimane in cui ha lavorato. "

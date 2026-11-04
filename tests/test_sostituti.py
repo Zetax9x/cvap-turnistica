@@ -1,4 +1,4 @@
-"""Sostituti: chi può coprire un turno già assegnato (ad es. di chi va in malattia)."""
+"""Sostituti: chi può coprire un turno già assegnato (ad es. di chi va in ferie)."""
 import os
 from datetime import date, timedelta
 
@@ -156,16 +156,16 @@ def prenota(client, persona_id, data="2026-10-20", fascia="giorno", ruolo="socco
                 if a["persona_id"] == persona_id and a["data"] == data and a["fascia"] == fascia)
 
 
-def test_api_sostituti_di_chi_va_in_malattia(client):
+def test_api_sostituti_di_chi_va_in_ferie(client):
     malato, libero, notte = crea(client, "Malato"), crea(client, "Libero"), crea(client, "Notte")
     aid = prenota(client, malato)
     prenota(client, notte, data="2026-10-19", fascia="notte")
     client.post("/api/ferie", json={"persona_id": malato, "dal": "2026-10-20", "al": "2026-10-21",
-                                    "motivo": "malattia"})
+                                    "motivo": "ferie"})
     r = client.get(f"/api/assegnazioni/{aid}/sostituti")
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["assenza"] == "malattia"
+    assert body["assenza"] == "ferie"
     assert body["turno"]["id"] == aid and body["turno"]["persona_nome"] == "Malato"
     assert [c["persona_id"] for c in body["candidati"]] == [libero]
     assert body["candidati"][0] == {"persona_id": libero, "nome": "Libero", "qualifica": "autista", "ore": 0,
@@ -207,16 +207,25 @@ def test_api_sostituisci_in_settimana_confermata(client):
     assert r.status_code == 400 and "riaprila" in r.json()["detail"]
 
 
-def test_api_turni_coinvolti_da_un_assenza(client):
+@pytest.mark.parametrize("motivo", ["ferie", "malattia"])
+def test_api_turni_coinvolti_da_un_assenza(client, motivo):
     malato, altro = crea(client, "Malato"), crea(client, "Altro")
     prenota(client, malato, data="2026-10-20")
     prenota(client, malato, data="2026-10-23")
     prenota(client, altro, data="2026-10-21")
-    f = client.post("/api/ferie", json={"persona_id": malato, "dal": "2026-10-20", "al": "2026-10-21",
-                                        "motivo": "malattia"}).json()
+    assenza = client.post("/api/ferie", json={"persona_id": malato, "dal": "2026-10-20", "al": "2026-10-21",
+                                             "motivo": motivo})
+    assert assenza.status_code == 201, assenza.text
+    f = assenza.json()
     r = client.get(f"/api/ferie/{f['id']}/turni")
     assert r.status_code == 200, r.text
-    assert [(t["data"], t["settimana"], t["postazione"]) for t in r.json()] == [("2026-10-20", "2026-10-19", SEDE)]
+    attesi = [("2026-10-20", "2026-10-19", SEDE)] if motivo == "ferie" else []
+    assert [(t["data"], t["settimana"], t["postazione"]) for t in r.json()] == attesi
+    tabellone = client.get("/api/settimane/2026-10-19").json()
+    turni_attesi = [(malato, "2026-10-23"), (altro, "2026-10-21")]
+    if motivo == "ferie":
+        turni_attesi.append((malato, "2026-10-20"))
+    assert sorted((a["persona_id"], a["data"]) for a in tabellone["assegnazioni"]) == sorted(turni_attesi)
     assert client.get("/api/ferie/9999/turni").status_code == 404
 
 
@@ -354,7 +363,7 @@ def test_api_catena(client):
         "persona_id": b})
     notte = next(a["id"] for a in r.json()["assegnazioni"] if a["persona_id"] == b)
     client.post("/api/ferie", json={"persona_id": malato, "dal": "2026-10-20", "al": "2026-10-20",
-                                    "motivo": "malattia"})
+                                    "motivo": "ferie"})
     body = client.get(f"/api/assegnazioni/{aid}/sostituti").json()
     assert all(x["regole"] for x in body["candidati"])
     catena = body["catene"][0]

@@ -10,6 +10,14 @@ import * as festivita from "./statistiche-festivita.js";
 
 const stato = { root: null, righe: [], ordine: { campo: "nome", dir: 1 }, filtroTipo: "tutti" };
 
+let versioneScelta = "effettivi";
+
+export function versioneStatistiche() { return versioneScelta; }
+
+export function titoloVersione(titolo) {
+  return `${titolo} · ${versioneScelta === "generati" ? "Generati" : "Effettivi"}`;
+}
+
 const COLONNE = [
   { campo: "nome", titolo: "Persona", testo: true },
   { campo: "tipo", titolo: "Tipo", testo: true },
@@ -50,17 +58,34 @@ const SCHEDE = [["", "Turni"], ["indisponibilita", "Indisponibilità"], ["dipend
 
 /** Schede della vista: sono link, così il router a hash gestisce anche avanti/indietro. */
 export function renderSchede(attiva) {
-  return el("nav", { class: "schede", "aria-label": "Statistiche" }, SCHEDE.map(([chiave, titolo]) =>
+  const schede = el("nav", { class: "schede no-print", "aria-label": "Statistiche" }, SCHEDE.map(([chiave, titolo]) =>
     el("a", {
       class: "scheda", href: `#statistiche${chiave ? `/${chiave}` : ""}`,
       "aria-current": chiave === attiva ? "page" : null,
     }, titolo)));
+  const scelta = el("div", { class: "filtri no-print", role: "group", "aria-label": "Versione dei turni" },
+    [["generati", "Generati"], ["effettivi", "Effettivi"]].map(([valore, testo]) => el("button", {
+      type: "button", class: `btn btn-filter${versioneScelta === valore ? " attivo" : ""}`,
+      "aria-pressed": String(versioneScelta === valore),
+      onclick: (e) => {
+        if (versioneScelta === valore) return;
+        const root = e.currentTarget.closest("#view-statistiche");
+        versioneScelta = valore;
+        mostra(root, attiva);
+      },
+    }, testo)));
+  const nota = attiva === "indisponibilita"
+    ? "Le indisponibilità sono uguali per entrambe le versioni."
+    : versioneScelta === "generati"
+      ? "Programma usato per distribuire i turni successivi. Comprende le modifiche del responsabile e le rimozioni per malattia o infortunio."
+      : "Programma aggiornato con i cambi turno: indica chi deve lavorare, senza certificare la presenza.";
+  return el("div", {}, schede, scelta, el("p", { class: "muted no-print" }, nota));
 }
 
 export function bottoneStampa(titolo = "Statistiche") {
   return el("button", {
     type: "button", class: "btn btn-ghost",
-    onclick: () => scaricaPdf(document.getElementById("view-statistiche"), titolo, { orientamento: "landscape" }),
+    onclick: () => scaricaPdf(document.getElementById("view-statistiche"), titoloVersione(titolo), { orientamento: "landscape" }),
   }, "Scarica PDF");
 }
 
@@ -96,7 +121,7 @@ export async function mostra(root, parametro) {
   const numero = nuovoCaricamento();
   clear(root).append(renderSchede(""), el("p", { class: "muted loading" }, "Caricamento delle statistiche…"));
   try {
-    const righe = await api.statistiche();
+    const righe = await api.statistiche(versioneStatistiche());
     if (superato(numero)) return;
     stato.righe = righe;
     render();
@@ -128,7 +153,7 @@ function ordina(righe) {
 function render() {
   const root = clear(stato.root);
   root.append(renderSchede(""), el("header", { class: "view-header" },
-    el("div", { class: "view-header-riga" }, el("h1", {}, "Statistiche"), bottoneStampa()),
+    el("div", { class: "view-header-riga" }, el("h1", {}, titoloVersione("Statistiche")), bottoneStampa()),
     el("p", { class: "muted" },
       "Dati cumulati sulle settimane con turni generati (le settimane compilate solo a mano non contano). Il saldo ore indica la differenza rispetto alla media dei dipendenti (per i volontari è sempre 0).")));
 

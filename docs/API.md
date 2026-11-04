@@ -28,6 +28,34 @@ Valori: `tipo` ∈ dipendente|volontario; `qualifica` ∈ autista|soccorritore; 
 `ruolo` ∈ autista|soccorritore; `origine` ∈ volontario|generato|manuale.
 Orari: giorno 8-20, notte 20-8 (giorno dopo). Le settimane iniziano di lunedì; date ISO `YYYY-MM-DD`.
 
+## Versioni dei turni
+
+`assegnazioni` conserva la base. Senza alternativa, il titolare effettivo è quello della base;
+una riga in `assegnazioni_effettive` sostituisce il titolare, con `persona_id = NULL` per un posto cancellato.
+`assegnazioni_rimosse_generati` sopprime la base per malattia mantenendo ID e riferimenti dei cambi.
+Letture `assegnazioni_periodo`, `get_assegnazione`, `assegnazioni_persona`: parametro `versione`,
+predefinito `effettivi`; altro valore ammesso `generati`. I trigger di entrambe le tabelle aggiornano le revisioni.
+
+Tabellone, pagina dipendenti, email e PDF operativi leggono sempre Effettivi. Le API
+`GET /statistiche`, `/statistiche/festivi`, `/statistiche/persona/{id}`, `/statistiche/equita`,
+`/festivita/prossime` e `/festivita/lavorate?anno=AAAA` accettano `versione=generati|effettivi`
+(predefinito Effettivi; valore diverso → 422). Date e formati delle risposte restano invariati.
+Le indisponibilità e lo storico festivo importato sono comuni. La fonte appare nei titoli e nei PDF statistici.
+
+Cessioni, scambi, annullamenti e cancellazioni operative aggiornano solo Effettivi. Le modifiche manuali,
+comprese le coperture di posti vuoti e le modifiche di orario, aggiornano entrambe le versioni e invalidano
+il ripristino automatico dei cambi precedenti sullo stesso turno. Il generatore legge storico e rotazioni
+festive dai Generati; per riposo, sovrapposizioni e altri vincoli sugli impegni usa gli Effettivi.
+`POST /settimane/{data}/genera` restituisce 409 con cambi attivi, anche se il turno è poi cancellato.
+Il payload settimana include `cambi_attivi: bool` per disabilitare la rigenerazione nell'interfaccia.
+
+`POST /ferie` con `motivo=malattia` registra l'assenza e toglie atomicamente i turni assegnati alla persona
+in ciascuna versione, secondo il rispettivo titolare. Non riempie i posti vuoti e non richiede di annullare
+prima i cambi. Le coperture si inseriscono dal tabellone e valgono in entrambe le versioni;
+assegnare manualmente un turno alla persona in malattia è impedito. Eliminare l'assenza non ripristina
+le assegnazioni rimosse. `GET /ferie/{id}/turni` legge le assegnazioni effettive ancora presenti:
+dopo la rimozione per malattia i posti vuoti si gestiscono dal tabellone.
+
 ## Database (`cvap/db.py`)
 
 ```
@@ -40,8 +68,11 @@ divieti(id INTEGER PK, persona_id INTEGER REFERENCES persone(id), postazione TEX
 settimane(inizio TEXT PK, stato TEXT ('bozza'|'confermata'), dipendenti TEXT /*JSON id*/, generata_il TEXT, report TEXT /*JSON*/)
 assegnazioni(id INTEGER PK, data TEXT, postazione TEXT, fascia TEXT, segmento TEXT, ruolo TEXT,
              persona_id INTEGER REFERENCES persone(id), origine TEXT)
+assegnazioni_effettive(assegnazione_id INTEGER PK REFERENCES assegnazioni(id) ON DELETE CASCADE,
+                      persona_id INTEGER NULL REFERENCES persone(id))
+assegnazioni_rimosse_generati(assegnazione_id INTEGER PK REFERENCES assegnazioni(id) ON DELETE CASCADE)
 ferie(id INTEGER PK, persona_id INTEGER REFERENCES persone(id), dal TEXT, al TEXT,   -- estremi inclusi
-      motivo TEXT NOT NULL DEFAULT 'ferie')   -- 'ferie' | 'malattia' (malattia o infortunio): stesso conteggio, cambia solo l'etichetta
+      motivo TEXT NOT NULL DEFAULT 'ferie')   -- 'ferie' | 'malattia' (malattia o infortunio)
 indisponibilita_turni(persona_id INTEGER REFERENCES persone(id), data TEXT, parte TEXT, PK(persona_id, data, parte))
                                                         -- parte: mattina | pomeriggio | notte
 ```
@@ -152,11 +183,11 @@ Con `APP_PASSWORD` impostata (`create_app(..., password=...)`) tutte le API tran
   conteggi di Ascoli, storico del generatore (saldo, weekend, sedi, festività…) e statistiche, che le mostrano a parte
   (`ore_sostituzioni` in `riepilogo` della settimana, in `/statistiche` e nel riepilogo per dipendente con `turni_sostituzioni`).
 - `POST /settimane/{data}/genera` `{tempo_max?: number}` → settimana aggiornata con `report = {stato, messaggio, scoperti: [{data, postazione, fascia, segmento, ruolo}], media_ore, durata_s, qualita, qualita_precedente, festivi}` (`festivi`: vedi "Festività nel generatore"). `qualita = {punteggio, limite_inferiore, gap_pct, soluzioni, tempo_migliore_s, durata_s, tempo_max, workers}` (punteggio = somma delle penalità, più basso è meglio; `gap_pct` = distanza dall'ottimo, 0 = ottimo dimostrato); `qualita_precedente` è la `qualita` della generazione precedente della stessa settimana (`null` se assente). I processi del risolutore (`workers`) li sceglie `app.worker_generatore()`: `CVAP_WORKER` (1–64) se impostata, altrimenti i core utilizzabili, al massimo 8.
-  Cancella le assegnazioni `generato` della settimana, poi chiama `solver.genera` con: dipendenti attivi, `fissi` = volontario+manuale,
+  Calcola con `solver.genera` e, solo se riesce, sostituisce le assegnazioni `generato` della settimana con: dipendenti attivi, `fissi` = volontario+manuale,
   `contesto` = assegnazioni dei 3 giorni prima e dopo la settimana, `storico` = `calcola_storico` su tutte le settimane precedenti presenti in `settimane`.
   Salva le nuove assegnazioni, `stato='bozza'`, `dipendenti` = id dei dipendenti attivi. 400 se confermata.
 - `POST /settimane/{data}/conferma` · `POST /settimane/{data}/riapri` → settimana aggiornata
-- `DELETE /settimane/{data}/generati` → settimana aggiornata (rimuove solo le `generato`)
+- `DELETE /settimane/{data}/generati` → settimana aggiornata (rimuove solo le `generato` dagli Effettivi; conserva base e conteggi Generati)
 - `PUT /settimane/{data}/indisponibilita` `{persona_id, turni: [{data: iso, parte}], max 21}` → settimana aggiornata. Sostituisce le
   indisponibilità della persona in quella settimana. 400 se confermata, date fuori settimana o persona non dipendente · 404
 - `POST /calendario-copertura/ferie/anteprima` `{persona_id, dal, al, motivo?: "ferie"}` → 200
@@ -181,7 +212,7 @@ Con `APP_PASSWORD` impostata (`create_app(..., password=...)`) tutte le API tran
   `GET /ferie/{id}/turni` → `[{id, data, postazione, fascia, segmento, ruolo, settimana, ore}]`: turni della persona che iniziano
   nei giorni dell'assenza (`settimana` = lunedì), da far coprire · 404
 - `GET /statistiche` → `[{persona_id, nome, tipo, qualifica, settimane, ore_totali, ore_lavorate, ore_ferie, ore_malattia, saldo_ore, ore_giorno, ore_notte, weekend: {sab_giorno, sab_notte, dom_giorno, dom_notte}, standby, programmati, assistenze, sedi: {Acquasanta, Venarotta}, ascoli: {turni, giorno, notte}, festivi: {turni, per_festivita: [{festivita, turni, ultimo_anno}]}}]` (`festivi`: vedi "Festività nel generatore") (`ore_totali` = ore contate: lavorate + 6 h per giorno di ferie/malattia, nelle settimane non interamente di assenza; sedi = turni, anche mezzi, in ciascuna delle due sedi; il generatore le pareggia per ogni dipendente)
-  solo sulle settimane con turni generati (`storico.solo_generate`; volontari: solo totali, saldo 0).
+  solo sulle settimane generate (`storico.solo_generate`; volontari: solo totali, saldo 0). La settimana resta inclusa anche dopo la rimozione di tutti i turni, grazie a `generata_il`.
   Il generatore invece usa come storico tutte le settimane dalla prima generata in poi.
 - `GET /statistiche/indisponibilita?dal&al` (date facoltative, estremi inclusi; `dal > al` → 400, data non valida → 422) →
   `[{persona_id, nome, attivo, totale, giorni: [{totale, mattina, pomeriggio, notte} x7 (lunedì..domenica)]}]`:
@@ -376,7 +407,7 @@ Fase 5 di `docs/PIANO-rotazioni.md`: chi ha lavorato le festività prima che il 
 separate dalle assegnazioni: **non toccano ore e settimane**; dalla fase 6 entrano nella rotazione delle festività
 (generatore e campo `festivi` delle statistiche).
 
-- **Limite**: lunedì della prima settimana con turni generati (`origine = 'generato'`); senza settimane generate,
+- **Limite**: lunedì della prima settimana generata (`generata_il` oppure `origine = 'generato'`); senza settimane generate,
   domani. Le festività dal limite in poi non si inseriscono: le conta già il programma. `anno_max` = anno del giorno
   prima del limite; `anno_min` = 2000.
 - `cvap/storico_festivi.py` (puro): `parse_data` (gg/mm/aaaa, aaaa-mm-gg), `parse_fascia`, `limite_storico`,
