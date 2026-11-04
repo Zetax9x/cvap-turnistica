@@ -14,6 +14,24 @@ python3 -m venv .venv
 
 I dati stanno in `data/turni.db` (SQLite): per il backup basta copiare il file.
 
+All'avvio lo schema viene aggiornato automaticamente, senza ricopiare o modificare i turni esistenti:
+Generati ed Effettivi inizialmente coincidono. Prima di aggiornare un'installazione, arrestare l'app e
+salvare una copia del database completo (su Turso usare il backup del database remoto).
+Per ripristinare usare insieme codice e database della stessa versione: un vecchio programma non legge
+le alternative effettive introdotte da questa versione. Non eliminare le nuove tabelle per tornare indietro.
+
+## Programma generato e programma aggiornato
+
+Il tabellone, la pagina dei dipendenti e le comunicazioni mostrano sempre chi deve lavorare dopo i cambi.
+In **Statistiche** scegliere **Generati** (programma usato per distribuire le settimane successive) oppure
+**Effettivi** (programma aggiornato con i cambi, non un registro delle presenze).
+Cessioni, scambi e cancellazioni operative modificano solo gli Effettivi. Le modifiche manuali e le
+coperture del responsabile aggiornano entrambe le versioni. Malattia e infortunio tolgono da ciascuna
+versione i turni della persona assente: i posti restano vuoti e vanno coperti a mano dal tabellone.
+Eliminare l'assenza non ripristina i turni tolti. Una settimana con cambi attivi si può correggere a mano,
+ma non rigenerare. Il generatore conserva i conteggi dei Generati e rispetta gli impegni Effettivi per il riposo.
+
+
 ## Come si usa ogni settimana
 
 1. **Personale** — inserisci dipendenti e volontari con la qualifica (autista o soccorritore).
