@@ -19,7 +19,7 @@ from .storico_festivi import limite_storico
 NON_PIU_NEL_CALENDARIO = "non più nel calendario"
 
 
-def _settimane_programma(conn, prima: date | None, dal: date, al: date) -> list[SettimanaProgramma]:
+def _settimane_programma(conn, prima: date | None, dal: date, al: date, versione: str = "effettivi") -> list[SettimanaProgramma]:
     """Le settimane dalla prima generata in poi che toccano [dal, al) e hanno almeno un turno.
 
     Dipendenti della settimana: quelli salvati nella riga di `settimane`; per le settimane compilate a mano senza
@@ -28,7 +28,7 @@ def _settimane_programma(conn, prima: date | None, dal: date, al: date) -> list[
         return []
     inizio = max(prima, lunedi(dal))
     turni = defaultdict(list)
-    for _, a in db.assegnazioni_periodo(conn, inizio, al - timedelta(days=1)):
+    for _, a in db.assegnazioni_periodo(conn, inizio, al - timedelta(days=1), versione=versione):
         if not ore_extra(a):  # le sostituzioni non valgono per la rotazione delle festività
             turni[lunedi(a.data)].append(a)
     if not turni:
@@ -44,22 +44,22 @@ def _settimane_programma(conn, prima: date | None, dal: date, al: date) -> list[
 
 
 def conti_festivita(conn: sqlite3.Connection, riferimento: date,
-                    festivita: list[dict] | None = None) -> dict[int, dict[int, ContoFestivita]]:
+                    festivita: list[dict] | None = None, versione: str = "effettivi") -> dict[int, dict[int, ContoFestivita]]:
     """Conti delle festività (predefinito: le attive) negli ultimi anni prima di `riferimento` (storico
     importato + programma)."""
     festivita = db_festivita.festivita_attive(conn) if festivita is None else festivita
     if not festivita:
         return {}
-    return conta_festivita(festivita, riferimento, **dati_conti(conn, inizio_periodo(riferimento), riferimento))
+    return conta_festivita(festivita, riferimento, **dati_conti(conn, inizio_periodo(riferimento), riferimento, versione=versione))
 
 
-def dati_conti(conn: sqlite3.Connection, dal: date, al: date) -> dict:
+def dati_conti(conn: sqlite3.Connection, dal: date, al: date, versione: str = "effettivi") -> dict:
     """Gli argomenti di `conta_festivita` letti dal database, validi per ogni riferimento con periodo dentro
     [dal, al): `conta_festivita` considera da sé solo le festività del suo periodo. Così l'ordine delle prossime
     festività legge il database una volta sola e fa lo stesso calcolo del generatore."""
     attivi = {p["id"] for p in db.lista_persone(conn) if p["tipo"] == "dipendente" and p["attivo"]}
     prima = db_storico_festivi.prima_generata(conn)
-    settimane = _settimane_programma(conn, prima, dal, al)
+    settimane = _settimane_programma(conn, prima, dal, al, versione=versione)
     malattia = db.giorni_malattia(conn, dal - timedelta(days=1), al) if settimane else set()
     return {"limite": limite_storico(prima, date.today()), "importati": db_storico_festivi.tutti_i_turni(conn),
             "servizio": db_storico_festivi.servizio_per_anno(conn), "dipendenti_attivi": attivi,
@@ -77,7 +77,7 @@ def festivi_per_generazione(conn: sqlite3.Connection, giorni: list[date],
     dipendenti = {p["id"] for p in db.lista_persone(conn) if p["tipo"] == "dipendente"}
     # la notte della domenica può essere la notte della sera prima di un lunedì festivo: un giorno in più
     disponibili = db_festivi_disponibili.per_giorno(conn, festivita, giorni[0], giorni[-1] + timedelta(days=1))
-    return festivi_settimana(festivita, giorni, conti_festivita(conn, giorni[0], festivita), contesto, dipendenti,
+    return festivi_settimana(festivita, giorni, conti_festivita(conn, giorni[0], festivita, versione="generati"), contesto, dipendenti,
                              disponibili)
 
 
@@ -104,7 +104,7 @@ def riferimento_statistiche(conn) -> date:
     return riferimento
 
 
-def _conti_statistiche(conn) -> list[tuple[dict, dict[int, ContoFestivita]]]:
+def _conti_statistiche(conn, versione: str = "effettivi") -> list[tuple[dict, dict[int, ContoFestivita]]]:
     """(festività, conti per persona) per le attive e per le non più attive, ognuna calcolata a parte."""
     tutte = db_festivita.lista_festivita(conn)
     riferimento = riferimento_statistiche(conn)
@@ -113,12 +113,12 @@ def _conti_statistiche(conn) -> list[tuple[dict, dict[int, ContoFestivita]]]:
     non_piu = [f for f in tutte if not f["attiva"] and (f["stata_attiva"] or f["id"] in nello_storico)]
     out = []
     for gruppo in ([f for f in tutte if f["attiva"]], non_piu):
-        conti = conti_festivita(conn, riferimento, gruppo)
+        conti = conti_festivita(conn, riferimento, gruppo, versione=versione)
         out += [(f, conti.get(f["id"], {})) for f in sorted(gruppo, key=lambda f: f["id"])]
     return out
 
 
-def festivi_statistiche(conn: sqlite3.Connection, dipendenti: Iterable[int]) -> tuple[dict[int, dict], list[dict]]:
+def festivi_statistiche(conn: sqlite3.Connection, dipendenti: Iterable[int], versione: str = "effettivi") -> tuple[dict[int, dict], list[dict]]:
     """Negli ultimi anni, fino alla fine dell'ultima settimana salvata (o a domani):
 
     - dipendente -> {turni, per_festivita: [{festivita, attiva, turni, ultimo_anno}]}: tutte le festività attive,
@@ -127,7 +127,7 @@ def festivi_statistiche(conn: sqlite3.Connection, dipendenti: Iterable[int]) -> 
       [{festivita, attiva, turni}]."""
     dipendenti = list(dipendenti)
     in_tabella = set(dipendenti)
-    conti = _conti_statistiche(conn)
+    conti = _conti_statistiche(conn, versione=versione)
     out = {}
     for pid in dipendenti:
         voci = [{"festivita": f["nome"], "attiva": f["attiva"], "turni": c.turni, "ultimo_anno": c.ultimo_anno}

@@ -98,8 +98,8 @@ export const api = {
   // Chi vuole lavorare una festività ({data, persona_id, fascia: "giorno"|"notte"|"entrambi"|null}) e ordine di
   // rotazione delle prossime festività; chi ha lavorato le festività di un anno (importato o dal programma)
   impostaDisponibile: (corpo) => richiesta("PUT", "/festivita/disponibili", corpo),
-  prossimeFestivita: (mesi) => richiesta("GET", `/festivita/prossime?${new URLSearchParams({ mesi })}`),
-  festivitaLavorate: (anno) => richiesta("GET", `/festivita/lavorate?${new URLSearchParams({ anno })}`),
+  prossimeFestivita: (mesi, versione = "effettivi") => richiesta("GET", `/festivita/prossime?${new URLSearchParams({ mesi, versione })}`),
+  festivitaLavorate: (anno, versione = "effettivi") => richiesta("GET", `/festivita/lavorate?${new URLSearchParams({ anno, versione })}`),
 
   impostazioni: () => richiesta("GET", "/impostazioni"),
   salvaImpostazioni: (dati) => richiesta("PUT", "/impostazioni", dati),
@@ -139,18 +139,18 @@ export const api = {
   // Turni già assegnati alla persona nei giorni di quell'assenza: [{id, data, postazione, fascia, segmento, ruolo, settimana, ore}]
   turniFerie: (id) => richiesta("GET", `/ferie/${enc(id)}/turni`),
 
-  statistiche: () => richiesta("GET", "/statistiche"),
-  statisticheFestivi: () => richiesta("GET", "/statistiche/festivi"),
-  riepilogoPersona: (id, dal, al) =>
-    richiesta("GET", `/statistiche/persona/${enc(id)}?${new URLSearchParams({ dal, al })}`),
+  statistiche: (versione = "effettivi") => richiesta("GET", `/statistiche?${new URLSearchParams({ versione })}`),
+  statisticheFestivi: (versione = "effettivi") => richiesta("GET", `/statistiche/festivi?${new URLSearchParams({ versione })}`),
+  riepilogoPersona: (id, dal, al, versione = "effettivi") =>
+    richiesta("GET", `/statistiche/persona/${enc(id)}?${new URLSearchParams({ dal, al, versione })}`),
   statisticheIndisponibilita: (dal, al) => {
     const q = new URLSearchParams();
     if (dal) q.set("dal", dal);
     if (al) q.set("al", al);
     return richiesta("GET", `/statistiche/indisponibilita${q.size ? `?${q}` : ""}`);
   },
-  statisticheEquita: (dal, al) => {
-    const q = new URLSearchParams();
+  statisticheEquita: (dal, al, versione = "effettivi") => {
+    const q = new URLSearchParams({ versione });
     if (dal) q.set("dal", dal);
     if (al) q.set("al", al);
     return richiesta("GET", `/statistiche/equita${q.size ? `?${q}` : ""}`);

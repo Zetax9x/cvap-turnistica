@@ -3,7 +3,7 @@
 
 import { api } from "./api.js";
 import { el, clear, dataLunga, ddmm, indiceGiorno, GIORNI_BREVI, formatOre, badgeAssenza, todayISO } from "./util.js";
-import { bottoneStampa, focusTitolo, nuovoCaricamento, renderSchede, superato } from "./statistiche.js";
+import { bottoneStampa, focusTitolo, nuovoCaricamento, renderSchede, superato, titoloVersione, versioneStatistiche } from "./statistiche.js";
 
 const GIORNI_MAX = 366;
 const PARTI = { mattina: "mattina", pomeriggio: "pomeriggio", notte: "notte" };
@@ -21,6 +21,7 @@ function meseCorrente() {
 
 export async function mostra(root) {
   stato.root = root;
+  stato.dati = null;
   if (!stato.dal || !stato.al) [stato.dal, stato.al] = meseCorrente();
   const numero = nuovoCaricamento();
   clear(root).append(renderSchede("dipendente"), el("p", { class: "muted loading" }, "Caricamento…"));
@@ -41,7 +42,7 @@ export async function mostra(root) {
 
 async function carica(numero = nuovoCaricamento()) {
   try {
-    const dati = await api.riepilogoPersona(stato.personaId, stato.dal, stato.al);
+    const dati = await api.riepilogoPersona(stato.personaId, stato.dal, stato.al, versioneStatistiche());
     if (superato(numero)) return;
     stato.dati = dati;
     render();
@@ -60,8 +61,8 @@ function render() {
   const root = clear(stato.root);
   const d = stato.dati && String(stato.dati.persona_id) === stato.personaId ? stato.dati : null;
   root.append(renderSchede("dipendente"), el("header", { class: "view-header" },
-    el("div", { class: "view-header-riga" }, el("h1", {}, "Riepilogo per dipendente"), d ? bottoneStampa("riepilogo dipendente") : null),
-    el("p", { class: "muted no-print" }, "Scegli un dipendente e il periodo: vedi i turni svolti giorno per giorno e, in fondo, i totali.")));
+    el("div", { class: "view-header-riga" }, el("h1", {}, titoloVersione("Riepilogo per dipendente")), d ? bottoneStampa("riepilogo dipendente") : null),
+    el("p", { class: "muted no-print" }, "Scegli un dipendente e il periodo: vedi i turni della versione scelta giorno per giorno e, in fondo, i totali.")));
   root.append(renderFiltri());
   if (!stato.persone.length) {
     root.append(el("p", { class: "muted" }, "Nessun dipendente registrato."));

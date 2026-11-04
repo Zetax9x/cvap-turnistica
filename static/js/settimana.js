@@ -269,7 +269,7 @@ function renderPassi(s) {
 function azionePrincipale(s) {
   const haGenerati = s.assegnazioni.some((a) => a.origine === "generato");
   if (s.stato === "confermata") return { testo: "Invia i turni via email", onclick: () => apriInvio(stato.data) };
-  if (haGenerati || s.assegnazioni.length) return { testo: "Conferma settimana", onclick: onConferma };
+  if (haGenerati || s.assegnazioni.length || s.cambi_attivi) return { testo: "Conferma settimana", onclick: onConferma };
   return { testo: "Genera turni", onclick: onGenera };
 }
 
@@ -327,7 +327,8 @@ function renderToolbar(s) {
   const primaria = el("button", { type: "button", class: "btn btn-primary btn-grande", disabled: dis, onclick: principale.onclick }, principale.testo);
   return el("div", { class: "toolbar", role: "group", "aria-label": "Azioni settimana" },
     primaria,
-    !confermata && haGenerati ? el("button", { type: "button", class: "btn", disabled: dis, onclick: onGenera }, "Rigenera turni") : null,
+    s.cambi_attivi ? el("span", { class: "muted" }, "Ci sono cambi turno registrati. Puoi modificare i singoli posti a mano; la rigenerazione è bloccata.") : null,
+    !confermata && haGenerati ? el("button", { type: "button", class: "btn", disabled: dis || s.cambi_attivi, onclick: onGenera, title: s.cambi_attivi ? "Sono presenti cambi turno: modifica i singoli posti a mano." : "" }, "Rigenera turni") : null,
     altre,
     el("span", { class: "toolbar-spacer" }),
   );
@@ -1749,6 +1750,7 @@ function salvaTempo(input) {
 
 async function onGenera() {
   const s = stato.settimana;
+  if (s.cambi_attivi) { toast("Ci sono cambi turno registrati: correggi i singoli posti a mano.", "avviso"); return; }
   if (s.assegnazioni.some((a) => a.origine === "generato")) {
     const ok = await chiediConferma(
       "Le assegnazioni generate in precedenza verranno sostituite. Quelle dei volontari e quelle fissate manualmente restano invariate.",
@@ -1770,7 +1772,7 @@ async function onGenera() {
 }
 
 async function onRimuoviGenerati() {
-  const ok = await chiediConferma("Verranno rimosse tutte le assegnazioni generate automaticamente in questa settimana.",
+  const ok = await chiediConferma("I turni generati saranno tolti dal tabellone aggiornato. Il programma originale resterà nelle statistiche Generati e nei conteggi per le settimane successive.",
     { titolo: "Rimuovere i turni generati?", ok: "Rimuovi", pericolo: true });
   if (!ok) return;
   if (await eseguiAzione(() => api.rimuoviGenerati(stato.data))) toast("Assegnazioni generate rimosse.", "ok");

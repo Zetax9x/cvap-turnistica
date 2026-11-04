@@ -10,7 +10,9 @@ from .calendario import lunedi
 
 def prima_generata(conn: sqlite3.Connection) -> date | None:
     """Lunedì della prima settimana con turni generati dal programma, o None."""
-    r = conn.execute("SELECT MIN(data) AS prima FROM assegnazioni WHERE origine = 'generato'").fetchone()
+    r = conn.execute("SELECT MIN(data) AS prima FROM ("
+                     "SELECT data FROM assegnazioni WHERE origine = 'generato' UNION ALL "
+                     "SELECT inizio AS data FROM settimane WHERE generata_il IS NOT NULL)").fetchone()
     return lunedi(date.fromisoformat(r["prima"])) if r and r["prima"] else None
 
 

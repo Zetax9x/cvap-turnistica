@@ -111,13 +111,15 @@ def crea_router(connessione: Callable) -> APIRouter:
         return {"data": body.data.isoformat(), "persona_id": body.persona_id, "fascia": body.fascia}
 
     @router.get("/api/festivita/prossime")
-    def prossime(conn: Conn, mesi: Annotated[int, Query(ge=MESI_MIN, le=MESI_MAX)] = 12):
+    def prossime(conn: Conn, mesi: Annotated[int, Query(ge=MESI_MIN, le=MESI_MAX)] = 12,
+                 versione: Literal["generati", "effettivi"] = "effettivi"):
         # date.today(): l'oggi del server, come nel resto delle API (nel progetto non c'è una funzione comune)
-        return prossime_festivita.prossime(conn, date.today(), mesi)
+        return prossime_festivita.prossime(conn, date.today(), mesi, versione=versione)
 
     @router.get("/api/festivita/lavorate")
-    def lavorate(conn: Conn, anno: Annotated[int, Query(ge=ANNO_MIN, le=ANNO_MAX)]):
-        return prossime_festivita.lavorate_anno(conn, anno, date.today())
+    def lavorate(conn: Conn, anno: Annotated[int, Query(ge=ANNO_MIN, le=ANNO_MAX)],
+                 versione: Literal["generati", "effettivi"] = "effettivi"):
+        return prossime_festivita.lavorate_anno(conn, anno, date.today(), versione=versione)
 
     @router.get("/api/festivita")
     def lista(conn: Conn, anno: Annotated[int | None, Query(ge=ANNO_MIN, le=ANNO_MAX)] = None):

@@ -169,8 +169,8 @@ def test_prossime_ordini_per_fascia_importati_e_programma_riusano_dati_senza_mut
     letture = []
     originale = dati_festivi.dati_conti
 
-    def leggi(*args):
-        dati = originale(*args)
+    def leggi(*args, **kwargs):
+        dati = originale(*args, **kwargs)
         letture.append((dati, deepcopy(dati)))
         return dati
 

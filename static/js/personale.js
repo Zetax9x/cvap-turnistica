@@ -316,7 +316,7 @@ function renderFerie() {
       try {
         const nome = nomi.get(Number(persona.value)) || "Il dipendente";
         const creata = await api.creaFerie({ persona_id: Number(persona.value), dal: dal.value, al: al.value, motivo: motivo.value });
-        toast(motivo.value === "malattia" ? "Malattia aggiunta." : "Ferie aggiunte.", "ok");
+        toast(motivo.value === "malattia" ? "Malattia registrata. I turni della persona sono stati tolti: copri i posti vuoti dal tabellone della settimana." : "Ferie aggiunte.", "ok");
         stato.turniDaCoprire = await cercaTurni(creata, nome, motivo.value);
         stato.coperturaPreventiva = await controllaCopertura(creata);
         await ricarica();
@@ -363,7 +363,8 @@ function renderFerie() {
     el("h2", { id: "titolo-ferie", class: "card-title" }, "Ferie e malattia"),
     el("p", { class: "muted" },
       "Nei giorni di ferie o di malattia/infortunio il dipendente non riceve turni e ogni giorno conta 6 ore nel confronto tra le ore dei dipendenti. ",
-      "Le ore che mancano non vanno recuperate nelle settimane successive. Il motivo serve solo a distinguerle."),
+      "Le ore che mancano non vanno recuperate nelle settimane successive. ",
+      "Quando registri malattia o infortunio, i turni della persona vengono tolti sia dal programma generato sia da quello aggiornato. I posti restano vuoti: il responsabile li copre a mano dal tabellone della settimana. Eliminare la malattia non ripristina i turni tolti."),
     renderAvvisoTurni(),
     renderAvvisoCopertura(),
     form,
@@ -374,7 +375,7 @@ function renderFerie() {
 
 async function eliminaFerie(f, nome) {
   const cosa = f.motivo === "malattia" ? "la malattia" : "le ferie";
-  const ok = await chiediConferma(`Eliminare ${cosa} di ${nome} dal ${dataEstesa(f.dal)} al ${dataEstesa(f.al)}?`,
+  const ok = await chiediConferma(`Eliminare ${cosa} di ${nome} dal ${dataEstesa(f.dal)} al ${dataEstesa(f.al)}?${f.motivo === "malattia" ? " I turni tolti resteranno vuoti: se necessario, assegnali a mano dal tabellone." : ""}`,
     { titolo: `Eliminare ${cosa}?`, ok: "Elimina", pericolo: true });
   if (!ok) return;
   try {

@@ -281,9 +281,9 @@ def _unita_json(u) -> dict:
 
 # --- costruzione del payload settimana -------------------------------------------
 
-def _contesto(conn, giorni: list[date]) -> list[Assegnazione]:
-    prima = db.assegnazioni_periodo(conn, giorni[0] - timedelta(days=GIORNI_CONTESTO), giorni[0] - timedelta(days=1))
-    dopo = db.assegnazioni_periodo(conn, giorni[-1] + timedelta(days=1), giorni[-1] + timedelta(days=GIORNI_CONTESTO))
+def _contesto(conn, giorni: list[date], versione: str = "effettivi") -> list[Assegnazione]:
+    prima = db.assegnazioni_periodo(conn, giorni[0] - timedelta(days=GIORNI_CONTESTO), giorni[0] - timedelta(days=1), versione)
+    dopo = db.assegnazioni_periodo(conn, giorni[-1] + timedelta(days=1), giorni[-1] + timedelta(days=GIORNI_CONTESTO), versione)
     return [a for _, a in prima + dopo]
 
 
@@ -431,6 +431,7 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
         "fine": giorni[-1].isoformat(),
         "tipo": tipo,
         "stato": riga["stato"] if riga else "nuova",
+        "cambi_attivi": db.cambi_attivi_settimana(conn, inizio),
         "giorni": [g.isoformat() for g in giorni],
         "postazioni": attive,
         "postazioni_a_richiesta": _a_richiesta(tipo),
@@ -465,11 +466,11 @@ def _candidato_json(c: Candidato) -> dict:
     return {**dataclasses.asdict(c), "regole": list(c.regole), "avvisi": list(c.avvisi)}
 
 
-def _settimana_passata(conn, riga: dict) -> SettimanaPassata:
+def _settimana_passata(conn, riga: dict, versione: str = "effettivi") -> SettimanaPassata:
     """La settimana per storico e statistiche: le sostituzioni (ore extra) sono tenute a parte."""
     inizio = date.fromisoformat(riga["inizio"])
     assegnazioni, extra = senza_sostituzioni(
-        a for _, a in db.assegnazioni_periodo(conn, inizio, inizio + timedelta(days=6)))
+        a for _, a in db.assegnazioni_periodo(conn, inizio, inizio + timedelta(days=6), versione))
     giorni = giorni_settimana(inizio)
     dipendenti = list(riga["dipendenti"])
     ferie = db.ferie_periodo(conn, giorni[0], giorni[-1])
@@ -486,7 +487,9 @@ def _settimana_passata(conn, riga: dict) -> SettimanaPassata:
                             giorni_malattia={pid: malattia[pid] for pid in dipendenti if malattia[pid]},
                             max_ore={p["id"]: p["max_ore_settimana"] for p in db.lista_persone(conn)
                                      if p["id"] in ore and p["max_ore_settimana"]},
-                            ore_sostituzioni=extra)
+                            ore_sostituzioni=extra, generata=bool(riga.get("generata_il")) or any(
+                                a.origine == "generato" for _, a in db.assegnazioni_periodo(
+                                    conn, inizio, inizio + timedelta(days=6), "generati")))
 
 
 def _volontario_per_nome(conn, nome: str, ruolo: str) -> int:
@@ -890,6 +893,8 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                     raise _errore(f"{p['nome']} non è abilitato al ruolo di autista in {body.postazione}")
                 persona_id = p["id"]
                 origine = "volontario" if p["tipo"] == "volontario" else "manuale"
+            if (persona_id, body.data) in db.giorni_malattia(conn, body.data, body.data):
+                raise _errore("Questa persona e' in malattia o infortunio quel giorno: scegli un'altra persona.")
             db.crea_assegnazione(conn, Assegnazione(body.data, body.postazione, body.fascia, body.segmento,
                                                     body.ruolo, persona_id, origine))
             return payload_settimana(conn, inizio)
@@ -998,20 +1003,24 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
         with scrittura(attendi=False):
             inizio = lunedi(_data(data))
             _verifica_modificabile(conn, inizio)
+            if db.cambi_attivi_settimana(conn, inizio):
+                raise HTTPException(409, "Questa settimana contiene cambi turno registrati. "
+                                    "Puoi correggere i singoli turni a mano, ma non rigenerare la settimana.")
             giorni, tipo, attive = _info_settimana(conn, inizio)
             fabbisogno = _fabbisogno_attivo(conn, giorni, tipo)
             dipendenti = db.dipendenti_attivi(conn)
             precedente = db.get_settimana(conn, giorni[0])  # prima di sovrascrivere il report
             qualita_precedente = ((precedente or {}).get("report") or {}).get("qualita")
             fissi = [a for _, a in db.assegnazioni_periodo(conn, giorni[0], giorni[-1]) if a.origine != "generato"]
-            storico = calcola_storico([_settimana_passata(conn, r) for r in db.lista_settimane(conn, prima_di=inizio)])
+            storico = calcola_storico([_settimana_passata(conn, r, "generati") for r in db.lista_settimane(conn, prima_di=inizio)])
             kwargs = {"tempo_max": body.tempo_max} if body and body.tempo_max else {}
 
             contesto = _contesto(conn, giorni)
-            festivi = dati_festivi.festivi_per_generazione(conn, giorni, contesto)
+            contesto_generati = _contesto(conn, giorni, "generati")
+            festivi = dati_festivi.festivi_per_generazione(conn, giorni, contesto_generati)
             t0 = time.monotonic()
             ris = solver.genera(giorni, attive, dipendenti, fissi=fissi, contesto=contesto,
-                                storico=storico, ferie=db.ferie_periodo(conn, giorni[0], giorni[-1]),
+                                storico=storico, contesto_generati=contesto_generati, ferie=db.ferie_periodo(conn, giorni[0], giorni[-1]),
                                 indisponibili=db.indisponibili_periodo(conn, giorni[0], giorni[-1]),
                                 fabbisogno=fabbisogno, scarto_ore_max=db.get_scarto_ore_max(conn),
                                 festivi=festivi, workers=worker_generatore(), **kwargs)
@@ -1329,14 +1338,14 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
 
     # --- statistiche ---
     @app.get("/api/statistiche")
-    def statistiche(conn: Conn):
+    def statistiche(conn: Conn, versione: Literal["generati", "effettivi"] = "effettivi"):
         righe = db.lista_settimane(conn)
         # solo le settimane con turni generati (anche per i volontari, contati più sotto); il generatore
         # invece usa tutte quelle dalla prima generata, per non perdere il saldo ore
-        passate = solo_generate([_settimana_passata(conn, r) for r in righe])
+        passate = solo_generate([_settimana_passata(conn, r, versione) for r in righe])
         storico = calcola_storico(passate)
         persone = {p["id"]: p for p in db.lista_persone(conn)}
-        festivi, _ = dati_festivi.festivi_statistiche(conn, [pid for pid in storico if pid in persone])
+        festivi, _ = dati_festivi.festivi_statistiche(conn, [pid for pid in storico if pid in persone], versione=versione)
 
         out = []
         for pid, st in storico.items():
@@ -1396,12 +1405,12 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
         return out
 
     @app.get("/api/statistiche/festivi")
-    def statistiche_festivi(conn: Conn):
+    def statistiche_festivi(conn: Conn, versione: Literal["generati", "effettivi"] = "effettivi"):
         """Turni festivi di chi non è nella tabella delle statistiche (es. ex dipendenti dello storico importato)."""
         persone = {p["id"] for p in db.lista_persone(conn)}
-        passate = solo_generate([_settimana_passata(conn, r) for r in db.lista_settimane(conn)])
+        passate = solo_generate([_settimana_passata(conn, r, versione) for r in db.lista_settimane(conn)])
         in_tabella = [pid for pid in calcola_storico(passate) if pid in persone]
-        return {"fuori_tabella": dati_festivi.festivi_statistiche(conn, in_tabella)[1]}
+        return {"fuori_tabella": dati_festivi.festivi_statistiche(conn, in_tabella, versione=versione)[1]}
 
     @app.get("/api/statistiche/indisponibilita")
     def statistiche_indisponibilita(conn: Conn, dal: DataValida | None = None, al: DataValida | None = None):
@@ -1418,7 +1427,8 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                  "giorni": indisponibilita_per_giorno(richieste.get(p["id"], set()))} for p in dipendenti]
 
     @app.get("/api/statistiche/persona/{persona_id}")
-    def statistiche_persona(persona_id: IdPath, conn: Conn, dal: DataValida, al: DataValida):
+    def statistiche_persona(persona_id: IdPath, conn: Conn, dal: DataValida, al: DataValida,
+                            versione: Literal["generati", "effettivi"] = "effettivi"):
         """Riepilogo per dipendente: turni giorno per giorno nel periodo [dal, al] (max un anno) e totali."""
         if dal > al:
             raise _errore("La data di inizio è dopo quella di fine")
@@ -1427,7 +1437,7 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
         p = db.get_persona(conn, persona_id)
         if p is None:
             raise HTTPException(404, "Persona non trovata")
-        turni = [a for _, a in db.assegnazioni_periodo(conn, dal, al) if a.persona_id == persona_id]
+        turni = [a for _, a in db.assegnazioni_periodo(conn, dal, al, versione) if a.persona_id == persona_id]
         malattia = db.giorni_malattia(conn, dal, al)
         assenze = {d: "malattia" if (persona_id, d) in malattia else "ferie"
                    for d in db.ferie_periodo(conn, dal, al).get(persona_id, set())}

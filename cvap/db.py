@@ -12,8 +12,8 @@ from datetime import date, timedelta
 from . import db_festivi_disponibili
 from .calendario import lunedi
 from .festivita import FESTIVITA_PREDEFINITE
-from .modello import (EXTRA, Assegnazione, Divieto, Fabbisogno, Persona, Postazione, fascia_extra,
-                      segmento_extra)
+from .modello import (EXTRA, META, Assegnazione, Divieto, Fabbisogno, Persona, Postazione, fascia_extra,
+                      segmento_extra, si_sovrappongono)
 from .vincoli import ORE_MAX_SETTIMANA
 
 RIFERIMENTO_A_DEFAULT = "2026-10-19"
@@ -73,6 +73,13 @@ CREATE TABLE IF NOT EXISTS assegnazioni (
     origine TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_assegnazioni_data ON assegnazioni(data);
+CREATE TABLE IF NOT EXISTS assegnazioni_effettive (
+    assegnazione_id INTEGER PRIMARY KEY REFERENCES assegnazioni(id) ON DELETE CASCADE,
+    persona_id INTEGER REFERENCES persone(id)
+);
+CREATE TABLE IF NOT EXISTS assegnazioni_rimosse_generati (
+    assegnazione_id INTEGER PRIMARY KEY REFERENCES assegnazioni(id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS variazioni_turno (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     chiave TEXT NOT NULL UNIQUE,
@@ -280,6 +287,15 @@ def connetti(path: str) -> sqlite3.Connection:
     conn = apri(path)
     with conn:
         conn.executescript(_SCHEMA)
+        # Gli stessi contatori proteggono annullamenti e anteprime anche dopo
+        # cancellazioni operative e rimozioni per malattia.
+        for tabella in ("assegnazioni_effettive", "assegnazioni_rimosse_generati"):
+            for evento in ("INSERT", "UPDATE", "DELETE"):
+                riferimento = "OLD" if evento == "DELETE" else "NEW"
+                conn.execute(
+                    f"CREATE TRIGGER IF NOT EXISTS revisione_{tabella}_{evento.lower()} "
+                    f"AFTER {evento} ON {tabella} BEGIN INSERT INTO revisioni_cambi_turno(assegnazione_id) "
+                    f"VALUES ({riferimento}.assegnazione_id); END")
         _migra(conn)
         conn.executemany(
             "INSERT OR IGNORE INTO postazioni(nome, solo_settimane_b, ordine) VALUES (?, ?, ?)",
@@ -423,8 +439,9 @@ def elimina_persona(conn: sqlite3.Connection, persona_id: int) -> bool:
         usata = conn.execute(
             "SELECT 1 AS si FROM assegnazioni WHERE persona_id = ? UNION ALL "
             "SELECT 1 AS si FROM storico_festivi WHERE persona_id = ? UNION ALL "
-            "SELECT 1 AS si FROM storico_festivi_servizio WHERE persona_id = ? LIMIT 1",
-            (persona_id, persona_id, persona_id)).fetchone()
+            "SELECT 1 AS si FROM storico_festivi_servizio WHERE persona_id = ? UNION ALL "
+            "SELECT 1 AS si FROM assegnazioni_effettive WHERE persona_id = ? LIMIT 1",
+            (persona_id, persona_id, persona_id, persona_id)).fetchone()
         if usata:
             conn.execute("UPDATE persone SET attivo = 0 WHERE id = ?", (persona_id,))
         else:
@@ -529,21 +546,70 @@ def _a_assegnazione(r: sqlite3.Row) -> Assegnazione:
                         r["ruolo"], r["persona_id"], r["origine"])
 
 
-def assegnazioni_periodo(conn: sqlite3.Connection, dal: date, al: date) -> list[tuple[int, Assegnazione]]:
-    """Assegnazioni con data in [dal, al], come coppie (id, Assegnazione)."""
+def _lettura_assegnazioni(versione: str) -> str:
+    if versione not in ("generati", "effettivi"):
+        raise ValueError("Versione turni non valida")
+    persona = ("a.persona_id" if versione == "generati" else
+               "CASE WHEN e.assegnazione_id IS NOT NULL THEN e.persona_id "
+               "WHEN r.assegnazione_id IS NULL THEN a.persona_id END")
+    filtro = "r.assegnazione_id IS NULL" if versione == "generati" else f"({persona}) IS NOT NULL"
+    return ("SELECT a.id, a.data, a.postazione, a.fascia, a.segmento, a.ruolo, "
+            f"{persona} AS persona_id, a.origine FROM assegnazioni a "
+            "LEFT JOIN assegnazioni_effettive e ON e.assegnazione_id = a.id "
+            "LEFT JOIN assegnazioni_rimosse_generati r ON r.assegnazione_id = a.id "
+            f"WHERE {filtro}")
+
+
+def assegnazioni_periodo(conn: sqlite3.Connection, dal: date, al: date,
+                         versione: str = "effettivi") -> list[tuple[int, Assegnazione]]:
     rows = conn.execute(
-        "SELECT * FROM assegnazioni WHERE data >= ? AND data <= ? ORDER BY data, postazione, fascia, ruolo, segmento, id",
-        (dal.isoformat(), al.isoformat()),
-    ).fetchall()
+        _lettura_assegnazioni(versione) +
+        " AND a.data >= ? AND a.data <= ? ORDER BY a.data, a.postazione, a.fascia, a.ruolo, a.segmento, a.id",
+        (dal.isoformat(), al.isoformat())).fetchall()
     return [(r["id"], _a_assegnazione(r)) for r in rows]
 
 
-def get_assegnazione(conn: sqlite3.Connection, assegnazione_id: int) -> Assegnazione | None:
-    r = conn.execute("SELECT * FROM assegnazioni WHERE id = ?", (assegnazione_id,)).fetchone()
+def get_assegnazione(conn: sqlite3.Connection, assegnazione_id: int,
+                     versione: str = "effettivi") -> Assegnazione | None:
+    r = conn.execute(_lettura_assegnazioni(versione) + " AND a.id = ?", (assegnazione_id,)).fetchone()
     return _a_assegnazione(r) if r else None
 
 
+def imposta_titolare_effettivo(conn, assegnazione_id: int, persona_id: int | None) -> None:
+    """Partecipa alla transazione del chiamante; None lascia il posto scoperto."""
+    conn.execute("INSERT INTO assegnazioni_effettive(assegnazione_id, persona_id) VALUES (?, ?) "
+                 "ON CONFLICT(assegnazione_id) DO UPDATE SET persona_id = excluded.persona_id",
+                 (assegnazione_id, persona_id))
+
+
+def cambi_attivi_settimana(conn, inizio: date) -> bool:
+    settimana = inizio.isoformat()
+    # Il registro conserva anche i cambi il cui turno e' stato successivamente tolto.
+    return any(settimana in json.loads(r["dati"])["settimane"] for r in conn.execute(
+        "SELECT dati FROM variazioni_turno WHERE annullata_il IS NULL").fetchall())
+
+
 def _inserisci(conn: sqlite3.Connection, a: Assegnazione) -> int:
+    # Una copertura manuale sostituisce il posto cancellato anche nella base.
+    # Per i posti multipli si sostituisce un solo posto per ciascun segmento.
+    righe = conn.execute("SELECT * FROM assegnazioni WHERE data = ? AND postazione = ? "
+                         "AND fascia = ? AND ruolo = ? ORDER BY id",
+                         (a.data.isoformat(), a.postazione, a.fascia, a.ruolo)).fetchall()
+    coperti = set()
+    for r in righe:
+        segmento = r["segmento"]
+        if segmento in coperti or not si_sovrappongono(segmento, a.segmento):
+            continue
+        if get_assegnazione(conn, r["id"]) is not None:
+            continue
+        if a.segmento in META.get(segmento, ()):
+            restante = next(s for s in META[segmento] if s != a.segmento)
+            conn.execute("UPDATE assegnazioni SET segmento = ? WHERE id = ?", (restante, r["id"]))
+        else:
+            conn.execute("DELETE FROM assegnazioni WHERE id = ?", (r["id"],))
+        coperti.add(segmento)
+        if segmento == a.segmento or a.segmento in META.get(segmento, ()):
+            break
     cur = conn.execute(
         "INSERT INTO assegnazioni(data, postazione, fascia, segmento, ruolo, persona_id, origine) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -559,27 +625,36 @@ def crea_assegnazione(conn: sqlite3.Connection, a: Assegnazione) -> int:
 
 def elimina_assegnazione(conn: sqlite3.Connection, assegnazione_id: int) -> None:
     with conn:
-        conn.execute("DELETE FROM assegnazioni WHERE id = ?", (assegnazione_id,))
+        imposta_titolare_effettivo(conn, assegnazione_id, None)
 
 
 def sostituisci_assegnazione(conn: sqlite3.Connection, assegnazione_id: int, nuova: Assegnazione) -> int | None:
     """Toglie un'assegnazione e mette `nuova` al suo posto in un'unica transazione; restituisce il nuovo id,
     o None (senza cambiare nulla) se l'assegnazione non c'è più, ad es. tolta nel frattempo da un altro."""
     with conn:
-        if conn.execute("DELETE FROM assegnazioni WHERE id = ?", (assegnazione_id,)).rowcount != 1:
+        if not _elimina_se_effettiva(conn, assegnazione_id):
             return None
         return _inserisci(conn, nuova)
 
 
+def _elimina_se_effettiva(conn, assegnazione_id: int) -> bool:
+    # Controllo e scrittura nella stessa istruzione anche fra istanze diverse.
+    return conn.execute("DELETE FROM assegnazioni WHERE id = ? AND id IN (SELECT id FROM (" +
+                        _lettura_assegnazioni("effettivi") + "))", (assegnazione_id,)).rowcount == 1
+
+
 def elimina_generati(conn: sqlite3.Connection, dal: date, al: date) -> None:
+    """La cancellazione operativa lascia invariati i conteggi di base."""
     with conn:
-        conn.execute("DELETE FROM assegnazioni WHERE origine = 'generato' AND data >= ? AND data <= ?",
-                     (dal.isoformat(), al.isoformat()))
+        for aid, a in assegnazioni_periodo(conn, dal, al):
+            if a.origine == "generato":
+                imposta_titolare_effettivo(conn, aid, None)
 
 
 def ha_assegnazioni(conn: sqlite3.Connection, persona_id: int) -> bool:
-    return conn.execute("SELECT 1 FROM assegnazioni WHERE persona_id = ? LIMIT 1",
-                        (persona_id,)).fetchone() is not None
+    return conn.execute("SELECT 1 FROM assegnazioni WHERE persona_id = ? UNION ALL "
+                        "SELECT 1 FROM assegnazioni_effettive WHERE persona_id = ? LIMIT 1",
+                        (persona_id, persona_id)).fetchone() is not None
 
 
 # --- settimane -------------------------------------------------------------
@@ -650,8 +725,10 @@ def sostituisci_assegnazioni(conn: sqlite3.Connection, *cambi: tuple[int, Assegn
     """Sostituisce più assegnazioni (id, nuova) in un'unica transazione; False, senza cambiare nulla, se una non c'è più."""
     try:
         with conn:
+            if any(get_assegnazione(conn, aid) is None for aid, _ in cambi):
+                return False
             for assegnazione_id, nuova in cambi:
-                if conn.execute("DELETE FROM assegnazioni WHERE id = ?", (assegnazione_id,)).rowcount != 1:
+                if not _elimina_se_effettiva(conn, assegnazione_id):
                     raise LookupError(assegnazione_id)
                 _inserisci(conn, nuova)
     except LookupError:
@@ -665,12 +742,9 @@ def get_ferie(conn: sqlite3.Connection, ferie_id: int) -> dict | None:
 
 
 def assegnazioni_persona(conn: sqlite3.Connection, persona_id: int, dal: date,
-                         al: date) -> list[tuple[int, Assegnazione]]:
-    """Turni di una persona che iniziano tra `dal` e `al` (inclusi), come coppie (id, Assegnazione)."""
-    rows = conn.execute(
-        "SELECT * FROM assegnazioni WHERE persona_id = ? AND data >= ? AND data <= ? ORDER BY data, fascia, id",
-        (persona_id, dal.isoformat(), al.isoformat())).fetchall()
-    return [(r["id"], _a_assegnazione(r)) for r in rows]
+                         al: date, versione: str = "effettivi") -> list[tuple[int, Assegnazione]]:
+    return [(aid, a) for aid, a in assegnazioni_periodo(conn, dal, al, versione)
+            if a.persona_id == persona_id]
 
 
 def ferie_sovrapposte(conn: sqlite3.Connection, persona_id: int, dal: date, al: date) -> bool:
@@ -682,7 +756,18 @@ def crea_ferie(conn: sqlite3.Connection, persona_id: int, dal: date, al: date, m
     with conn:
         cur = conn.execute("INSERT INTO ferie(persona_id, dal, al, motivo) VALUES (?, ?, ?, ?)",
                            (persona_id, dal.isoformat(), al.isoformat(), motivo))
-    return _ferie_dict(conn.execute("SELECT * FROM ferie WHERE id = ?", (cur.lastrowid,)).fetchone())
+        ferie_id = cur.lastrowid
+        if motivo == "malattia":
+            effettivi = dict(assegnazioni_periodo(conn, dal, al))
+            for aid, a in assegnazioni_persona(conn, persona_id, dal, al, "generati"):
+                # Materializzare prima il titolare operativo, anche se diverso.
+                attuale = effettivi.get(aid)
+                imposta_titolare_effettivo(conn, aid, attuale.persona_id if attuale else None)
+                conn.execute("INSERT OR IGNORE INTO assegnazioni_rimosse_generati(assegnazione_id) VALUES (?)", (aid,))
+            for aid, a in effettivi.items():
+                if a.persona_id == persona_id:
+                    imposta_titolare_effettivo(conn, aid, None)
+    return _ferie_dict(conn.execute("SELECT * FROM ferie WHERE id = ?", (ferie_id,)).fetchone())
 
 
 def elimina_ferie(conn: sqlite3.Connection, ferie_id: int) -> bool:
@@ -818,6 +903,14 @@ def aggiorna_extra(conn: sqlite3.Connection, richiesta_id: int, data: date, nome
         conn.execute("UPDATE richieste_extra SET data = ?, nome = ?, inizio = ?, fine = ?, autisti = ?, "
                      "soccorritori = ? WHERE id = ?",
                      (data.isoformat(), nome, inizio, fine, autisti, soccorritori, richiesta_id))
+        for r in conn.execute(f"SELECT id FROM assegnazioni WHERE {_assegnazioni_extra_where()}",
+                              (EXTRA, prefisso, prefisso)).fetchall():
+            effettiva = get_assegnazione(conn, r["id"])
+            if effettiva is not None:
+                conn.execute("UPDATE assegnazioni SET persona_id = ? WHERE id = ?",
+                             (effettiva.persona_id, r["id"]))
+                conn.execute("DELETE FROM assegnazioni_effettive WHERE assegnazione_id = ?", (r["id"],))
+                conn.execute("DELETE FROM assegnazioni_rimosse_generati WHERE assegnazione_id = ?", (r["id"],))
         conn.execute(f"UPDATE assegnazioni SET data = ?, fascia = ?, segmento = ? WHERE {_assegnazioni_extra_where()}",
                      (data.isoformat(), fascia_extra(inizio), segmento_extra(richiesta_id, inizio, fine),
                       EXTRA, prefisso, prefisso))
@@ -827,7 +920,9 @@ def elimina_extra(conn: sqlite3.Connection, richiesta_id: int) -> bool:
     """Elimina la richiesta e le persone assegnate. False se non esiste."""
     prefisso = f"extra_{richiesta_id}_"
     with conn:
-        conn.execute(f"DELETE FROM assegnazioni WHERE {_assegnazioni_extra_where()}", (EXTRA, prefisso, prefisso))
+        for r in conn.execute(f"SELECT id FROM assegnazioni WHERE {_assegnazioni_extra_where()}",
+                              (EXTRA, prefisso, prefisso)).fetchall():
+            imposta_titolare_effettivo(conn, r["id"], None)
         return conn.execute("DELETE FROM richieste_extra WHERE id = ?", (richiesta_id,)).rowcount > 0
 
 
