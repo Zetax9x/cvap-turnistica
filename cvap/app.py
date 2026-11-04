@@ -1017,7 +1017,9 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
             precedente = db.get_settimana(conn, giorni[0])  # prima di sovrascrivere il report
             qualita_precedente = ((precedente or {}).get("report") or {}).get("qualita")
             fissi = [a for _, a in db.assegnazioni_periodo(conn, giorni[0], giorni[-1]) if a.origine != "generato"]
-            storico = calcola_storico([_settimana_passata(conn, r, "generati") for r in db.lista_settimane(conn, prima_di=inizio)])
+            storico = calcola_storico(
+                [_settimana_passata(conn, r, "generati") for r in db.lista_settimane(conn, prima_di=inizio)],
+                saldo_assenze_parziali=False)
             kwargs = {"tempo_max": body.tempo_max} if body and body.tempo_max else {}
 
             contesto = _contesto(conn, giorni)

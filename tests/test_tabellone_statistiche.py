@@ -78,3 +78,35 @@ def test_bozza_non_conta_anche_se_ha_turni_generati(client):
     assert r.status_code == 200
     assert r.json()["stato"] == "bozza"
     assert r.json()["sola_lettura"] is True
+
+
+@pytest.mark.parametrize("motivo", ["ferie", "malattia"])
+def test_saldo_assenza_parziale_e_intera_settimana_in_tutte_le_viste(client, motivo):
+    anna, bruno, carlo = [crea(client, nome)["id"] for nome in ("Anna", "Bruno", "Carlo")]
+    w = date(2026, 10, 19)
+    conn = db.apri(client.percorso_db)
+    try:
+        db.crea_ferie(conn, anna, w, w + timedelta(days=1), motivo=motivo)
+        db.crea_ferie(conn, carlo, w, w + timedelta(days=6), motivo=motivo)
+        turni = [Assegnazione(w + timedelta(days=i), "Acquasanta", "giorno", "intero", "autista", anna, "generato")
+                 for i in (2, 3)]
+        turni.append(Assegnazione(w + timedelta(days=5), "Acquasanta", "giorno", "mattina", "autista", anna, "generato"))
+        turni += [Assegnazione(w + timedelta(days=i), "Acquasanta", "giorno", "intero", "autista", bruno, "generato")
+                  for i in range(4)]
+        db.salva_generazione(conn, w, w + timedelta(days=6), turni, [anna, bruno, carlo], "2026-10-19", {})
+        db.imposta_stato(conn, w, "confermata")
+    finally:
+        conn.close()
+    for versione in ("generati", "effettivi"):
+        params = {"versione": versione}
+        righe = {r["persona_id"]: r for r in client.get("/api/statistiche", params=params).json()}
+        assert righe[anna]["ore_lavorate"] == 30
+        assert righe[anna]["ore_totali"] == 42
+        assert righe[anna]["saldo_ore"] == -3
+        assert righe[bruno]["saldo_ore"] == 3
+        assert carlo not in righe
+        ore = next(r for r in client.get("/api/statistiche/equita", params=params).json()["rotazioni"] if r["chiave"] == "ore")
+        dettaglio = next(d for d in ore["dipendenti"] if d["persona_id"] == anna)
+        assert dettaglio["fatti"] == 42
+        assert dettaglio["quota"] == 45
+        assert dettaglio["scarto"] == -3

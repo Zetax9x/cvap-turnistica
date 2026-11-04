@@ -20,7 +20,7 @@ def categoria_weekend(a: Assegnazione) -> str | None:
 @dataclass
 class StoricoPersona:
     settimane: int = 0
-    saldo_ore: float = 0.0  # ore lavorate in più (+) o in meno (-) rispetto alle medie settimanali
+    saldo_ore: float = 0.0  # ore contate in più (+) o in meno (-) rispetto alle medie settimanali
     weekend: dict[str, int] = field(default_factory=dict)
     ore_giorno: int = 0
     ore_notte: int = 0
@@ -99,7 +99,12 @@ def solo_generate(settimane: list[SettimanaPassata]) -> list[SettimanaPassata]:
     return [s for s in settimane if s.generata or any(a.origine == "generato" for a in s.assegnazioni)]
 
 
-def calcola_storico(settimane: list[SettimanaPassata]) -> dict[int, StoricoPersona]:
+def calcola_storico(settimane: list[SettimanaPassata], *, saldo_assenze_parziali: bool = True) -> dict[int, StoricoPersona]:
+    """Nel saldo contano anche le ore accreditate per assenze parziali.
+
+    Il generatore può mantenere la regola senza recupero nelle settimane con assenze
+    passando `saldo_assenze_parziali=False`.
+    """
     storico: dict[int, StoricoPersona] = {}
     for s in dalla_prima_generata(settimane):
         turni, extra = senza_sostituzioni(s.assegnazioni)
@@ -143,9 +148,9 @@ def calcola_storico(settimane: list[SettimanaPassata]) -> dict[int, StoricoPerso
                 else:
                     st.ascoli_notte += 1
         for pid, h in ore.items():
-            # con ferie nella settimana le ore mancanti non si recuperano dopo
-            if not s.giorni_ferie.get(pid):
+            giorni_assenza = s.giorni_ferie.get(pid, 0)
+            if saldo_assenze_parziali or not giorni_assenza:
                 # chi ha un massimo sotto la media si misura dal massimo: non va "recuperato"
                 rif = min(s.media_ore, s.max_ore[pid]) if pid in s.max_ore else s.media_ore
-                storico[pid].saldo_ore += h - rif
+                storico[pid].saldo_ore += h + ORE_FERIE_GIORNO * giorni_assenza - rif
     return storico
