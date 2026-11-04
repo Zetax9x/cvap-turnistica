@@ -30,13 +30,15 @@ def client(request, tmp_path, monkeypatch):
     return c
 
 
-def settimana_generata(client, inizio, dipendenti, turni):
+def settimana_generata(client, inizio, dipendenti, turni, *, confermata=True):
     """Salva una settimana 'generata' con i turni dati: (giorno, fascia, persona_id[, origine])."""
     conn = db.apri(client.percorso_db)
     try:
         nuove = [Assegnazione(d, "Acquasanta", fascia, "intero", "autista", pid, "generato")
                  for d, fascia, pid in turni]
         db.salva_generazione(conn, inizio, inizio + timedelta(days=6), nuove, list(dipendenti), "2026-10-01", {})
+        if confermata:
+            db.imposta_stato(conn, inizio, "confermata")
     finally:
         conn.close()
 

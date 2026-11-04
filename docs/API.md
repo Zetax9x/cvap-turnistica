@@ -133,6 +133,9 @@ Con `APP_PASSWORD` impostata (`create_app(..., password=...)`) tutte le API tran
     report                // ultimo report di generazione o null
   }
   ```
+- `GET /settimane/{data}/generati` → stesso payload della settimana, letto dalla versione Generati,
+  più `versione: "generati"` e `sola_lettura: true`. Consultazione disponibile anche in bozza; non salva modifiche.
+  Sul sito: «Visualizza tabellone generato», con PDF dedicato. Il tabellone operativo e le email restano sugli Effettivi.
 - `GET /settimane/{data}/copertura-preventiva` → `{settimana, solo_dipendenti, con_volontari}`. Entrambi gli
   scenari hanno `{stato: "copribile"|"non_copribile"|"da_verificare", scoperti, messaggio?}` e non salvano turni:
   impongono la copertura completa rispettando solo i vincoli rigidi. Il primo ignora i volontari; il secondo usa le
@@ -212,7 +215,7 @@ Con `APP_PASSWORD` impostata (`create_app(..., password=...)`) tutte le API tran
   `GET /ferie/{id}/turni` → `[{id, data, postazione, fascia, segmento, ruolo, settimana, ore}]`: turni della persona che iniziano
   nei giorni dell'assenza (`settimana` = lunedì), da far coprire · 404
 - `GET /statistiche` → `[{persona_id, nome, tipo, qualifica, settimane, ore_totali, ore_lavorate, ore_ferie, ore_malattia, saldo_ore, ore_giorno, ore_notte, weekend: {sab_giorno, sab_notte, dom_giorno, dom_notte}, standby, programmati, assistenze, sedi: {Acquasanta, Venarotta}, ascoli: {turni, giorno, notte}, festivi: {turni, per_festivita: [{festivita, turni, ultimo_anno}]}}]` (`festivi`: vedi "Festività nel generatore") (`ore_totali` = ore contate: lavorate + 6 h per giorno di ferie/malattia, nelle settimane non interamente di assenza; sedi = turni, anche mezzi, in ciascuna delle due sedi; il generatore le pareggia per ogni dipendente)
-  solo sulle settimane generate (`storico.solo_generate`; volontari: solo totali, saldo 0). La settimana resta inclusa anche dopo la rimozione di tutti i turni, grazie a `generata_il`.
+  solo sulle settimane generate e confermate (`stato = confermata`, poi `storico.solo_generate`; volontari: solo totali, saldo 0). Le bozze e le settimane compilate solo a mano sono escluse anche da ore e saldo. Riaprendo una settimana, i suoi dati escono dalle statistiche fino alla nuova conferma. La settimana confermata resta inclusa anche dopo la rimozione di tutti i turni, grazie a `generata_il`.
   Il generatore invece usa come storico tutte le settimane dalla prima generata in poi.
 - `GET /statistiche/indisponibilita?dal&al` (date facoltative, estremi inclusi; `dal > al` → 400, data non valida → 422) →
   `[{persona_id, nome, attivo, totale, giorni: [{totale, mattina, pomeriggio, notte} x7 (lunedì..domenica)]}]`:
@@ -609,8 +612,8 @@ Fase 8 di `docs/PIANO-rotazioni.md` (3.7). Modulo `cvap/prossime_festivita.py`; 
 non è valida). Logica in `cvap/equita.py` (`equita`, registro `ROTAZIONI`), route in `cvap/api_equita.py`.
 
 - Settimane: quelle che si sovrappongono al periodo (lunedì della settimana di `dal` … `al`). Lo storico si calcola
-  come per il generatore (`calcola_storico`): dalla prima settimana generata del periodo all'ultima generata, comprese
-  quelle compilate solo a mano in mezzo (quelle solo a mano dopo l'ultima generata non contano ancora). Con `dal` il
+  soltanto sulle settimane generate e confermate, come le statistiche generali: le bozze e quelle compilate solo a mano,
+  anche tra due settimane generate, sono escluse. Con `dal` il
   conteggio riparte dalla prima settimana generata del periodo; senza date, tutto lo storico. `settimane` e
   `andamento` elencano solo le settimane generate.
 - Dipendenti: gli attivi e i disattivati con turni nelle settimane contate (che entrano anche nel tasso del gruppo);

@@ -261,6 +261,7 @@ def test_conferma_blocca_e_riapri_sblocca(generata):
 
 def test_statistiche(generata):
     client, s, vol = generata
+    assert client.post(f"/api/settimane/{LUNEDI_A}/conferma").status_code == 200
     stats = client.get("/api/statistiche").json()
     per_id = {x["persona_id"]: x for x in stats}
     assert per_id[vol["id"]]["tipo"] == "volontario"
@@ -842,6 +843,7 @@ def test_ferie_non_fanno_recuperare_ore_la_settimana_dopo(client):
     ids = staff_14(client)
     client.post("/api/ferie", json={"persona_id": ids[0], "dal": "2026-10-19", "al": "2026-10-23"})
     assert client.post(f"/api/settimane/{LUNEDI_A}/genera", json={"tempo_max": 5}).status_code == 200
+    assert client.post(f"/api/settimane/{LUNEDI_A}/conferma").status_code == 200
     stats = {x["persona_id"]: x for x in client.get("/api/statistiche").json()}
     assert stats[ids[0]]["saldo_ore"] == 0
 
@@ -852,6 +854,7 @@ def test_statistiche_ore_totali_comprendono_ferie_e_malattia(client):
     client.post("/api/ferie", json={"persona_id": ids[0], "dal": "2026-10-21", "al": "2026-10-21",
                                     "motivo": "malattia"})
     assert client.post(f"/api/settimane/{LUNEDI_A}/genera", json={"tempo_max": 5}).status_code == 200
+    assert client.post(f"/api/settimane/{LUNEDI_A}/conferma").status_code == 200
     stats = {x["persona_id"]: x for x in client.get("/api/statistiche").json()}
     st = stats[ids[0]]
     assert st["ore_ferie"] == 12 and st["ore_malattia"] == 6
@@ -873,6 +876,7 @@ def test_statistiche_partono_dalla_prima_settimana_generata(client):
     stats = client.get("/api/statistiche").json()
     assert stats == []
     assert client.post(f"/api/settimane/{LUNEDI_A}/genera", json={"tempo_max": 5}).status_code == 200
+    assert client.post(f"/api/settimane/{LUNEDI_A}/conferma").status_code == 200
     stats = {x["persona_id"]: x for x in client.get("/api/statistiche").json()}
     assert all(x["settimane"] == 1 for x in stats.values())
     assert sum(x["ore_totali"] for x in stats.values()) == 672
@@ -884,6 +888,7 @@ def test_statistiche_contano_solo_le_settimane_generate(client):
     ids = staff_14(client)
     vol = crea(client, "Volontario", "volontario", "soccorritore")
     assert client.post(f"/api/settimane/{LUNEDI_A}/genera", json={"tempo_max": 5}).status_code == 200
+    assert client.post(f"/api/settimane/{LUNEDI_A}/conferma").status_code == 200
     # settimana dopo: solo turni inseriti a mano e confermata, senza generazione
     assert prenota(client, LUNEDI_B, ids[0], ruolo="autista").status_code == 201
     assert prenota(client, LUNEDI_B, vol["id"], postazione="Venarotta").status_code == 201
@@ -892,6 +897,7 @@ def test_statistiche_contano_solo_le_settimane_generate(client):
     terza = "2026-11-02"
     assert client.post(f"/api/settimane/{terza}/genera", json={"tempo_max": 5}).status_code == 200
     assert client.delete(f"/api/settimane/{terza}/generati").status_code == 200
+    assert client.post(f"/api/settimane/{terza}/conferma").status_code == 200
     stats = {x["persona_id"]: x for x in client.get("/api/statistiche").json()}
     assert all(x["settimane"] == 2 for x in stats.values() if x["tipo"] == "dipendente")
     assert sum(x["ore_totali"] for x in stats.values()) == 672

@@ -53,8 +53,10 @@ def crea_router(connessione: Callable, settimana_passata: Callable[..., Settiman
         if dal > al:
             raise errore("La data di inizio è dopo quella di fine")
         # le settimane che si sovrappongono al periodo; contano solo quelle con turni generati (come le statistiche)
-        righe = [r for r in db.lista_settimane(conn) if lunedi(dal) <= date.fromisoformat(r["inizio"]) <= al]
+        righe = [r for r in db.lista_settimane(conn)
+                 if r["stato"] == "confermata" and lunedi(dal) <= date.fromisoformat(r["inizio"]) <= al]
         settimane = [(date.fromisoformat(r["inizio"]), settimana_passata(conn, r, versione=versione)) for r in righe]
+        settimane = [(inizio, s) for inizio, s in settimane if solo_generate([s])]
         quadro = equita(settimane, db.lista_persone(conn), postazioni_vietate(conn),
                         extra=rotazioni_festivita(conn, al_richiesto, versione=versione))
         contate = [inizio.isoformat() for inizio, s in settimane if solo_generate([s])]
