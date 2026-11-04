@@ -105,6 +105,7 @@ export const api = {
   salvaImpostazioni: (dati) => richiesta("PUT", "/impostazioni", dati),
 
   settimana: (data) => richiesta("GET", `/settimane/${enc(data)}`),
+  tabelloneGenerato: (data) => richiesta("GET", `/settimane/${enc(data)}/generati`),
   coperturaPreventiva: (data) => richiesta("GET", `/settimane/${enc(data)}/copertura-preventiva`),
   aggiungiAssegnazione: (data, dati) => richiesta("POST", `/settimane/${enc(data)}/assegnazioni`, dati),
   eliminaAssegnazione: (id) => richiesta("DELETE", `/assegnazioni/${enc(id)}`),

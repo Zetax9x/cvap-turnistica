@@ -242,6 +242,8 @@ def prepara(ambiente):
         db.crea_assegnazione(conn, ass(giorno(W1, 4), "Acquasanta", "giorno", vol, origine="volontario"))
         db.salva_generazione(conn, W2, giorno(W2, 6), [ass(giorno(W2, 0), STANDBY, "giorno", a)],
                              [a, b, c, ex], "2026-10-25T10:00:00", {})
+        db.imposta_stato(conn, W1, "confermata")
+        db.imposta_stato(conn, W2, "confermata")
         # terza settimana compilata solo a mano: non conta
         db.crea_assegnazione(conn, ass(giorno(W3, 0), STANDBY, "giorno", b, origine="manuale"))
         db.imposta_stato(conn, W3, "confermata")

@@ -355,9 +355,9 @@ class _DatiSettimana:
         return "malattia" if (persona_id, giorno) in self.malattia else "ferie"
 
 
-def _dati_settimana(conn, inizio: date) -> _DatiSettimana:
+def _dati_settimana(conn, inizio: date, versione: str = "effettivi") -> _DatiSettimana:
     giorni, tipo, attive = _info_settimana(conn, inizio)
-    righe = db.assegnazioni_periodo(conn, giorni[0], giorni[-1])
+    righe = db.assegnazioni_periodo(conn, giorni[0], giorni[-1], versione=versione)
     persone = {p["id"]: p for p in db.lista_persone(conn)}
     presenti = {a.persona_id for _, a in righe}
     # volontari + dipendenti attivi + chiunque (anche disattivato) abbia turni questa settimana
@@ -366,15 +366,15 @@ def _dati_settimana(conn, inizio: date) -> _DatiSettimana:
                  if p["tipo"] == "volontario" or p["attivo"] or pid in presenti}
     return _DatiSettimana(
         giorni=giorni, tipo=tipo, attive=attive, fabbisogno=_fabbisogno_attivo(conn, giorni, tipo), righe=righe,
-        persone=persone, rilevanti=rilevanti, contesto=_contesto(conn, giorni),
+        persone=persone, rilevanti=rilevanti, contesto=_contesto(conn, giorni, versione=versione),
         ferie=db.ferie_periodo(conn, giorni[0], giorni[-1]),
         malattia=db.giorni_malattia(conn, giorni[0], giorni[-1]),
         indisponibili=db.indisponibili_periodo(conn, giorni[0], giorni[-1]),
         scarto_ore_max=db.get_scarto_ore_max(conn))
 
 
-def payload_settimana(conn: sqlite3.Connection, inizio: date) -> dict:
-    d = _dati_settimana(conn, inizio)
+def payload_settimana(conn: sqlite3.Connection, inizio: date, versione: str = "effettivi") -> dict:
+    d = _dati_settimana(conn, inizio, versione=versione)
     giorni, tipo, attive, fabbisogno, righe = d.giorni, d.tipo, d.attive, d.fabbisogno, d.righe
     assegnazioni, persone, rilevanti, contesto = d.assegnazioni, d.persone, d.rilevanti, d.contesto
     ferie, malattia, indisponibili, scarto_ore_max = d.ferie, d.malattia, d.indisponibili, d.scarto_ore_max
@@ -844,6 +844,11 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
     @app.get("/api/settimane/{data}")
     def get_settimana(data: str, conn: Conn):
         return payload_settimana(conn, lunedi(_data(data)))
+
+    @app.get("/api/settimane/{data}/generati")
+    def get_tabellone_generato(data: str, conn: Conn):
+        return {**payload_settimana(conn, lunedi(_data(data)), versione="generati"),
+                "versione": "generati", "sola_lettura": True}
 
     @app.get("/api/settimane/{data}/copertura-preventiva")
     def copertura_preventiva(data: str, conn: Conn):
@@ -1339,9 +1344,9 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
     # --- statistiche ---
     @app.get("/api/statistiche")
     def statistiche(conn: Conn, versione: Literal["generati", "effettivi"] = "effettivi"):
-        righe = db.lista_settimane(conn)
-        # solo le settimane con turni generati (anche per i volontari, contati più sotto); il generatore
-        # invece usa tutte quelle dalla prima generata, per non perdere il saldo ore
+        righe = [r for r in db.lista_settimane(conn) if r["stato"] == "confermata"]
+        # Nelle statistiche contano solo settimane generate e confermate.
+        # Il generatore mantiene il proprio storico, incluse le bozze.
         passate = solo_generate([_settimana_passata(conn, r, versione) for r in righe])
         storico = calcola_storico(passate)
         persone = {p["id"]: p for p in db.lista_persone(conn)}
@@ -1408,7 +1413,8 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
     def statistiche_festivi(conn: Conn, versione: Literal["generati", "effettivi"] = "effettivi"):
         """Turni festivi di chi non è nella tabella delle statistiche (es. ex dipendenti dello storico importato)."""
         persone = {p["id"] for p in db.lista_persone(conn)}
-        passate = solo_generate([_settimana_passata(conn, r, versione) for r in db.lista_settimane(conn)])
+        passate = solo_generate([_settimana_passata(conn, r, versione) for r in db.lista_settimane(conn)
+                                 if r["stato"] == "confermata"])
         in_tabella = [pid for pid in calcola_storico(passate) if pid in persone]
         return {"fuori_tabella": dati_festivi.festivi_statistiche(conn, in_tabella, versione=versione)[1]}
 

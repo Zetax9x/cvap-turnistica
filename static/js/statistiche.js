@@ -155,7 +155,7 @@ function render() {
   root.append(renderSchede(""), el("header", { class: "view-header" },
     el("div", { class: "view-header-riga" }, el("h1", {}, titoloVersione("Statistiche")), bottoneStampa()),
     el("p", { class: "muted" },
-      "Dati cumulati sulle settimane con turni generati (le settimane compilate solo a mano non contano). Il saldo ore indica la differenza rispetto alla media dei dipendenti (per i volontari è sempre 0).")));
+      "Contano solo le settimane generate e confermate: le bozze e le settimane compilate solo a mano sono escluse. Il saldo ore somma, settimana per settimana, le ore in più (+) o in meno (−) rispetto alla media dei dipendenti. Le settimane con ferie o malattia non modificano il saldo della persona assente; per chi ha un limite di ore, il riferimento non supera quel limite. Per i volontari il saldo è sempre 0.")));
 
   root.append(el("div", { class: "filtri", role: "group", "aria-label": "Filtra per tipo" },
     [["tutti", "Tutti"], ["dipendente", "Dipendenti"], ["volontario", "Volontari"]].map(([v, t]) =>

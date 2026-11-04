@@ -329,9 +329,49 @@ function renderToolbar(s) {
     primaria,
     s.cambi_attivi ? el("span", { class: "muted" }, "Ci sono cambi turno registrati. Puoi modificare i singoli posti a mano; la rigenerazione è bloccata.") : null,
     !confermata && haGenerati ? el("button", { type: "button", class: "btn", disabled: dis || s.cambi_attivi, onclick: onGenera, title: s.cambi_attivi ? "Sono presenti cambi turno: modifica i singoli posti a mano." : "" }, "Rigenera turni") : null,
+    el("button", { type: "button", class: "btn", disabled: dis, onclick: () => apriTabelloneGenerato(s.inizio) }, "Visualizza tabellone generato"),
     altre,
     el("span", { class: "toolbar-spacer" }),
   );
+}
+
+async function apriTabelloneGenerato(inizio) {
+  const d = el("dialog", { class: "dialog dialog-generati", "aria-labelledby": "generati-titolo" });
+  const testata = el("header", { class: "week-header" },
+    el("h2", { id: "generati-titolo" }, "Tabellone Generati"),
+    el("p", {}, `Dal ${ddmm(inizio)} al ${dataLunga(addDays(inizio, 6))} · sola lettura`),
+    el("p", { class: "muted" }, "Questo tabellone non comprende i cambi turno tra dipendenti. Include le modifiche del responsabile e i turni tolti per malattia o infortunio."));
+  const contenuto = el("div", { "aria-live": "polite" }, "Caricamento del tabellone…");
+  const pdf = el("button", { type: "button", class: "btn btn-primary", disabled: true }, "Scarica PDF Generati");
+  d.append(el("div", { class: "dialog-head" }, testata,
+    el("button", { type: "button", class: "dialog-x", "aria-label": "Chiudi", onclick: () => d.close() }, "×")),
+    contenuto,
+    el("div", { class: "dialog-actions" },
+      el("button", { type: "button", class: "btn", onclick: () => d.close() }, "Chiudi"), pdf));
+  d.addEventListener("close", () => d.remove(), { once: true });
+  document.body.append(d);
+  d.showModal();
+  try {
+    const s = await api.tabelloneGenerato(inizio);
+    if (!d.isConnected) return;
+    const griglie = el("div", { class: "griglie", "data-giorno": String(giornoMobile(s)) });
+    for (const postazione of [...s.postazioni, ...postazioniSpecialiVisibili(s)]) griglie.append(renderGriglia(s, postazione));
+    griglie.append(renderGrigliaExtra(s));
+    clear(contenuto).append(renderSelettoreGiorno(s, griglie), griglie);
+    pdf.disabled = false;
+    pdf.onclick = async () => {
+      pdf.disabled = true;
+      try {
+        await scaricaPdf([testata, griglie], `tabellone-generati-${inizio}`, { orientamento: "landscape", modalita: "tabellone" });
+      } catch (err) {
+        toast(err.message, "errore");
+      } finally {
+        pdf.disabled = false;
+      }
+    };
+  } catch (err) {
+    if (d.isConnected) clear(contenuto).append(el("p", { role: "alert" }, `Impossibile caricare il tabellone: ${err.message}`));
+  }
 }
 
 function renderLegenda(conSpeciali) {
@@ -592,7 +632,7 @@ function thGiorno(s, data, conLiberi = false) {
     feste ? el("span", { class: "giorno-festa" }, feste) : null,
   ];
   return el("th", { scope: "col", class: classi },
-    conLiberi
+    conLiberi && !s.sola_lettura
       ? el("button", {
         type: "button", class: "giorno-btn", title: "Chi è libero questo giorno",
         "aria-label": `${GIORNI_BREVI[i]} ${ddmm(data)}${feste ? `, ${feste}` : ""}: chi è libero`,
@@ -632,7 +672,7 @@ function renderGriglia(s, postazione) {
     tbody.append(tr);
   }
 
-  const idTitolo = `griglia-${postazione.replace(/[^\w-]/g, "_")}`;
+  const idTitolo = `${s.sola_lettura ? "generati-" : ""}griglia-${postazione.replace(/[^\w-]/g, "_")}`;
   return el("section", { class: `griglia-blocco${speciale ? " griglia-speciale" : ""}`, "aria-labelledby": idTitolo },
     el("h2", { id: idTitolo, class: "griglia-titolo" }, postazione,
       speciale ? el("span", { class: "griglia-sottotitolo muted" }, " · solo i turni richiesti") : null,
@@ -755,7 +795,7 @@ function renderCella(s, cella, scopertiReport, violazioni, confermata, tag = "td
   if (lista.some((a) => a.origine === "manuale")) classi.push("cella-manuale");
 
   return el(tag, { class: classi.join(" ") },
-    el("button", {
+    s.sola_lettura ? el("div", { class: "cella-btn", "aria-label": etichettaCella }, contenuto) : el("button", {
       type: "button", class: "cella-btn", "aria-label": etichettaCella,
       title: confermata ? "Settimana confermata (sola lettura)" : "Modifica assegnazioni",
       onclick: () => apriDialog(cella),
@@ -1322,7 +1362,8 @@ function cellaExtra(e, ruolo) {
 
 /** Tabellone delle Assistenze ed Extra (tutte le settimane): in ogni giorno le richieste, con i loro posti. */
 function renderGrigliaExtra(s) {
-  const confermata = s.stato === "confermata";
+  const confermata = s.stato === "confermata" || s.sola_lettura;
+  const idTitolo = s.sola_lettura ? "generati-griglia-extra" : "griglia-extra";
   const scopertiReport = new Set(((s.report && s.report.scoperti) || []).map((u) => chiaveCella(u)));
   const violazioni = indiceViolazioni(s);
   const richieste = s.extra || [];
@@ -1358,9 +1399,9 @@ function renderGrigliaExtra(s) {
     celle));
   return el("section", {
     class: `griglia-blocco griglia-speciale griglia-extra${richieste.length ? "" : " griglia-vuota"}`,
-    "aria-labelledby": "griglia-extra",
+    "aria-labelledby": idTitolo,
   },
-  el("h2", { id: "griglia-extra", class: "griglia-titolo" }, EXTRA,
+  el("h2", { id: idTitolo, class: "griglia-titolo" }, EXTRA,
     el("span", { class: "griglia-sottotitolo muted no-print" },
       confermata ? "" : " · premi “+ Richiesta” nel giorno per aggiungerne una")),
   el("div", { class: "griglia-scroll" }, el("table", { class: "griglia" }, thead, tbody)));

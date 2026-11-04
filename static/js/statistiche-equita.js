@@ -53,12 +53,12 @@ function render() {
 
   const visibili = settimane.length ? rotazioni : [];
   if (!settimane.length) {
-    root.append(el("p", { class: "muted" }, "Nessuna settimana con turni generati nel periodo scelto."));
+    root.append(el("p", { class: "muted" }, "Nessuna settimana generata e confermata nel periodo scelto."));
     if (!visibili.length) return;
   } else {
     root.append(el("p", { class: "hint" }, settimane.length === 1
-      ? `1 settimana con turni generati: quella del ${dataLunga(settimane[0])}.`
-      : `${settimane.length} settimane con turni generati, dalla settimana del ${dataLunga(settimane[0])} `
+      ? `1 settimana generata e confermata: quella del ${dataLunga(settimane[0])}.`
+      : `${settimane.length} settimane generate e confermate, dalla settimana del ${dataLunga(settimane[0])} `
         + `a quella del ${dataLunga(settimane[settimane.length - 1])}.`));
   }
 
@@ -247,7 +247,7 @@ function barra(r, d, scala) {
 // ---------- periodo ----------
 
 function descriviPeriodo() {
-  if (!stato.dal && !stato.al) return "tutte le settimane con turni generati";
+  if (!stato.dal && !stato.al) return "tutte le settimane generate e confermate";
   return [stato.dal ? `dal ${dataLunga(stato.dal)}` : null, stato.al ? `al ${dataLunga(stato.al)}` : null]
     .filter(Boolean).join(" ");
 }
@@ -282,5 +282,5 @@ function renderPeriodo() {
         type: "button", class: "btn btn-ghost",
         onclick: () => { stato.dal = ""; stato.al = ""; stato.bozza = { dal: "", al: "" }; carica(); },
       }, "Tutto il periodo")
-      : el("span", { class: "muted" }, "Senza date: tutte le settimane con turni generati."));
+      : el("span", { class: "muted" }, "Senza date: tutte le settimane generate e confermate."));
 }
