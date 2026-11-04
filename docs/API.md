@@ -86,7 +86,10 @@ Vincolo rigido del generatore e `errore` nel validatore (codice `ferie` / `indis
 le ferie sì: la quota di ore della settimana è `media * giorni_disponibili / 7`, dove `media` è la media di un
 dipendente a tempo pieno (ore totali / (somma dei giorni disponibili / 7)); la banda ±12h vale sulla quota. Chi è in
 ferie tutta la settimana non entra nella media. Nello storico una settimana con ferie non modifica il saldo ore
-(niente recupero dopo) e una settimana tutta di ferie non conta.
+(niente recupero dopo) per il generatore; una settimana tutta di ferie non conta.
+Nelle statistiche e nell'equità, invece, le assenze parziali contribuiscono al saldo:
+ore lavorate + 6 ore per ogni giorno di ferie/malattia − media settimanale
+(riferimento limitato al massimo personale, se presente). Solo le assenze dell'intera settimana sono escluse.
 
 Media ore di una settimana passata = media a tempo pieno dei dipendenti in `settimane.dipendenti`, pesata sui giorni
 non di ferie (calcolata dalle assegnazioni reali, così le modifiche manuali contano).

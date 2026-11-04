@@ -1,5 +1,7 @@
 from datetime import timedelta
 
+import pytest
+
 from cvap.calendario import giorni_settimana
 from cvap.storico import SettimanaPassata, calcola_storico, dalla_prima_generata
 
@@ -50,10 +52,22 @@ def test_settimana_con_ferie_non_crea_ore_da_recuperare():
     a = [ass(GIORNI[i], "Acquasanta", "giorno", "autista", 1) for i in (0, 2, 4, 6)]  # 48h
     a += [ass(GIORNI[i], "Acquasanta", "notte", "autista", 2) for i in (5,)]          # 12h, ferie lun-ven
     s = calcola_storico([SettimanaPassata(media_ore=48, dipendenti=[1, 2], assegnazioni=a,
-                                          giorni_ferie={2: 5})])
+                                          giorni_ferie={2: 5})], saldo_assenze_parziali=False)
     assert s[2].saldo_ore == 0
     assert s[2].settimane == 1 and s[2].ore_notte == 12
     assert s[1].saldo_ore == 0
+
+
+@pytest.mark.parametrize("giorni_malattia", [{}, {1: 1}, {1: 2}])
+def test_saldo_con_assenza_parziale_conta_ore_lavorate_e_accreditate(giorni_malattia):
+    # Caso dello screenshot: 30 lavorate + 12 di assenza = 42, media 45,1.
+    a = [ass(GIORNI[i], "Acquasanta", "giorno", "autista", 1) for i in (2, 4)]
+    a += [ass(GIORNI[5], "Acquasanta", "giorno", "autista", 1, segmento="mattina")]
+    s = calcola_storico([SettimanaPassata(45.1, [1], a, giorni_ferie={1: 2},
+                                         giorni_malattia=giorni_malattia)])
+    assert s[1].ore_contate == 42
+    assert s[1].saldo_ore == pytest.approx(-3.1)
+    assert s[1].settimane == 1
 
 
 def test_settimana_tutta_in_ferie_non_conta():
