@@ -328,7 +328,10 @@ function renderToolbar(s) {
   return el("div", { class: "toolbar", role: "group", "aria-label": "Azioni settimana" },
     primaria,
     s.cambi_attivi ? el("span", { class: "muted" }, "Ci sono cambi turno registrati. Puoi modificare i singoli posti a mano; la rigenerazione è bloccata.") : null,
-    !confermata && haGenerati ? el("button", { type: "button", class: "btn", disabled: dis || s.cambi_attivi, onclick: onGenera, title: s.cambi_attivi ? "Sono presenti cambi turno: modifica i singoli posti a mano." : "" }, "Rigenera turni") : null,
+    !confermata && (haGenerati || s.assegnazioni.length || s.cambi_attivi) ? el("button", {
+      type: "button", class: "btn", disabled: dis || s.cambi_attivi, onclick: onGenera,
+      title: s.cambi_attivi ? "Sono presenti cambi turno: modifica i singoli posti a mano." : "",
+    }, haGenerati ? "Rigenera turni" : "Genera turni") : null,
     el("button", { type: "button", class: "btn", disabled: dis, onclick: () => apriTabelloneGenerato(s.inizio) }, "Visualizza tabellone generato"),
     altre,
     el("span", { class: "toolbar-spacer" }),
