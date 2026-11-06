@@ -104,8 +104,8 @@ def colleghi_turno(s: dict, turno: dict) -> str:
         da, a_ora = max(dal, inizio), min(al, fine)
         if da < a_ora:
             nota = "" if (da, a_ora) == (dal, al) else f" ({da % 24}\u2013{a_ora % 24})"
-            colleghi.add(a["persona_nome"] + nota)
-    return ", ".join(sorted(colleghi, key=str.casefold))
+            colleghi.add((da, a_ora, a["persona_nome"] + nota))
+    return ", ".join(nome for _, _, nome in sorted(colleghi, key=lambda c: (c[0], c[1], c[2].casefold())))
 
 
 def turni_personali(s: dict, pid: int, etichetta=orario_turno, *, con_colleghi=False) -> list[dict]:

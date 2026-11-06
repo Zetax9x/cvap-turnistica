@@ -167,15 +167,19 @@ async function nuovoLink(persona, mostraLink) {
 /** Per ogni giorno: turni della persona e contenuto da mostrare (turni, ferie, indisponibilità o riposo). */
 function colleghiTurno(s, turno) {
   const dal = oraInizio(turno.fascia, turno.segmento), al = dal + turno.ore;
-  const nomi = new Set();
+  const nomi = new Map();
   for (const a of s.assegnazioni) {
     if (a.persona_id === turno.persona_id || a.data !== turno.data || a.postazione !== turno.postazione
         || (a.postazione === "Assistenze ed Extra" && a.segmento !== turno.segmento)) continue;
     const inizio = oraInizio(a.fascia, a.segmento);
     const da = Math.max(dal, inizio), fino = Math.min(al, inizio + a.ore);
-    if (da < fino) nomi.add(a.persona_nome + (da === dal && fino === al ? "" : ` (${da % 24}–${fino % 24})`));
+    if (da < fino) {
+      const nome = a.persona_nome + (da === dal && fino === al ? "" : ` (${da % 24}–${fino % 24})`);
+      nomi.set(nome, { nome, inizio: da, fine: fino });
+    }
   }
-  return [...nomi].sort((a, b) => a.localeCompare(b, "it")).join(", ");
+  return [...nomi.values()].sort((a, b) => a.inizio - b.inizio || a.fine - b.fine
+    || a.nome.localeCompare(b.nome, "it")).map((x) => x.nome).join(", ");
 }
 
 function giorniPersona(s, persona) {

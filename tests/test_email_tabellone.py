@@ -98,23 +98,23 @@ def test_colleghi_solo_nelle_ore_e_nel_servizio_condivisi():
     from cvap.email_turni import colleghi_turno, _html_personale
     s = settimana([
         a("Acquasanta", "giorno", "intero", nome="Mario"),
-        a("Acquasanta", "giorno", "mattina", "soccorritore", nome="Anna"),
-        a("Acquasanta", "giorno", "pomeriggio", "soccorritore", nome="Luca"),
+        a("Acquasanta", "giorno", "pomeriggio", "soccorritore", nome="Anna"),
+        a("Acquasanta", "giorno", "mattina", "soccorritore", nome="Luca"),
         a("Acquasanta", "notte", "intero", nome="Notturno"),
         a("Venarotta", "giorno", "intero", nome="Altrove"),
     ])
-    assert colleghi_turno(s, s["assegnazioni"][0]) == "Anna (8–14), Luca (14–20)"
+    assert colleghi_turno(s, s["assegnazioni"][0]) == "Luca (8–14), Anna (14–20)"
     assert colleghi_turno(s, s["assegnazioni"][1]) == "Mario"
     assert colleghi_turno(s, s["assegnazioni"][3]) == ""
     html = _html_personale(s, 1)
-    assert "Con Anna (8–14), Luca (14–20)" in html
+    assert "Con Luca (8–14), Anna (14–20)" in html
     assert "Notturno" not in html and "Altrove" not in html
     from io import BytesIO
     from pypdf import PdfReader
     from cvap.pdf_turni_personali import genera
     pdf = PdfReader(BytesIO(genera(s, {"id": 1, "nome": "Mario"})))
     testo = " ".join(pdf.pages[0].extract_text().split())
-    assert "Con Anna (8–14), Luca (14–20)" in testo
+    assert "Con Luca (8–14), Anna (14–20)" in testo
     assert "Notturno" not in testo and "Altrove" not in testo
     assert float(pdf.pages[0].mediabox.width) > float(pdf.pages[0].mediabox.height)
 
