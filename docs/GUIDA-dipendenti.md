@@ -414,7 +414,23 @@ anno. Può stamparlo in anticipo, per esempio già in autunno per Natale.
 
 È un'indicazione: chi lavora davvero dipende anche dalle regole e dai posti da autista e da soccorritore.
 
-## 10. Domande frequenti
+## 10. I turni nel calendario del telefono
+
+Puoi avere i tuoi turni nel calendario del telefono (iPhone, Android, Google Calendar), così li vedi accanto ai
+tuoi impegni e ricevi i promemoria del calendario.
+
+- Chiedi al responsabile il **tuo link personale**: lo trova nella pagina "Turni dipendente".
+- **iPhone:** apri il link dal telefono e scegli di aggiungere il calendario, oppure vai in Impostazioni →
+  Calendario → Account → Aggiungi account → Altro → Aggiungi calendario sottoscritto e incolla il link.
+- **Android e Google Calendar:** dal computer apri calendar.google.com, poi Altri calendari → + → Da URL e incolla
+  il link. Il calendario compare anche sul telefono.
+- Ci sono i **turni confermati**, cambi turno compresi, per ognuno con orario, postazione, ruolo e colleghi.
+  Le settimane ancora in bozza non compaiono.
+- Si **aggiorna da solo**: l'iPhone più o meno ogni ora, Google ogni qualche ora. Fa sempre fede il tabellone.
+- Il link è **solo tuo**: chi lo ha vede i tuoi turni. Se finisce a qualcun altro, chiedi al responsabile un link
+  nuovo: quello vecchio smette subito di funzionare.
+
+## 11. Domande frequenti
 
 **Chi decide i turni: il programma o il responsabile?**
 
@@ -480,7 +496,7 @@ errore al responsabile.
 
 <div style="break-before: page"></div>
 
-## 11. Le regole in una pagina
+## 12. Le regole in una pagina
 
 | Regola | Come funziona |
 |--------|---------------|

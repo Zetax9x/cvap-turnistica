@@ -118,6 +118,14 @@ si sceglie cosa ricevere: turni della settimana, liberi, indisponibilità, stati
 indisponibilità. **Invia i riepiloghi** manda a ognuno le sue parti per la settimana scelta. Chi ha la spunta
 **Responsabile** riceve anche turni e liberi ogni volta che si inviano i turni della settimana al personale.
 
+## Turni nel calendario del telefono
+
+Ogni dipendente ha un link personale `/turni/<nome>-<codice>.ics` (pagina **Turni dipendente** → *Calendario sul
+telefono*) da aggiungere al calendario di iPhone, Android o Google Calendar: ci sono i turni effettivi (cambi turno
+compresi) delle settimane confermate, da due mesi fa a un anno avanti, e si aggiornano da soli. Il link non chiede la
+password del sito, perché i calendari non la possono inserire: lo protegge il codice segreto. **Nuovo link** lo
+cambia e quello vecchio smette subito di funzionare.
+
 ## Impostazioni
 
 Per registrare cessioni e scambi da smartphone, condividere il link `/cambio-turno`. Lo storico, il reinvio delle comunicazioni e gli annullamenti si trovano nella sezione **Cambi**. Vedi la [guida ai cambi turno](docs/CAMBI-TURNO.md).
