@@ -57,10 +57,13 @@ function stiliEsportazione() {
   }
   const stile = document.createElement("style");
   stile.textContent = regole.join("\n") + `
+    /* Il contenitore deve restare fermo quando html2canvas passa dal telefono alla finestra virtuale da PC. */
+    .html2pdf__container { margin: 0 !important; }
     .pdf-esportazione { position: relative; z-index: auto; padding: 0; margin: 0;
       box-sizing: border-box; font-size: 10pt; background: #fff; color: #000; }
     .pdf-esportazione .griglia, .pdf-esportazione .tabella-liberi { width: 100%; min-width: 0; }
     .pdf-esportazione .griglie { display: block; }
+    .pdf-esportazione-tabellone .griglie .griglia tr > * { display: table-cell !important; }
     .pdf-esportazione .eq-freccia { display: none; }
     /* la tabella delle statistiche ha 14 colonne: nel PDF testo e spaziature più stretti, così entra nella pagina */
     .pdf-esportazione .tabella-stat { font-size: 7pt; }
@@ -137,6 +140,13 @@ export async function scaricaPdf(sorgenti, titolo, { orientamento = "portrait", 
   for (const sorgente of (Array.isArray(sorgenti) ? sorgenti : [sorgenti])) {
     if (!sorgente?.isConnected) continue;
     area.append(sorgente.cloneNode(true));
+  }
+  // Anche il tabellone Generati, aperto nel dialogo, usa gli stessi stili di stampa della settimana.
+  if (modalita === "tabellone" && !area.querySelector("#view-settimana")) {
+    const settimana = document.createElement("section");
+    settimana.id = "view-settimana";
+    settimana.append(...area.childNodes);
+    area.append(settimana);
   }
   // Questi pulsanti contengono dati, non comandi (celle, giorni, ordinamenti, righe dell'equità): conserviamo nomi e date.
   // I comandi veri hanno sempre la classe .btn e vengono tolti qui sotto.
