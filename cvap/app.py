@@ -1126,9 +1126,8 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
         # con le sole modifiche solo se qualche turno è davvero cambiato
         responsabili = []
         if not body.solo_modifiche or any(d["stato"] == "cambiata" for d in lista):
-            # chi è anche nel personale riceve già la sua email (con il tabellone): niente doppione
-            gia = {d["email"].lower() for d in lista}
-            responsabili = [r for r in db.lista_destinatari(conn) if r["responsabile"] and r["email"].lower() not in gia]
+            # Il riepilogo completo serve anche a chi è responsabile e riceve già i propri turni personali.
+            responsabili = [r for r in db.lista_destinatari(conn) if r["responsabile"]]
         messaggi += [email_turni.componi_riepilogo(s, ["turni", "liberi"], r["email"], r["nome"],
                                                    aggiornamento=body.solo_modifiche) for r in responsabili]
         esito = postino.invia(messaggi)

@@ -83,18 +83,50 @@ def test_la_meta_scoperta_si_scrive_come_sul_sito():
     assert "Anna" in r[1] and "14–20 scoperto" in r[1]
 
 
-def test_anche_il_testo_semplice_ha_le_righe_dei_programmati():
+def test_il_testo_semplice_mostra_solo_il_turno_personale():
     s = settimana([a("Programmati", "giorno", "prog_pomeriggio", nome="Anna")],
                   [f("Programmati", "giorno", "prog_pomeriggio", quantita=2)])
     testo = _testo(s, "Anna", 1, "Turni")
-    prog = testo[testo.index("PROGRAMMATI"):]
-    assert "Notte" not in prog
-    assert "Mattina 7–14 Autista" in prog
-    riga = next(x for x in prog.splitlines() if "Pomeriggio 14–20 Autista" in x)
-    assert "Anna" in riga and "1 di 2 scoperto" in riga
+    assert "Pomeriggio 14–20" in testo and "Programmati" in testo
+    assert "Mattina 7–14" not in testo and "scoperto" not in testo
+    assert "TABELLONE" not in testo
 
 
 # --- "I tuoi turni" con le stesse etichette del sito --------------------------------------------
+
+def test_colleghi_solo_nelle_ore_e_nel_servizio_condivisi():
+    from cvap.email_turni import colleghi_turno, _html_personale
+    s = settimana([
+        a("Acquasanta", "giorno", "intero", nome="Mario"),
+        a("Acquasanta", "giorno", "mattina", "soccorritore", nome="Anna"),
+        a("Acquasanta", "giorno", "pomeriggio", "soccorritore", nome="Luca"),
+        a("Acquasanta", "notte", "intero", nome="Notturno"),
+        a("Venarotta", "giorno", "intero", nome="Altrove"),
+    ])
+    assert colleghi_turno(s, s["assegnazioni"][0]) == "Anna (8–14), Luca (14–20)"
+    assert colleghi_turno(s, s["assegnazioni"][1]) == "Mario"
+    assert colleghi_turno(s, s["assegnazioni"][3]) == ""
+    html = _html_personale(s, 1)
+    assert "Con Anna (8–14), Luca (14–20)" in html
+    assert "Notturno" not in html and "Altrove" not in html
+    from io import BytesIO
+    from pypdf import PdfReader
+    from cvap.pdf_turni_personali import genera
+    pdf = PdfReader(BytesIO(genera(s, {"id": 1, "nome": "Mario"})))
+    testo = " ".join(pdf.pages[0].extract_text().split())
+    assert "Con Anna (8–14), Luca (14–20)" in testo
+    assert "Notturno" not in testo and "Altrove" not in testo
+    assert float(pdf.pages[0].mediabox.width) > float(pdf.pages[0].mediabox.height)
+
+
+def test_colleghi_distinti_per_richiesta_extra():
+    from cvap.email_turni import colleghi_turno
+    s = settimana([
+        a("Assistenze ed Extra", "giorno", "intero", nome="Mario"),
+        a("Assistenze ed Extra", "giorno", "intero", "soccorritore", nome="Anna"),
+        a("Assistenze ed Extra", "giorno", "mattina", nome="Altro servizio"),
+    ])
+    assert colleghi_turno(s, s["assegnazioni"][0]) == "Anna"
 
 def test_i_turni_personali_hanno_le_etichette_del_sito():
     from cvap.email_turni import turni_personali
@@ -147,9 +179,8 @@ def test_tabellone_extra_con_nome_orario_persone_e_scoperti():
     assert "Partita stadio" in testo and "15–19" in testo
     assert "Anna" in testo and "Bruno" in testo and "1 di 2 scoperto" in testo
     t = _testo(s, "Anna", 1, "Turni")
-    sezione = t[t.index("ASSISTENZE ED EXTRA"):]
-    assert "Mar" in sezione and "Partita stadio 15–19" in sezione and "Anna" in sezione
-    assert "1 di 2 scoperto" in sezione
+    assert "Martedì" in t and "Partita stadio" in t and "15–19" in t
+    assert "Con Bruno" in t and "scoperto" not in t
 
 
 def test_nei_turni_personali_c_e_il_nome_della_richiesta():

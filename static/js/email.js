@@ -41,7 +41,7 @@ export async function apriInvio(data) {
   }
   const d = finestra();
   testa(d, "Invia i turni via email",
-    "Chi è di turno questa settimana (dipendente o volontario) riceve i propri turni e il tabellone completo.");
+    "Chi è di turno questa settimana (dipendente o volontario) riceve solo i propri turni, nella tabella dell’email e nel PDF allegato, con i nomi dei colleghi in servizio insieme.");
 
   if (!info.configurato) {
     d.append(el("div", { class: "banner banner-info" }, info.motivo || NON_CONFIGURATO));

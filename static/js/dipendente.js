@@ -165,6 +165,19 @@ async function nuovoLink(persona, mostraLink) {
 }
 
 /** Per ogni giorno: turni della persona e contenuto da mostrare (turni, ferie, indisponibilità o riposo). */
+function colleghiTurno(s, turno) {
+  const dal = oraInizio(turno.fascia, turno.segmento), al = dal + turno.ore;
+  const nomi = new Set();
+  for (const a of s.assegnazioni) {
+    if (a.persona_id === turno.persona_id || a.data !== turno.data || a.postazione !== turno.postazione
+        || (a.postazione === "Assistenze ed Extra" && a.segmento !== turno.segmento)) continue;
+    const inizio = oraInizio(a.fascia, a.segmento);
+    const da = Math.max(dal, inizio), fino = Math.min(al, inizio + a.ore);
+    if (da < fino) nomi.add(a.persona_nome + (da === dal && fino === al ? "" : ` (${da % 24}–${fino % 24})`));
+  }
+  return [...nomi].sort((a, b) => a.localeCompare(b, "it")).join(", ");
+}
+
 function giorniPersona(s, persona) {
   const ferie = new Map((s.ferie || []).filter((x) => x.persona_id === persona.id).map((x) => [x.data, x.motivo]));
   const indisp = new Map();  // data -> parti indisponibili
@@ -188,7 +201,8 @@ function giorniPersona(s, persona) {
             el("span", { class: "turno-sep" }, " · "),
             el("span", { class: "turno-postazione" }, a.postazione),
             el("span", { class: "turno-sep" }, " · "),
-            el("span", { class: "turno-ruolo" }, etichetta("ruolo", a.ruolo))),
+            el("span", { class: "turno-ruolo" }, etichetta("ruolo", a.ruolo)),
+            colleghiTurno(s, a) ? el("span", { class: "turno-colleghi" }, `Con ${colleghiTurno(s, a)}`) : null),
           a.origine === "sostituzione" ? el("span", { class: "chip-tag", title: "Sostituzione: ore extra" }, "extra") : null))));
       }
       if (ferie.has(g)) return badgeAssenza(ferie.get(g));

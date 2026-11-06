@@ -127,6 +127,18 @@ def test_il_responsabile_riceve_turni_e_liberi_con_l_invio_della_settimana(clien
     assert "Statistiche" not in capo  # con l'invio della settimana: solo turni e liberi
 
 
+def test_il_responsabile_che_lavora_riceve_anche_il_riepilogo_completo(client, postino):
+    mario = crea(client, "Mario", "mario@example.org")
+    turno(client, mario["id"], "2026-10-20")
+    aggiungi(client, "mario@example.org", ["turni"], "Mario", responsabile=True)
+    client.post(f"/api/settimane/{LUNEDI}/conferma")
+    r = client.post(f"/api/settimane/{LUNEDI}/email", json={})
+    assert r.status_code == 200
+    assert len(postino.inviati) == 2
+    assert sum("Dipendenti liberi" in contenuto(m) for m in postino.inviati) == 1
+    assert sum(bool(list(m.iter_attachments())) for m in postino.inviati) == 1
+
+
 def test_il_responsabile_riceve_l_aggiornamento_solo_se_qualcosa_cambia(client, postino):
     mario = crea(client, "Mario", "mario@example.org")
     turno(client, mario["id"], "2026-10-20")

@@ -1020,6 +1020,7 @@ a.btn { text-decoration: none; }
 
 /* ---------- Turni di un dipendente: tabella orizzontale solo in stampa ---------- */
 .turni-orizzontali { display: none; }
+.turno-colleghi { display: block; font-size: .85em; font-weight: 400; margin-top: .2rem; }
 
 @media print {
   .stampa-liberi { display: none !important; }

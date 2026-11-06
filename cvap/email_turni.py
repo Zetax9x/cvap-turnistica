@@ -1,4 +1,4 @@
-"""Email dei turni: per ogni persona i suoi turni della settimana e, sotto, il tabellone completo.
+"""Email personali con i soli turni del destinatario e PDF settimanale allegato.
 
 Lavora sul payload della settimana (`app.payload_settimana`), così mostra esattamente quello che
 si vede nella pagina. HTML con stili inline (i programmi di posta ignorano i fogli di stile) e
@@ -91,7 +91,24 @@ def _ruoli_extra(e: dict) -> list[str]:
     return [r for r, n in (("autista", e["autisti"]), ("soccorritore", e["soccorritori"])) if n > 0]
 
 
-def turni_personali(s: dict, pid: int, etichetta=orario_turno) -> list[dict]:
+def colleghi_turno(s: dict, turno: dict) -> str:
+    """Colleghi nello stesso servizio, limitati alle ore effettivamente condivise."""
+    dal, al = orario(date.fromisoformat(turno["data"]), turno["fascia"], turno["segmento"])
+    colleghi = set()
+    for a in s["assegnazioni"]:
+        if (a["persona_id"] == turno["persona_id"] or a["data"] != turno["data"]
+                or a["postazione"] != turno["postazione"]
+                or (a["postazione"] == EXTRA and a["segmento"] != turno["segmento"])):
+            continue
+        inizio, fine = orario(date.fromisoformat(a["data"]), a["fascia"], a["segmento"])
+        da, a_ora = max(dal, inizio), min(al, fine)
+        if da < a_ora:
+            nota = "" if (da, a_ora) == (dal, al) else f" ({da % 24}\u2013{a_ora % 24})"
+            colleghi.add(a["persona_nome"] + nota)
+    return ", ".join(sorted(colleghi, key=str.casefold))
+
+
+def turni_personali(s: dict, pid: int, etichetta=orario_turno, *, con_colleghi=False) -> list[dict]:
     """Un elemento per giorno: {data, turni: [{fascia, orario, postazione, ruolo}], assenza: None|ferie|malattia}."""
     assenze = _assenze(s, pid)
     giorni = []
@@ -101,7 +118,8 @@ def turni_personali(s: dict, pid: int, etichetta=orario_turno) -> list[dict]:
         giorni.append({
             "data": g,
             "turni": [{"fascia": a["fascia"], "orario": etichetta(a["fascia"], a["segmento"]),
-                       "postazione": _nome_postazione(s, a), "ruolo": RUOLI.get(a["ruolo"], a["ruolo"])}
+                       "postazione": _nome_postazione(s, a), "ruolo": RUOLI.get(a["ruolo"], a["ruolo"]),
+                       **({"colleghi": colleghi_turno(s, a)} if con_colleghi else {})}
                       for a in turni],
             "assenza": assenze.get(g),
         })
@@ -114,6 +132,19 @@ def impronta(s: dict, pid: int) -> str:
     cambiare le etichette dell'email non fa reinviare l'aggiornamento a tutti."""
     dati = json.dumps(turni_personali(s, pid, fascia_orario), sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(dati.encode()).hexdigest()
+
+
+def stato_giorno(s: dict, pid: int, giorno: dict) -> str:
+    if giorno["assenza"]:
+        return {"malattia": "Malattia", "infortunio": "Infortunio"}.get(giorno["assenza"], "Ferie")
+    parti = {x["parte"] for x in s.get("indisponibilita", [])
+             if x["persona_id"] == pid and x["data"] == giorno["data"]}
+    if not parti:
+        return "Riposo"
+    etichetta = ("tutto il giorno" if len(parti) == 3 else "giorno intero"
+                 if parti == {"mattina", "pomeriggio"} else
+                 " e ".join(p for p in ("mattina", "pomeriggio", "notte") if p in parti))
+    return f"Indisponibile: {etichetta}"
 
 
 def _postazioni(s: dict) -> list[str]:
@@ -186,38 +217,17 @@ def _ore(fascia: str, segmento: str) -> str:
 
 def _testo(s: dict, nome: str, pid: int, intestazione: str) -> str:
     righe = [intestazione, "", f"Ciao {nome},", "", "I TUOI TURNI"]
-    personali = turni_personali(s, pid)
+    personali = turni_personali(s, pid, con_colleghi=True)
     if not any(g["turni"] for g in personali):
         righe.append("Nessun turno questa settimana.")
     for g in personali:
         i = date.fromisoformat(g["data"]).weekday()
         if g["turni"]:
-            dett = "; ".join(f"{t['orario']} · {t['postazione']} · {t['ruolo']}" for t in g["turni"])
-        elif g["assenza"]:
-            dett = "Malattia" if g["assenza"] == "malattia" else "Ferie"
+            dett = "; ".join(f"{t['orario']} · {t['postazione']} · {t['ruolo']}"
+                             + (f" · Con {t['colleghi']}" if t["colleghi"] else "") for t in g["turni"])
         else:
-            dett = "Riposo"
+            dett = stato_giorno(s, pid, g)
         righe.append(f"{GIORNI[i]} {_dm(g['data'])}: {dett}")
-    righe += ["", "TABELLONE DELLA SETTIMANA"]
-    for postazione in _postazioni(s):
-        righe += ["", postazione.upper()]
-        for fascia, segmento, ruolo, turno in _righe(postazione):
-            celle = []
-            for g in s["giorni"]:
-                persone, scoperte = _cella(s, postazione, g, fascia, segmento, ruolo)
-                voci = [p["nome"] + (f" {p['orario']}" if p["orario"] else "") for p in persone] + scoperte
-                celle.append(f"{GIORNI_BREVI[date.fromisoformat(g).weekday()]} {', '.join(voci) or '—'}")
-            righe.append(f"  {turno} {RUOLI[ruolo]}: " + " | ".join(celle))
-    if s.get("extra"):
-        righe += ["", EXTRA.upper()]
-        for g in s["giorni"]:
-            for e in _richieste_extra(s, g):
-                posti = []
-                for ruolo in _ruoli_extra(e):
-                    persone, scoperte = _cella(s, EXTRA, g, e["fascia"], e["segmento"], ruolo)
-                    posti.append(f"{RUOLI[ruolo]}: " + (", ".join([p["nome"] for p in persone] + scoperte) or "—"))
-                righe.append(f"  {GIORNI_BREVI[date.fromisoformat(g).weekday()]} {_dm(g)} {e['nome']} "
-                             f"{_ore(e['fascia'], e['segmento'])} · " + " · ".join(posti))
     return "\n".join(righe) + "\n"
 
 
@@ -227,7 +237,7 @@ _TD = "border:1px solid #9aa3af;padding:6px 4px;text-align:center;vertical-align
 
 
 def _html_personale(s: dict, pid: int) -> str:
-    personali = turni_personali(s, pid)
+    personali = turni_personali(s, pid, con_colleghi=True)
     righe = []
     for g in personali:
         i = date.fromisoformat(g["data"]).weekday()
@@ -238,14 +248,11 @@ def _html_personale(s: dict, pid: int) -> str:
                 f'{GIORNO_BORDO if t["fascia"] == "giorno" else NOTTE_BORDO};background:'
                 f'{GIORNO_BG if t["fascia"] == "giorno" else NOTTE_BG};">'
                 f'{"☀" if t["fascia"] == "giorno" else "☾"} <b>{_e(t["orario"])}</b> · '
-                f'<b style="font-size:15px;">{_e(t["postazione"])}</b> · {_e(t["ruolo"])}</div>'
+                f'<b style="font-size:15px;">{_e(t["postazione"])}</b> · {_e(t["ruolo"])}'
+                + (f'<br>Con {_e(t["colleghi"])}' if t["colleghi"] else '') + '</div>'
                 for t in g["turni"])
-        elif g["assenza"] == "malattia":
-            contenuto = '<span style="color:#6e1d5a;font-weight:bold;">Malattia</span>'
-        elif g["assenza"]:
-            contenuto = '<span style="color:#24408a;font-weight:bold;">Ferie</span>'
         else:
-            contenuto = '<span style="color:#555;font-style:italic;">Riposo</span>'
+            contenuto = f'<span style="color:#555;font-style:italic;">{_e(stato_giorno(s, pid, g))}</span>'
         sfondo = "#fbf3e0" if i >= 5 else "#ffffff"
         righe.append(f'<tr style="background:{sfondo};"><td style="padding:8px;border-bottom:1px solid #d3d9e1;'
                      f'white-space:nowrap;vertical-align:top;">{giorno}</td>'
@@ -338,9 +345,7 @@ def _html(s: dict, nome: str, pid: int, intestazione: str, nota: str) -> str:
 <p style="font-size:15px;margin:12px 0;">Ciao <b>{_e(nome)}</b>, ecco i tuoi turni.</p>
 <h2 style="font-size:18px;margin:16px 0 8px;">I tuoi turni</h2>
 {_html_personale(s, pid)}
-<h2 style="font-size:18px;margin:24px 0 4px;">Tabellone della settimana</h2>
-<p style="margin:0 0 4px;font-size:12px;color:#4d5868;">Il tuo nome è sottolineato · in verde i volontari · in rosso i posti scoperti</p>
-{_html_tabellone(s, pid)}
+<p style="font-size:14px;">In allegato trovi il PDF con i tuoi turni della settimana.</p>
 <p style="margin:20px 0 0;font-size:12px;color:#4d5868;">Email inviata dal programma dei turni. Per cambi o problemi rivolgiti al coordinatore.</p>
 </div></div></body></html>"""
 
@@ -363,6 +368,9 @@ def componi(s: dict, persona: dict, indirizzo: str | None = None, *, aggiornamen
     m["Subject"] = oggetto
     m.set_content(_testo(s, persona["nome"], persona["id"], intestazione + (f"\n{nota}" if nota else "")))
     m.add_alternative(_html(s, persona["nome"], persona["id"], intestazione, nota), subtype="html")
+    from .pdf_turni_personali import genera
+    m.add_attachment(genera(s, persona), maintype="application", subtype="pdf",
+                     filename=f"turni-{persona['id']}-{s['inizio']}.pdf")
     return m
 
 

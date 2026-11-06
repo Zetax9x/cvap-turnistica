@@ -103,7 +103,7 @@ def test_si_invia_solo_una_settimana_confermata(client, postino):
     assert postino.inviati == []
 
 
-def test_ognuno_riceve_i_suoi_turni_e_il_tabellone(client, postino):
+def test_ognuno_riceve_solo_i_suoi_turni_con_pdf_personale(client, postino):
     mario = crea(client, "Mario", "mario@example.org")
     luca = crea(client, "Luca", "luca@example.org", qualifica="soccorritore")
     turno(client, mario["id"], "2026-10-20", "Venarotta", "notte")
@@ -120,7 +120,19 @@ def test_ognuno_riceve_i_suoi_turni_e_il_tabellone(client, postino):
     assert "19/10" in per["mario@example.org"]["Subject"]
     t = contenuto(per["mario@example.org"])
     assert "I tuoi turni" in t and "Venarotta" in t and "Notte" in t
-    assert "Luca" in t  # nel tabellone completo c'è anche il turno di Luca
+    assert "Luca" not in t and "Acquasanta" not in t
+    assert "Tabellone della settimana" not in t
+    from io import BytesIO
+    from pypdf import PdfReader
+    for indirizzo, nome, posto, altro in [("mario@example.org", "Mario", "Venarotta", "Luca"),
+                                         ("luca@example.org", "Luca", "Acquasanta", "Mario")]:
+        [pdf] = list(per[indirizzo].iter_attachments())
+        assert pdf.get_content_type() == "application/pdf"
+        lettore = PdfReader(BytesIO(pdf.get_payload(decode=True)))
+        testo = "\n".join(p.extract_text() for p in lettore.pages)
+        assert nome in testo and posto in testo and altro not in testo
+        assert len(lettore.pages) == 1
+        assert "Luned" in testo and "Domenica" in testo and "Riposo" in testo
     assert "calendar" not in per["mario@example.org"].get_content_type()
     assert not any(p.get_content_type() == "text/calendar" for p in per["mario@example.org"].walk())
 
