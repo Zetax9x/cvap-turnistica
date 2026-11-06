@@ -1,4 +1,4 @@
-# Piano: turni generati e turni effettivi
+P# Piano: turni generati e turni effettivi
 
 Data: 4 novembre 2026  
 Branch di lavoro: `feat/turni-generati-effettivi`  
