@@ -111,6 +111,8 @@ class AccessoIn(BaseModel):
 
 class InvioEmailIn(BaseModel):
     solo_modifiche: bool = False  # True: solo a chi non l'ha ancora ricevuta o ha i turni cambiati
+    persona_ids: list[int] | None = None  # None conserva l'invio completo; [] permette i soli responsabili
+    includi_responsabili: bool = True
 
 
 class ProvaEmailIn(BaseModel):
@@ -1119,15 +1121,23 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
         if s["stato"] != "confermata":
             raise _errore("Prima conferma la settimana: le email si inviano solo con i turni definitivi")
         lista, _ = destinatari(conn, s)
+        if body.persona_ids is not None:
+            scelti = set(body.persona_ids)
+            if scelti - {d["persona_id"] for d in lista}:
+                raise _errore("Uno dei destinatari scelti non è più disponibile: riapri la finestra di invio")
+            lista = [d for d in lista if d["persona_id"] in scelti]
         if body.solo_modifiche:
             lista = [d for d in lista if d["stato"] != "inviata"]
         messaggi = [email_turni.componi(s, d["_persona"], aggiornamento=d["stato"] == "cambiata") for d in lista]
         # i responsabili (Impostazioni) ricevono turni e liberi: sempre con l'invio completo,
         # con le sole modifiche solo se qualche turno è davvero cambiato
         responsabili = []
-        if not body.solo_modifiche or any(d["stato"] == "cambiata" for d in lista):
+        if body.includi_responsabili and (body.persona_ids is not None or not body.solo_modifiche
+                                         or any(d["stato"] == "cambiata" for d in lista)):
             # Il riepilogo completo serve anche a chi è responsabile e riceve già i propri turni personali.
             responsabili = [r for r in db.lista_destinatari(conn) if r["responsabile"]]
+        if body.persona_ids is not None and not lista and not responsabili:
+            raise _errore("Seleziona almeno un destinatario o includi i responsabili")
         messaggi += [email_turni.componi_riepilogo(s, ["turni", "liberi"], r["email"], r["nome"],
                                                    aggiornamento=body.solo_modifiche) for r in responsabili]
         esito = postino.invia(messaggi)

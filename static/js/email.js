@@ -47,21 +47,60 @@ export async function apriInvio(data) {
     d.append(el("div", { class: "banner banner-info" }, info.motivo || NON_CONFIGURATO));
   }
   const lista = info.destinatari;
-  const daMandare = lista.filter((x) => x.stato !== "inviata");
+  const selezionati = new Set(lista.map((x) => x.persona_id));
+  const caselle = [];
+  const nResp = (info.responsabili || []).length;
+  const responsabili = el("input", {
+    type: "checkbox", id: "email-includi-responsabili", checked: nResp > 0, onchange: () => aggiornaInvio(),
+  });
+  const bottoneInvio = el("button", {
+    type: "button", class: "btn btn-primary",
+    onclick: () => invia(d, data, [...selezionati], responsabili.checked),
+  });
+  function aggiornaInvio() {
+    const totResponsabili = responsabili.checked ? nResp : 0;
+    bottoneInvio.disabled = !info.configurato || info.stato_settimana !== "confermata"
+      || !(selezionati.size + totResponsabili);
+    bottoneInvio.textContent = `Invia ai selezionati (${selezionati.size}${totResponsabili ? ` + ${totResponsabili} ${totResponsabili === 1 ? "responsabile" : "responsabili"}` : ""})`;
+  }
+  const seleziona = (filtro) => {
+    for (const { input, persona } of caselle) {
+      input.checked = filtro(persona);
+      if (input.checked) selezionati.add(persona.persona_id);
+      else selezionati.delete(persona.persona_id);
+    }
+    aggiornaInvio();
+  };
   if (lista.length) {
     d.append(el("section", { class: "dialog-section" },
-      el("h3", {}, `Destinatari (${lista.length})`),
-      el("ul", { class: "lista-email" }, lista.map((x) => el("li", {},
+      el("h3", {}, `Scegli i destinatari (${lista.length})`),
+      el("div", { class: "form-actions" },
+        el("button", { type: "button", class: "btn btn-small", onclick: () => seleziona(() => true) }, "Seleziona tutti"),
+        el("button", { type: "button", class: "btn btn-small", onclick: () => seleziona(() => false) }, "Deseleziona tutti"),
+        el("button", { type: "button", class: "btn btn-small", onclick: () => seleziona((x) => x.stato !== "inviata") }, "Solo modifiche e mancanti")),
+      el("ul", { class: "lista-email" }, lista.map((x) => {
+        const input = el("input", {
+          type: "checkbox", checked: true,
+          onchange: () => {
+            if (input.checked) selezionati.add(x.persona_id);
+            else selezionati.delete(x.persona_id);
+            aggiornaInvio();
+          },
+        });
+        caselle.push({ input, persona: x });
+        return el("li", {}, el("label", { class: "email-destinatario" }, input,
         el("span", { class: "libero-nome" }, x.nome),
         el("span", { class: "muted email-indirizzo" }, x.email),
-        el("span", { class: `badge ${STATI[x.stato].classe}` }, STATI[x.stato].testo))))));
+        el("span", { class: `badge ${STATI[x.stato].classe}` }, STATI[x.stato].testo)));
+      }))));
   } else {
     d.append(el("p", { class: "dialog-text" }, "Nessuno di chi è di turno ha un indirizzo email: aggiungilo in Personale."));
   }
   if ((info.responsabili || []).length) {
     d.append(el("section", { class: "dialog-section" },
       el("h3", {}, `Responsabili (${info.responsabili.length})`),
-      el("p", { class: "muted" }, "Ricevono anche turni della settimana e liberi: ",
+      el("label", { class: "email-destinatario", for: "email-includi-responsabili" }, responsabili, "Invia anche ai responsabili"),
+      el("p", { class: "muted" }, "Ricevono il tabellone completo e l’elenco dei dipendenti liberi: ",
         info.responsabili.map((r) => r.nome ? `${r.nome} (${r.email})` : r.email).join(", "), ".")));
   }
   if (info.senza_email.length) {
@@ -72,31 +111,19 @@ export async function apriInvio(data) {
 
   const azioni = el("div", { class: "dialog-actions" },
     el("button", { type: "button", class: "btn", onclick: () => d.close() }, "Annulla"));
-  const puoInviare = info.configurato && info.stato_settimana === "confermata";
-  const nResp = (info.responsabili || []).length;
-  const parziale = daMandare.length && daMandare.length < lista.length;
-  const conResp = (n) => (nResp ? `${n} + ${nResp} ${nResp === 1 ? "responsabile" : "responsabili"}` : String(n));
-  if (parziale) {
-    azioni.append(el("button", {
-      type: "button", class: "btn btn-primary", disabled: !puoInviare,
-      onclick: () => invia(d, data, true),
-    }, `Invia solo modifiche e mancanti (${daMandare.length})`));
-  }
-  azioni.append(el("button", {
-    type: "button", class: parziale ? "btn" : "btn btn-primary", disabled: !puoInviare || !(lista.length + nResp),
-    onclick: () => invia(d, data, false),
-  }, `Invia a tutti (${conResp(lista.length)})`));
+  aggiornaInvio();
+  azioni.append(bottoneInvio);
   d.append(azioni);
   d.showModal();
 }
 
-async function invia(d, data, soloModifiche) {
-  for (const b of d.querySelectorAll("button")) b.disabled = true;
+async function invia(d, data, personaIds, includiResponsabili) {
+  for (const b of d.querySelectorAll("button, input")) b.disabled = true;
   const stato = el("p", { class: "dialog-text", role: "status" }, "Invio in corso…");
   d.append(stato);
   let esito;
   try {
-    esito = await api.inviaEmail(data, soloModifiche);
+    esito = await api.inviaEmail(data, personaIds, includiResponsabili);
   } catch (err) {
     d.close();
     toastErrore(err);

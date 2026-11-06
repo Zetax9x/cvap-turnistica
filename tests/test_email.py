@@ -137,6 +137,40 @@ def test_ognuno_riceve_solo_i_suoi_turni_con_pdf_personale(client, postino):
     assert not any(p.get_content_type() == "text/calendar" for p in per["mario@example.org"].walk())
 
 
+@pytest.mark.parametrize("personale,responsabili,attesi", [
+    (True, False, {"mario@example.org"}),
+    (True, True, {"mario@example.org", "capo@example.org"}),
+    (False, True, {"capo@example.org"}),
+])
+def test_invio_ai_destinatari_scelti(client, postino, personale, responsabili, attesi):
+    mario = crea(client, "Mario", "mario@example.org")
+    luca = crea(client, "Luca", "luca@example.org")
+    turno(client, mario["id"], "2026-10-20")
+    turno(client, luca["id"], "2026-10-21")
+    client.post("/api/destinatari", json={"email": "capo@example.org", "nome": "Capo",
+                                         "contenuti": ["turni"], "responsabile": True})
+    client.post(f"/api/settimane/{LUNEDI}/conferma")
+    r = client.post(f"/api/settimane/{LUNEDI}/email", json={
+        "persona_ids": [mario["id"]] if personale else [], "includi_responsabili": responsabili,
+    })
+    assert r.status_code == 200, r.text
+    assert {m["To"] for m in postino.inviati} == attesi
+    stati = {d["nome"]: d["stato"] for d in client.get(f"/api/settimane/{LUNEDI}/email").json()["destinatari"]}
+    assert stati == {"Mario": "inviata" if personale else "da_inviare", "Luca": "da_inviare"}
+
+
+@pytest.mark.parametrize("ids", [[], [999999]])
+def test_invio_senza_destinatari_validi_non_invia_nulla(client, postino, ids):
+    mario = crea(client, "Mario", "mario@example.org")
+    turno(client, mario["id"], "2026-10-20")
+    client.post(f"/api/settimane/{LUNEDI}/conferma")
+    r = client.post(f"/api/settimane/{LUNEDI}/email", json={
+        "persona_ids": ids, "includi_responsabili": False,
+    })
+    assert r.status_code == 400
+    assert postino.inviati == []
+
+
 def test_chi_non_e_di_turno_non_riceve_nulla(client, postino):
     mario = crea(client, "Mario", "mario@example.org")
     crea(client, "Anna", "anna@example.org")

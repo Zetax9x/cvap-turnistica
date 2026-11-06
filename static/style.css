@@ -652,6 +652,7 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
 .lista-email li { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .6rem; }
 .email-indirizzo { font-size: .9rem; overflow-wrap: anywhere; }
 .lista-email .badge { margin-left: auto; }
+.email-destinatario { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .6rem; width: 100%; min-height: 44px; cursor: pointer; }
 .email-errore { flex: 1 1 100%; color: var(--err); font-size: .88rem; }
 .cella-email { font-size: .9rem; overflow-wrap: anywhere; max-width: 16rem; }
 .esci { margin-left: .5rem; align-self: center; }

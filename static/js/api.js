@@ -59,8 +59,10 @@ export const api = {
   esci: () => richiesta("POST", "/uscita"),
 
   statoEmail: (data) => richiesta("GET", `/settimane/${enc(data)}/email`),
-  inviaEmail: (data, soloModifiche) =>
-    richiesta("POST", `/settimane/${enc(data)}/email`, { solo_modifiche: !!soloModifiche }),
+  inviaEmail: (data, personaIds, includiResponsabili) =>
+    richiesta("POST", `/settimane/${enc(data)}/email`, {
+      persona_ids: personaIds, includi_responsabili: includiResponsabili,
+    }),
   provaEmail: (data, indirizzo) => richiesta("POST", `/settimane/${enc(data)}/email/prova`, { indirizzo }),
 
   destinatari: () => richiesta("GET", "/destinatari"),
