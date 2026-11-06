@@ -9,6 +9,7 @@ dependencies = [
     "ortools>=9.12",
     "libsql>=0.1.11",
     "reportlab>=4.2,<5",
+    "tzdata>=2024.1",  # fuso orario di Roma anche dove il sistema non lo ha (Windows)
 ]
 
 [project.optional-dependencies]

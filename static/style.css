@@ -612,6 +612,7 @@ th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { colo
 .campo-largo { flex: 1 1 16rem; }
 .campo-largo input { width: 100%; }
 .form-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: .9rem; }
+.azioni-calendario { flex-wrap: wrap; justify-content: flex-start; }
 .filtri { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin: 1.25rem 0 .75rem; }
 .check { display: inline-flex; align-items: center; gap: .4rem; margin-left: .5rem; cursor: pointer; }
 

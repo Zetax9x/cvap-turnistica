@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 os.environ.setdefault("CVAP_DB", ":memory:")  # l'app di modulo non deve creare data/turni.db
 
-from cvap import calendario_ics  # noqa: E402
+from cvap import calendario_ics, db  # noqa: E402
 from cvap.app import create_app  # noqa: E402
 
 LUNEDI = "2026-10-19"
@@ -16,8 +16,12 @@ LUNEDI_DOPO = "2026-10-26"
 UTC = timezone.utc
 
 
-@pytest.fixture
-def client(tmp_path):
+@pytest.fixture(params=["sqlite", "libsql"])
+def client(request, tmp_path, monkeypatch):
+    if request.param == "libsql":
+        # stesso codice usato con Turso, ma su un file locale tramite libsql
+        pytest.importorskip("libsql")
+        monkeypatch.setattr(db, "remoto", lambda path: True)
     return TestClient(create_app(str(tmp_path / "t.db")))
 
 

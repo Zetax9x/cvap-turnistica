@@ -70,6 +70,8 @@ export const api = {
   inviaRiepiloghi: (data) => richiesta("POST", "/destinatari/invia", { data }),
 
   persone: () => richiesta("GET", "/persone"),
+  calendario: (id) => richiesta("GET", `/calendari/${enc(id)}`),
+  nuovoCalendario: (id) => richiesta("POST", `/calendari/${enc(id)}/rigenera`),
   creaPersona: (dati) => richiesta("POST", "/persone", dati),
   aggiornaPersona: (id, dati) => richiesta("PUT", `/persone/${enc(id)}`, dati),
   eliminaPersona: (id) => richiesta("DELETE", `/persone/${enc(id)}`),

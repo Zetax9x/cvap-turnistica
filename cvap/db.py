@@ -195,6 +195,11 @@ CREATE TABLE IF NOT EXISTS festivi_disponibili (  -- chi vuole lavorare una fest
     fascia TEXT NOT NULL CHECK (fascia IN ('giorno', 'notte', 'entrambi')),
     PRIMARY KEY (data, persona_id)
 );
+CREATE TABLE IF NOT EXISTS calendari (  -- link segreti dei calendari .ics dei dipendenti (cvap/db_calendari.py)
+    persona_id INTEGER PRIMARY KEY REFERENCES persone(id),
+    codice TEXT NOT NULL UNIQUE,
+    creato_il TEXT NOT NULL
+);
 """
 
 _POSTAZIONI_SEED = (("Acquasanta", 0, 1), ("Venarotta", 0, 2), ("Ascoli", 1, 3))
@@ -449,6 +454,7 @@ def elimina_persona(conn: sqlite3.Connection, persona_id: int) -> bool:
             conn.execute("DELETE FROM indisponibilita_turni WHERE persona_id = ?", (persona_id,))
             conn.execute("DELETE FROM divieti WHERE persona_id = ?", (persona_id,))
             conn.execute("DELETE FROM email_inviate WHERE persona_id = ?", (persona_id,))
+            conn.execute("DELETE FROM calendari WHERE persona_id = ?", (persona_id,))
             conn.execute("DELETE FROM persone WHERE id = ?", (persona_id,))
     return True
 

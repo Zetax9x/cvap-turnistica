@@ -4,7 +4,7 @@ import { api } from "./api.js";
 import {
   el, clear, addDays, mondayOf, todayISO, ddmm, dataLunga, dataEstesa, indiceGiorno, etichetta, formatOre,
   orarioTurno, oraInizio, etichettaParti,
-  badgeAssenza,
+  badgeAssenza, toast, toastErrore, chiediConferma,
 } from "./util.js";
 import { scaricaPdf } from "./pdf.js";
 
@@ -98,7 +98,70 @@ function render() {
     root.append(el("div", { class: "banner banner-info" },
       s.stato === "nuova" ? "Turni non ancora generati per questa settimana." : "Settimana in bozza: i turni possono ancora cambiare."));
   }
-  root.append(...renderTurni(s, persona), renderTotali(s, persona));
+  root.append(...renderTurni(s, persona), renderTotali(s, persona), renderCalendario(persona));
+}
+
+/** Link del calendario .ics della persona: si aggiunge al telefono e si aggiorna da solo. Fuori dal PDF. */
+function renderCalendario(persona) {
+  const campo = el("input", {
+    type: "text", id: "dip-calendario", readonly: true, value: "Caricamento…",
+    onfocus: (e) => e.target.select(),
+  });
+  const azioni = el("div", { class: "form-actions azioni-calendario" });
+  const sezione = el("section", { class: "pannello no-print", "aria-labelledby": "titolo-calendario" },
+    el("h2", { id: "titolo-calendario" }, "Calendario sul telefono"),
+    el("p", { class: "muted" },
+      `Con questo link i turni confermati di ${persona.nome} compaiono nel calendario del telefono e si aggiornano `,
+      "da soli, cambi turno compresi. Il link è personale: chi lo ha vede quei turni, quindi dallo solo all'interessato."),
+    el("div", { class: "campo campo-largo" }, el("label", { for: "dip-calendario" }, "Link del calendario"), campo),
+    azioni,
+    el("details", { class: "info-ripiegabile" }, el("summary", {}, "Come aggiungerlo al telefono"),
+      el("ul", {},
+        el("li", {}, el("strong", {}, "iPhone: "), "apri il link dal telefono con «Aggiungi al calendario», oppure ",
+          "Impostazioni → Calendario → Account → Aggiungi account → Altro → Aggiungi calendario sottoscritto e incolla il link."),
+        el("li", {}, el("strong", {}, "Android e Google Calendar: "), "dal computer apri calendar.google.com, ",
+          "Altri calendari → + → Da URL, incolla il link: il calendario compare poi anche sul telefono."),
+        el("li", {}, "Google aggiorna i calendari aggiunti con un link ogni qualche ora, l'iPhone più spesso."))));
+
+  const mostraLink = (percorso) => {
+    if (stato.personaId !== persona.id) return;  // nel frattempo si è passati a un'altra persona
+    const indirizzo = `${location.origin}${percorso}`;
+    campo.value = indirizzo;
+    clear(azioni).append(
+      el("button", { type: "button", class: "btn", onclick: () => copia(indirizzo) }, "Copia link"),
+      el("a", { class: "btn", href: `webcal://${location.host}${percorso}` }, "Aggiungi al calendario"),
+      el("button", { type: "button", class: "btn btn-ghost", onclick: () => nuovoLink(persona, mostraLink) }, "Nuovo link"));
+  };
+  api.calendario(persona.id).then((r) => mostraLink(r.percorso)).catch((err) => {
+    campo.value = "";
+    toastErrore(err);
+  });
+  return sezione;
+}
+
+async function copia(testo) {
+  try {
+    await navigator.clipboard.writeText(testo);
+    toast("Link copiato.", "ok");
+  } catch {
+    const campo = document.getElementById("dip-calendario");
+    if (campo) { campo.focus(); campo.select(); }
+    toast("Copia non riuscita: il link è selezionato, copialo a mano.", "avviso");
+  }
+}
+
+async function nuovoLink(persona, mostraLink) {
+  const ok = await chiediConferma(
+    `Il link attuale smetterà subito di funzionare: ${persona.nome} dovrà aggiungere al calendario quello nuovo. `
+      + "Serve se il link è finito a qualcuno che non deve vederlo.",
+    { titolo: "Creare un nuovo link?", ok: "Nuovo link", pericolo: true });
+  if (!ok) return;
+  try {
+    mostraLink((await api.nuovoCalendario(persona.id)).percorso);
+    toast("Nuovo link creato: quello vecchio non funziona più.", "ok");
+  } catch (err) {
+    toastErrore(err);
+  }
 }
 
 /** Per ogni giorno: turni della persona e contenuto da mostrare (turni, ferie, indisponibilità o riposo). */

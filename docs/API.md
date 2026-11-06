@@ -244,6 +244,21 @@ Con `APP_PASSWORD` impostata (`create_app(..., password=...)`) tutte le API tran
 App factory: `create_app(db_path, password=None, postino=None) -> FastAPI` in `cvap/app.py`; `uvicorn cvap.app:app`
 usa `data/turni.db` (o Turso) e legge `APP_PASSWORD` e le variabili SMTP (`cvap/posta.py`).
 
+## Calendari .ics dei dipendenti
+
+Moduli `calendario_ics.py` (file RFC 5545), `db_calendari.py` (codici), `api_calendari.py` (rotte).
+```
+calendari(persona_id INTEGER PK REFERENCES persone(id), codice TEXT UNIQUE /*20 esadecimali*/, creato_il TEXT)
+```
+- `GET /turni/<nome>-<codice>.ics` (anche HEAD): **senza password**, fuori da `/api`; conta solo il codice (anche
+  `/turni/<codice>.ics`). 404 se il codice non esiste o la persona non è un dipendente attivo. `text/calendar`:
+  turni Effettivi della persona nelle settimane `confermata`, da 62 giorni prima a 400 dopo oggi; orari in UTC dall'ora
+  di Roma (`orari_utc`), `UID` stabile per data, postazione, fascia, segmento, ruolo e persona; `SUMMARY`
+  "<postazione> · <ruolo>", `DESCRIPTION` con orario, ruolo e colleghi che si sovrappongono nella stessa postazione.
+- `GET /api/calendari/{id}` → `{persona_id, nome, percorso}` (crea il codice se manca) · `POST /api/calendari/{id}/rigenera`
+  → stesso formato con un codice nuovo (il vecchio link smette di funzionare). 404 persona inesistente, 400 se non è
+  un dipendente. Cancellare la persona cancella il codice; disattivarla sospende il link.
+
 ## Cambi turno dei dipendenti
 
 Pagina pubblica: `GET /cambio-turno`. Guida operativa: [CAMBI-TURNO.md](CAMBI-TURNO.md).

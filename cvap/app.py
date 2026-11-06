@@ -20,7 +20,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, BeforeValidator, Field, StringConstraints, model_validator
 
-from . import accesso, api_cambi_turno, api_equita, api_festivita, api_storico_festivi, dati_festivi, db, db_festivita, email_turni
+from . import (accesso, api_calendari, api_cambi_turno, api_equita, api_festivita, api_storico_festivi,
+               dati_festivi, db, db_festivita, email_turni)
 from .api_comune import DATA_MAX, DATA_MIN, DataValida, Id, IdPath, Nome, errore as _errore
 from .posta import PostinoBloccato, PostinoSmtp
 from .calendario import giorni_settimana, lunedi, postazioni_attive, tipo_settimana
@@ -752,6 +753,7 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
 
     Conn = Annotated[sqlite3.Connection, Depends(connessione)]
     app.include_router(api_festivita.crea_router(connessione))
+    app.include_router(api_calendari.crea_router(connessione))
     app.include_router(api_storico_festivi.crea_router(connessione))
     app.include_router(api_equita.crea_router(connessione, _settimana_passata))
     app.include_router(api_cambi_turno.crea_router(connessione, scrittura, _dati_settimana, payload_settimana, postino))
