@@ -18,7 +18,7 @@ const VISTE = {
   altro: () => import("./altro.js"),
 };
 // sezioni che appartengono a una scheda ma hanno un nome proprio nell'indirizzo
-const DI_SCHEDA = { persona: "persone" };
+const DI_SCHEDA = { persona: "persone", dipendente: "persone" };
 
 const schermata = document.getElementById("schermata");
 const tab = document.getElementById("tab");

@@ -12,7 +12,7 @@ Non serve un Mac né l'App Store: è una *Progressive Web App*.
 ## Struttura
 - `index.html`, `app.css` (tema chiaro e scuro, zone sicure dell'iPhone), `manifest.webmanifest`, `sw.js`, `img/`
 - `js/main.js` navigazione a schede con indirizzi `#/sezione/…` e schermata della password
-- `js/ui.js` componenti (fogli dal basso, righe, avvisi); `js/turni.js` disegno dei turni; `js/modifica.js` assegna, sostituisci, togli
+- `js/ui.js` componenti (fogli dal basso, righe, avvisi); `js/turni.js` disegno dei turni; `js/modifica.js` assegna, sostituisci, togli; `js/prepara.js` vista «Prepara» della settimana
 - una vista per scheda: `oggi.js`, `settimana.js`, `persone.js`, `statistiche.js`, `altro.js` (+ `ferie`, `copertura`, `festivita`, `cambi`, `impostazioni`)
 - riusa `/static/js/api.js` e `/static/js/util.js` del sito: un solo client API.
 
@@ -20,11 +20,19 @@ Il service worker mette in cache solo l'interfaccia; le chiamate `/api/` vanno s
 vedono turni vecchi. Offline l'app si apre ma mostra l'errore di rete.
 
 ## Cosa c'è
-Oggi · Settimana (giorni, correzioni a mano, sostituti e scambi a catena, genera, conferma/riapri, invio email,
-controlli, ore) · Persone (elenco, nuova/modifica, ore massime, divieti) · Statistiche · Ferie e malattie ·
-Copertura del mese · Cambi turno · Impostazioni di base.
+- **Oggi**: turni di oggi e domani, liberi.
+- **Settimana**: vista *Turni* (giorni, correzioni a mano, sostituti e scambi a catena, genera, conferma/riapri,
+  controlli, ore, turni Generati in sola lettura, report della generazione, invio email con scelta dei destinatari,
+  stato per persona ed email di prova) e vista *Prepara* (posti dei volontari anche nuovi e a mezzo turno,
+  indisponibilità, Standby e Programmati, Assistenze ed Extra, copertura preventiva).
+- **Persone**: elenco, nuova/modifica/elimina, ore massime, autista nei Programmati, divieti; per i dipendenti
+  la schermata *Turni della settimana* (colleghi, totali, PDF, link del calendario .ics).
+- **Statistiche**: persone (con riepilogo su un periodo), equità, festività (ordine di rotazione, chi vuole lavorare,
+  già lavorate), assenze; filtro Effettivi/Generati.
+- **Altro**: ferie e malattie (con verifica della copertura e turni da far coprire), copertura del mese giorno per
+  giorno, cambi turno, impostazioni (settimana A, scarto ore, destinatari dei riepiloghi con invio, festività a rotazione).
 
 ## Ancora solo sul sito
-Inserimento di posti dei volontari, indisponibilità, fabbisogno ed extra della settimana · tabellone e PDF ·
-equità e statistiche delle festività · storico festività e rotazione · destinatari dei riepiloghi · calendari .ics.
+Stampe e PDF del tabellone, dei liberi e dei sostituti · importazione e modifica dello storico delle festività ·
+inserimento delle ferie dal calendario con la griglia mensile · legenda e filtri del tabellone a griglia.
 Dalla scheda «Altro» c'è il link alla versione completa.

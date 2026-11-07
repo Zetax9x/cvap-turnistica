@@ -4,6 +4,7 @@ import { el, clear, etichetta, formatOre } from "/static/js/util.js";
 import { testata, icona, riempi, pill, avviso, foglio, gruppo, riga, avatar, conferma, mostra, mostraErrore, caricamento, monta } from "./ui.js";
 
 export default async function persone(root, { sezione, parametri }) {
+  if (sezione === "dipendente" && parametri[0]) return (await import("./dipendente.js")).default(root, { parametri });
   if (sezione === "persona" && parametri[0]) return scheda(root, Number(parametri[0]));
   return elenco(root);
 }
@@ -43,8 +44,10 @@ function modifica(p, dopo) {
     const qual = el("select", { class: "input" }, ["autista", "soccorritore"].map((v) => el("option", { value: v, selected: p && p.qualifica === v }, etichetta("qualifica", v))));
     const email = el("input", { class: "input", type: "email", value: p && p.email ? p.email : "", inputMode: "email", autocapitalize: "off" });
     const attivo = el("input", { type: "checkbox", checked: p ? !!p.attivo : true });
+    const progr = el("input", { type: "checkbox", checked: !!(p && p.autista_programmati) });
     const salva = el("button", { class: "btn btn-primario btn-blocco", onClick: async () => {
-      const dati = { nome: nome.value.trim(), tipo: tipo.value, qualifica: qual.value, email: email.value.trim() || null };
+      const dati = { nome: nome.value.trim(), tipo: tipo.value, qualifica: qual.value, email: email.value.trim() || null,
+        autista_programmati: progr.checked };
       if (!dati.nome) return mostra("Inserisci il nome", "errore");
       salva.disabled = true;
       try {
@@ -58,8 +61,13 @@ function modifica(p, dopo) {
       el("label", { class: "campo" }, el("span", {}, "Tipo"), tipo),
       el("label", { class: "campo" }, el("span", {}, "Qualifica"), qual),
       el("label", { class: "campo" }, el("span", {}, "Email (per ricevere i turni)"), email),
+      el("label", { class: "interruttore" }, el("span", {}, "Può fare l'autista nei Programmati"), progr),
       p ? el("label", { class: "interruttore" }, el("span", {}, "Attivo"), attivo) : null,
-      salva];
+      salva,
+      p ? el("button", { class: "btn btn-pericolo btn-blocco", onClick: async () => {
+        if (!(await conferma(`Eliminare ${p.nome}? Se ha già dei turni non viene cancellata ma solo disattivata.`, { ok: "Elimina", pericolo: true }))) return;
+        try { await api.eliminaPersona(p.id); chiudi(); mostra("Fatto"); location.hash = "#/persone"; await dopo(); } catch (e) { mostraErrore(e); }
+      } }, "Elimina persona") : null];
   });
 }
 
@@ -80,6 +88,7 @@ async function scheda(root, id) {
     }));
     monta(corpo, 
       gruppo(riga({ titolo: "Email", fine: p.email || "non impostata", freccia: false }),
+        p.tipo === "dipendente" ? riga({ titolo: "Turni della settimana", sotto: "Colleghi, totali, PDF e calendario", href: `#/dipendente/${p.id}` }) : null,
         p.tipo === "dipendente" ? riga({ titolo: "Ore massime a settimana", fine: p.max_ore_settimana ? `${p.max_ore_settimana} h` : "nessuno", onClick: () => oreMax(p, carica) }) : null),
       st ? el("section", { class: "card" }, el("div", { class: "card-titolo" }, "Storico dei turni confermati"),
         el("div", { class: "griglia2" },

@@ -27,34 +27,46 @@ export function apriPosto(info, sett, data, ricarica) {
   ]);
 }
 
-function apriAssegna(info, sett, data, ricarica, bloccata) {
-  foglio("Assegna un posto", (chiudi) => {
-    const elenco = el("div");
-    const cerca = el("input", { class: "input", type: "search", placeholder: "Cerca per nome", "aria-label": "Cerca persona" });
-    let persone = [];
-    const disegna = () => {
-      const q = cerca.value.trim().toLowerCase();
-      const adatte = persone.filter((p) => p.attivo && (info.ruolo === "soccorritore" || p.qualifica === "autista")
-        && p.nome.toLowerCase().includes(q));
-      monta(elenco, adatte.length ? gruppo(...adatte.map((p) => riga({
+/**
+ * Cerca tra le persone attive adatte al ruolo; se il nome non esiste propone di crearlo come volontario.
+ * `suScelta({persona_id} | {nome_volontario}, nome)` viene chiamata alla scelta. Restituisce i nodi da mettere nel foglio.
+ */
+export function sceltaPersona(ruolo, suScelta) {
+  const elenco = el("div");
+  const cerca = el("input", { class: "input", type: "search", placeholder: "Cerca o scrivi un nome nuovo", "aria-label": "Cerca persona",
+    autocapitalize: "words", autocomplete: "off" });
+  let persone = [];
+  const disegna = () => {
+    const q = cerca.value.trim();
+    const adatte = persone.filter((p) => p.attivo && (ruolo === "soccorritore" || p.qualifica === "autista")
+      && p.nome.toLowerCase().includes(q.toLowerCase()));
+    const esatto = persone.some((p) => p.nome.toLowerCase() === q.toLowerCase());
+    monta(elenco,
+      adatte.length ? gruppo(...adatte.map((p) => riga({
         titolo: p.nome, sotto: `${etichetta("tipo", p.tipo)} · ${etichetta("qualifica", p.qualifica)}`, avatar: avatar(p.nome, p.tipo), freccia: false,
-        onClick: async () => {
-          try {
-            ricarica(await api.aggiungiAssegnazione(sett.inizio, {
-              data, postazione: info.postazione, fascia: info.fascia, segmento: info.segmento, ruolo: info.ruolo, persona_id: p.id,
-            }));
-            chiudi(); mostra(`${p.nome} assegnato`);
-          } catch (e) { mostraErrore(e); }
-        },
-      }))) : el("div", { class: "vuoto" }, "Nessuna persona trovata."));
-    };
-    cerca.addEventListener("input", disegna);
-    elenco.append(caricamento());
-    api.persone().then((l) => { persone = l; disegna(); }).catch((e) => { monta(elenco, avviso(e.message, "errore")); });
-    return [el("p", { class: "muto" }, titoloPosto(info, data)),
-      bloccata ? avviso("La settimana è confermata: riaprila per modificare i turni.") : null,
-      bloccata ? null : [cerca, elenco]];
-  });
+        onClick: () => suScelta({ persona_id: p.id }, p.nome),
+      }))) : el("div", { class: "vuoto" }, q ? "Nessuna persona con questo nome." : "Nessuna persona trovata."),
+      q && !esatto ? el("button", { class: "btn btn-blocco", style: "margin-top:10px", onClick: () => suScelta({ nome_volontario: q }, q) },
+        icona("piu"), `Nuovo volontario «${q}»`) : null);
+  };
+  cerca.addEventListener("input", disegna);
+  monta(elenco, caricamento());
+  api.persone().then((l) => { persone = l; disegna(); }).catch((e) => monta(elenco, avviso(e.message, "errore")));
+  return [cerca, elenco];
+}
+
+function apriAssegna(info, sett, data, ricarica, bloccata) {
+  foglio("Assegna un posto", (chiudi) => [
+    el("p", { class: "muto" }, titoloPosto(info, data)),
+    bloccata ? avviso("La settimana è confermata: riaprila per modificare i turni.") : null,
+    bloccata ? null : sceltaPersona(info.ruolo, async (chi, nome) => {
+      try {
+        ricarica(await api.aggiungiAssegnazione(sett.inizio, {
+          data, postazione: info.postazione, fascia: info.fascia, segmento: info.segmento, ruolo: info.ruolo, ...chi,
+        }));
+        chiudi(); mostra(`${nome} assegnato`);
+      } catch (e) { mostraErrore(e); }
+    })]);
 }
 
 function apriSostituti(a, sett, data, ricarica) {

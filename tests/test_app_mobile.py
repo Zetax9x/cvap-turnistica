@@ -57,3 +57,37 @@ def test_con_password_la_pagina_e_pubblica_ma_le_api_no(tmp_path):
     c = TestClient(create_app(str(tmp_path / "t.db"), password="segreta"))
     assert c.get("/app/").status_code == 200  # serve per mostrare la schermata della password
     assert c.get("/api/settimane/2026-11-02").status_code == 401
+
+
+def test_pdf_dei_turni_di_un_dipendente(client):
+    p = client.post("/api/persone", json={"nome": "Rossi Marco", "tipo": "dipendente", "qualifica": "autista"}).json()
+    r = client.get(f"/api/settimane/2026-11-02/pdf/{p['id']}")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.content.startswith(b"%PDF")
+    assert client.get("/api/settimane/2026-11-02/pdf/9999").status_code == 404
+
+
+def _esportati(testo: str) -> set[str]:
+    nomi = set(re.findall(r"export\s+(?:async\s+)?(?:function|class|const|let)\s+(\w+)", testo))
+    for blocco in re.findall(r"export\s*\{([^}]*)\}", testo):
+        nomi |= {n.split(" as ")[-1].strip() for n in blocco.split(",") if n.strip()}
+    if re.search(r"export\s+default", testo):
+        nomi.add("default")
+    return nomi
+
+
+def test_ogni_nome_importato_e_esportato_dal_modulo(client):
+    """Un nome importato che il modulo non esporta fa fallire l'app solo quando la schermata si apre."""
+    statici = RADICE.parent
+    for js in (RADICE / "js").glob("*.js"):
+        for nomi, origine in re.findall(r'import\s*\{([^}]*)\}\s*from\s*"([^"]+)"', js.read_text(encoding="utf-8")):
+            if origine.startswith("./"):
+                file = RADICE / "js" / origine[2:]
+            elif origine.startswith("/static/"):
+                file = statici / origine[len("/static/"):]
+            else:
+                continue
+            esportati = _esportati(file.read_text(encoding="utf-8"))
+            for n in (x.split(" as ")[0].strip() for x in nomi.split(",") if x.strip()):
+                assert n in esportati, f"{js.name} importa «{n}» da {origine}, che non lo esporta"
