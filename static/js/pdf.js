@@ -181,6 +181,9 @@ export async function scaricaPdf(sorgenti, titolo, { orientamento = "portrait", 
       image: { type: "jpeg", quality: 0.96 },
       html2canvas: {
         scale: 2, useCORS: true, backgroundColor: "#ffffff", onclone: normalizzaColori,
+        // l'area da catturare è fissa in cima alla finestra: senza questi valori html2canvas usa lo scorrimento della
+        // pagina e, se non sei in cima (es. "Scarica PDF sostituti", in fondo alla settimana), cattura una zona vuota
+        scrollX: 0, scrollY: 0,
         // il PDF si disegna sempre con il layout da PC, anche se lo scarichi dal telefono: le regole per lo schermo
         // piccolo (un giorno alla volta, celle strette) non devono finire sul foglio
         windowWidth: Math.max(larghezza, LARGHEZZA_FINESTRA_PDF),
