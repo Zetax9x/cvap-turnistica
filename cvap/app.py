@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, BeforeValidator, Field, StringConstraints, model_validator
 
-from . import (accesso, api_calendari, api_cambi_turno, api_equita, api_festivita, api_storico_festivi,
+from . import (accesso, api_push, push, api_calendari, api_cambi_turno, api_equita, api_festivita, api_storico_festivi,
                dati_festivi, db, db_festivita, email_turni)
 from .api_comune import DATA_MAX, DATA_MIN, DataValida, Id, IdPath, Nome, errore as _errore
 from .posta import PostinoBloccato, PostinoSmtp
@@ -759,7 +759,22 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
     app.include_router(api_calendari.crea_router(connessione))
     app.include_router(api_storico_festivi.crea_router(connessione))
     app.include_router(api_equita.crea_router(connessione, _settimana_passata))
-    app.include_router(api_cambi_turno.crea_router(connessione, scrittura, _dati_settimana, payload_settimana, postino))
+    def notifica_push(titolo: str, testo: str, url: str) -> None:
+        """Notifica al telefono iscritto, senza mai bloccare né far fallire chi la provoca."""
+        try:
+            conn = db.connetti(db_path)
+            try:
+                dati = push.prepara(conn, titolo, testo, url)
+            finally:
+                conn.close()
+            if dati:
+                push.spedisci_in_background(*dati)
+        except Exception:  # noqa: BLE001
+            logging.getLogger(__name__).exception("Notifica push non preparata")
+
+    app.include_router(api_push.crea_router(db_path))
+    app.include_router(api_cambi_turno.crea_router(connessione, scrittura, _dati_settimana, payload_settimana, postino,
+                                                   notifica_push))
 
     # --- persone ---
     @app.get("/api/persone")

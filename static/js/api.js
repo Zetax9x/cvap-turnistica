@@ -58,6 +58,12 @@ export const api = {
   accedi: (password) => richiesta("POST", "/accesso", { password }),
   esci: () => richiesta("POST", "/uscita"),
 
+  // Notifiche push del telefono
+  pushStato: () => richiesta("GET", "/push"),
+  pushIscrivi: (iscrizione) => richiesta("PUT", "/push/iscrizione", iscrizione),
+  pushTogli: () => richiesta("DELETE", "/push/iscrizione"),
+  pushProva: () => richiesta("POST", "/push/prova"),
+
   statoEmail: (data) => richiesta("GET", `/settimane/${enc(data)}/email`),
   inviaEmail: (data, personaIds, includiResponsabili) =>
     richiesta("POST", `/settimane/${enc(data)}/email`, {
