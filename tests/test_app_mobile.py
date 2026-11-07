@@ -91,3 +91,22 @@ def test_ogni_nome_importato_e_esportato_dal_modulo(client):
             esportati = _esportati(file.read_text(encoding="utf-8"))
             for n in (x.split(" as ")[0].strip() for x in nomi.split(",") if x.strip()):
                 assert n in esportati, f"{js.name} importa «{n}» da {origine}, che non lo esporta"
+
+
+def test_pdf_di_tabellone_e_liberi(client):
+    """Anche con turni, volontari, Extra e festività il PDF si costruisce."""
+    for i in range(4):
+        client.post("/api/persone", json={"nome": f"Dip {i}", "tipo": "dipendente", "qualifica": "autista" if i % 2 == 0 else "soccorritore"})
+    post = client.get("/api/postazioni").json()[0]["nome"]
+    client.post("/api/settimane/2026-11-02/assegnazioni", json={
+        "data": "2026-11-03", "postazione": post, "fascia": "giorno", "segmento": "intero", "ruolo": "autista", "persona_id": 1})
+    client.post("/api/settimane/2026-11-02/assegnazioni", json={
+        "data": "2026-11-03", "postazione": post, "fascia": "giorno", "segmento": "intero", "ruolo": "soccorritore",
+        "nome_volontario": "Volo Test"})
+    client.post("/api/settimane/2026-11-02/extra", json={
+        "data": "2026-11-04", "nome": "Gara", "inizio": 8, "fine": 14, "autisti": 1, "soccorritori": 1})
+    for percorso in ("pdf-tabellone", "pdf-tabellone?versione=generati", "pdf-liberi"):
+        r = client.get(f"/api/settimane/2026-11-02/{percorso}")
+        assert r.status_code == 200, percorso
+        assert r.headers["content-type"] == "application/pdf"
+        assert r.content.startswith(b"%PDF") and len(r.content) > 1500

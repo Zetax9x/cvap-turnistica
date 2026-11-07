@@ -5,16 +5,18 @@ import { testata, icona, riempi, pill, avviso, foglio, gruppo, riga, conferma, s
 import { turniDelGiorno, disegnaGiorno, scoperti } from "./turni.js";
 import { apriPosto } from "./modifica.js";
 import { disegnaPrepara } from "./prepara.js";
+import { disegnaGriglia } from "./griglia.js";
 
 const STATO = { nuova: ["Da preparare", ""], bozza: ["Bozza", "ambra"], confermata: ["Confermata", "verde"] };
 
 export default async function settimana(root, { parametri }) {
   const lun = mondayOf(parametri[0] || todayISO());
   const oggi = todayISO();
-  let giorno = (parametri[1] && parametri[1] !== "prepara" ? parametri[1] : null) || (mondayOf(oggi) === lun ? oggi : lun);
+  let giorno = (parametri[1] && !["prepara", "griglia"].includes(parametri[1]) ? parametri[1] : null) || (mondayOf(oggi) === lun ? oggi : lun);
   let sett = null;
   let generati = null;  // payload della versione «Generati», se la si sta guardando
-  let vista = parametri[1] === "prepara" ? "prepara" : "turni";
+  let vista = ["prepara", "griglia"].includes(parametri[1]) ? parametri[1] : "turni";
+  const filtroGriglia = { postazione: null, soloScoperti: false };
 
   const barra = el("div", { class: "giorni" });
   const corpo = el("div", { class: "contenuto" });
@@ -24,8 +26,8 @@ export default async function settimana(root, { parametri }) {
 
   function disegnaSelettore() {
     monta(selettore, el("div", { class: "segmenti", role: "group", "aria-label": "Vista" },
-      [["turni", "Turni"], ["prepara", "Prepara"]].map(([v, t]) => el("button", { type: "button", "aria-pressed": String(vista === v),
-        onClick: () => { vista = v; history.replaceState(null, "", `#/settimana/${lun}/${v === "prepara" ? "prepara" : giorno}`); disegnaSelettore(); disegnaBarra(); disegnaCorpo(); } }, t))));
+      [["turni", "Turni"], ["griglia", "Griglia"], ["prepara", "Prepara"]].map(([v, t]) => el("button", { type: "button", "aria-pressed": String(vista === v),
+        onClick: () => { vista = v; history.replaceState(null, "", `#/settimana/${lun}/${v === "turni" ? giorno : v}`); disegnaSelettore(); disegnaBarra(); disegnaCorpo(); } }, t))));
   }
 
   const vaiSett = (n) => { location.hash = `#/settimana/${addDays(lun, 7 * n)}`; };
@@ -44,7 +46,7 @@ export default async function settimana(root, { parametri }) {
   }
 
   function disegnaBarra() {
-    barra.hidden = vista === "prepara";
+    barra.hidden = vista !== "turni";
     monta(barra, ...sett.giorni.map((g, i) => {
       const festivo = (sett.festivi || []).some((f) => f.data === g);
       const nScop = scoperti(turniDelGiorno(sett, g));
@@ -60,6 +62,12 @@ export default async function settimana(root, { parametri }) {
 
   function disegnaCorpo() {
     if (vista === "prepara") { monta(corpo, disegnaPrepara(sett, ricarica)); return; }
+    if (vista === "griglia") {
+      monta(corpo, disegnaGriglia(generati || sett, filtroGriglia, {
+        suGiorno: (g) => { giorno = g; vista = "turni"; history.replaceState(null, "", `#/settimana/${lun}/${g}`); disegnaSelettore(); disegnaBarra(); disegnaCorpo(); },
+        ridisegna: disegnaCorpo }));
+      return;
+    }
     const gruppi = turniDelGiorno(generati || sett, giorno);
     const festivo = (sett.festivi || []).find((f) => f.data === giorno);
     const err = sett.violazioni.filter((v) => v.livello === "errore").length;
@@ -68,6 +76,8 @@ export default async function settimana(root, { parametri }) {
     const assenti = (sett.ferie || []).filter((f) => f.data === giorno);
     monta(corpo, 
       festivo ? avviso(`Festivo: ${festivo.nome}`, "errore") : null,
+      festivo && (sett.festivi_disponibili || []).some((d) => d.data === giorno)
+        ? avviso(`Vogliono lavorare: ${[...new Set(sett.festivi_disponibili.filter((d) => d.data === giorno).map((d) => (sett.riepilogo.find((r) => r.persona_id === d.persona_id) || {}).nome || `#${d.persona_id}`))].join(", ")}`, "ok") : null,
       sett.violazioni.length ? el("button", { class: `avviso ${err ? "avviso-errore" : ""}`, style: "border:0;text-align:left;width:100%", onClick: apriControlli },
         `${err ? `${err} error${err === 1 ? "e" : "i"}` : ""}${err && avv ? " e " : ""}${avv ? `${avv} avvis${avv === 1 ? "o" : "i"}` : ""} nei controlli · tocca per vedere`) : null,
       sett.report && sett.report.scoperti && sett.report.scoperti.length ? avviso(`La generazione ha lasciato ${sett.report.scoperti.length} posti scoperti.`) : null,
@@ -128,6 +138,7 @@ export default async function settimana(root, { parametri }) {
         : { valore: "conferma", titolo: "Conferma la settimana", sotto: "Rende definitivi i turni" },
       { valore: "email", titolo: "Invia i turni per email", sotto: conf ? "Ai dipendenti e ai volontari" : "Disponibile a settimana confermata" },
       { valore: "rimuovi", titolo: "Togli i turni generati", sotto: "Restano volontari e turni fissati" },
+      { valore: "pdf", titolo: "PDF e stampa", sotto: "Tabellone e dipendenti liberi" },
       { valore: "generati", titolo: "Vedi i turni Generati", sotto: "Confronto con quanto prodotto dal programma" },
       sett.report ? { valore: "report", titolo: "Report della generazione", sotto: "Qualità, scoperti, festività" } : null,
       { valore: "oggi", titolo: "Vai a questa settimana" },
@@ -139,6 +150,14 @@ export default async function settimana(root, { parametri }) {
         ricarica(await api.conferma(lun)); mostra("Settimana confermata");
       } else if (voce === "riapri") { ricarica(await api.riapri(lun)); mostra("Settimana riaperta"); }
       else if (voce === "email") apriEmail();
+      else if (voce === "pdf") {
+        const f = await scegli("PDF della settimana", [
+          { valore: `/api/settimane/${lun}/pdf-tabellone`, titolo: "Tabellone", sotto: "Turni effettivi, A4 orizzontale" },
+          { valore: `/api/settimane/${lun}/pdf-tabellone?versione=generati`, titolo: "Tabellone dei turni generati" },
+          { valore: `/api/settimane/${lun}/pdf-liberi`, titolo: "Dipendenti liberi", sotto: "Giorno per giorno, con smonto notte" },
+        ]);
+        if (f) window.open(f, "_blank", "noopener");
+      }
       else if (voce === "generati") {
         generati = await conAttesa("Carico i turni generati…", "", () => api.tabelloneGenerato(lun));
         if (vista !== "turni") { vista = "turni"; disegnaSelettore(); }

@@ -1212,6 +1212,24 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
             (inviate if errore is None else errori).append(voce if errore is None else {**voce, "errore": errore})
         return {"inviate": inviate, "errori": errori}
 
+    @app.get("/api/settimane/{data}/pdf-tabellone")
+    def pdf_tabellone(data: str, conn: Conn, versione: Literal["generati", "effettivi"] = "effettivi"):
+        """PDF del tabellone della settimana (A4 orizzontale)."""
+        from .pdf_tabellone import genera_tabellone
+        inizio = lunedi(_data(data))
+        contenuto = genera_tabellone(payload_settimana(conn, inizio, versione=versione))
+        return Response(contenuto, media_type="application/pdf", headers={
+            "Content-Disposition": f'inline; filename="tabellone-{versione}-{inizio.isoformat()}.pdf"', "Cache-Control": "no-store"})
+
+    @app.get("/api/settimane/{data}/pdf-liberi")
+    def pdf_liberi(data: str, conn: Conn):
+        """PDF dei dipendenti liberi, giorno per giorno."""
+        from .pdf_tabellone import genera_liberi
+        inizio = lunedi(_data(data))
+        contenuto = genera_liberi(payload_settimana(conn, inizio))
+        return Response(contenuto, media_type="application/pdf", headers={
+            "Content-Disposition": f'inline; filename="liberi-{inizio.isoformat()}.pdf"', "Cache-Control": "no-store"})
+
     @app.get("/api/settimane/{data}/pdf/{persona_id}")
     def pdf_turni_persona(data: str, persona_id: IdPath, conn: Conn):
         """PDF dei turni della settimana di un dipendente (lo stesso allegato alle email)."""

@@ -31,7 +31,7 @@ export function apriPosto(info, sett, data, ricarica) {
  * Cerca tra le persone attive adatte al ruolo; se il nome non esiste propone di crearlo come volontario.
  * `suScelta({persona_id} | {nome_volontario}, nome)` viene chiamata alla scelta. Restituisce i nodi da mettere nel foglio.
  */
-export function sceltaPersona(ruolo, suScelta) {
+export function sceltaPersona(ruolo, suScelta, { vogliono = new Set() } = {}) {
   const elenco = el("div");
   const cerca = el("input", { class: "input", type: "search", placeholder: "Cerca o scrivi un nome nuovo", "aria-label": "Cerca persona",
     autocapitalize: "words", autocomplete: "off" });
@@ -39,11 +39,13 @@ export function sceltaPersona(ruolo, suScelta) {
   const disegna = () => {
     const q = cerca.value.trim();
     const adatte = persone.filter((p) => p.attivo && (ruolo === "soccorritore" || p.qualifica === "autista")
-      && p.nome.toLowerCase().includes(q.toLowerCase()));
+      && p.nome.toLowerCase().includes(q.toLowerCase()))
+      .sort((a, b) => vogliono.has(b.id) - vogliono.has(a.id));  // chi vuole lavorare questa festività, per primo
     const esatto = persone.some((p) => p.nome.toLowerCase() === q.toLowerCase());
     monta(elenco,
       adatte.length ? gruppo(...adatte.map((p) => riga({
         titolo: p.nome, sotto: `${etichetta("tipo", p.tipo)} · ${etichetta("qualifica", p.qualifica)}`, avatar: avatar(p.nome, p.tipo), freccia: false,
+        fine: vogliono.has(p.id) ? pill("vuole lavorare", "verde") : null,
         onClick: () => suScelta({ persona_id: p.id }, p.nome),
       }))) : el("div", { class: "vuoto" }, q ? "Nessuna persona con questo nome." : "Nessuna persona trovata."),
       q && !esatto ? el("button", { class: "btn btn-blocco", style: "margin-top:10px", onClick: () => suScelta({ nome_volontario: q }, q) },
@@ -55,7 +57,13 @@ export function sceltaPersona(ruolo, suScelta) {
   return [cerca, elenco];
 }
 
+/** Chi ha segnato di voler lavorare quel turno festivo (data e fascia di inizio del turno). */
+export function chiVuoleLavorare(sett, data, fascia) {
+  return new Set((sett.festivi_disponibili || []).filter((d) => d.data === data && (d.fascia === fascia || d.fascia === "entrambi")).map((d) => d.persona_id));
+}
+
 function apriAssegna(info, sett, data, ricarica, bloccata) {
+  const vogliono = chiVuoleLavorare(sett, data, info.fascia);
   foglio("Assegna un posto", (chiudi) => [
     el("p", { class: "muto" }, titoloPosto(info, data)),
     bloccata ? avviso("La settimana è confermata: riaprila per modificare i turni.") : null,
@@ -66,7 +74,7 @@ function apriAssegna(info, sett, data, ricarica, bloccata) {
         }));
         chiudi(); mostra(`${nome} assegnato`);
       } catch (e) { mostraErrore(e); }
-    })]);
+    }, { vogliono })]);
 }
 
 function apriSostituti(a, sett, data, ricarica) {

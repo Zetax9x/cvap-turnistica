@@ -142,6 +142,30 @@ async function equita(versione) {
   return [selettore, contenitore];
 }
 
+/** Andamento della differenza tra chi ha fatto di più e di meno, settimana per settimana (meno è meglio). */
+function grafico(andamento) {
+  const W = 320, H = 90, P = 8;
+  const max = Math.max(0.01, ...andamento.map((a) => a.differenza));
+  const punti = andamento.map((a, i) => [P + (i / (andamento.length - 1)) * (W - 2 * P), H - P - (a.differenza / max) * (H - 2 * P)]);
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", `Andamento della differenza: da ${formatOre(andamento[0].differenza)} a ${formatOre(andamento[andamento.length - 1].differenza)}`);
+  svg.style.cssText = "width:100%;height:auto;color:var(--verde)";
+  const linea = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+  linea.setAttribute("points", punti.map((p) => p.join(",")).join(" "));
+  linea.setAttribute("fill", "none"); linea.setAttribute("stroke", "currentColor");
+  linea.setAttribute("stroke-width", "2.5"); linea.setAttribute("stroke-linejoin", "round"); linea.setAttribute("stroke-linecap", "round");
+  const ultimo = punti[punti.length - 1];
+  const cerchio = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  cerchio.setAttribute("cx", ultimo[0]); cerchio.setAttribute("cy", ultimo[1]); cerchio.setAttribute("r", "4"); cerchio.setAttribute("fill", "currentColor");
+  svg.append(linea, cerchio);
+  return el("section", { class: "card" },
+    el("div", { class: "card-titolo" }, "Andamento della differenza"), svg,
+    el("div", { style: "display:flex;justify-content:space-between", class: "muto piccolo" },
+      el("span", {}, ddmm(andamento[0].settimana)), el("span", {}, `${formatOre(andamento[0].differenza)} → ${formatOre(andamento[andamento.length - 1].differenza)}`), el("span", {}, ddmm(andamento[andamento.length - 1].settimana))));
+}
+
 function dettaglioEquita(x) {
   foglio(x.nome, () => {
     const dip = x.dipendenti.filter((d) => d.partecipa);
@@ -149,6 +173,7 @@ function dettaglioEquita(x) {
     const altri = x.dipendenti.filter((d) => !d.partecipa);
     return [
       el("p", { class: "muto" }, `Differenza tra chi ha fatto di più e di meno: ${formatOre(x.differenza)} ${x.unita}.`),
+      x.andamento && x.andamento.length > 1 ? grafico(x.andamento) : x.festivita ? el("p", { class: "muto piccolo" }, "Una volta l'anno: nessun andamento.") : null,
       dip.length ? gruppo(...dip.map((d) => riga({
         titolo: d.nome, freccia: false,
         sotto: el("div", {}, `${formatOre(d.fatti)} fatti · quota ${formatOre(d.quota)}`,
