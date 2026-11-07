@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#007a36">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Turni CVAP">
+  <meta name="format-detection" content="telephone=no">
+  <title>Turni CVAP</title>
+  <link rel="manifest" href="/app/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/app/img/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/img/favicon-32.png">
+  <link rel="stylesheet" href="/app/app.css">
+  <script type="module" src="/app/js/main.js"></script>
+</head>
+<body>
+  <div id="app" class="app" hidden>
+    <main id="schermata" class="schermata" tabindex="-1"></main>
+    <nav id="tab" class="tab" aria-label="Sezioni"></nav>
+  </div>
+  <div id="accesso" class="accesso" hidden></div>
+  <div id="avvio" class="avvio" aria-label="Caricamento"><span class="spinner"></span></div>
+  <div id="strati"></div>
+  <div id="toast-area" class="toast-area" aria-live="polite"></div>
+  <noscript><p style="padding:24px">Serve JavaScript per usare Turni CVAP.</p></noscript>
+</body>
+</html>
