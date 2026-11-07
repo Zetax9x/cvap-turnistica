@@ -72,10 +72,13 @@ document.addEventListener("keydown", (e) => {
     menu.querySelector("summary").focus();
   }
 });
-// ...e quando con Tab si esce dal menu
+// ...e quando con Tab si esce dal menu. Safari (iPhone e Mac) al tocco non dà il focus ai pulsanti ma al primo
+// contenitore che lo può ricevere (<main tabindex="-1">): non è un'uscita dal menu, altrimenti il menu si chiuderebbe
+// prima del tocco e nessun pulsante dentro risponderebbe.
 document.addEventListener("focusout", (e) => {
   const menu = e.target.closest && e.target.closest(".altre-opzioni[open]");
-  if (menu && e.relatedTarget && !menu.contains(e.relatedTarget) && !document.querySelector("dialog[open]")) {
+  const verso = e.relatedTarget;
+  if (menu && verso && !menu.contains(verso) && !verso.contains(menu) && !document.querySelector("dialog[open]")) {
     menu.open = false;
   }
 });
