@@ -13,6 +13,7 @@ export default async function settimana(root, { parametri }) {
   const oggi = todayISO();
   let giorno = (parametri[1] && parametri[1] !== "prepara" ? parametri[1] : null) || (mondayOf(oggi) === lun ? oggi : lun);
   let sett = null;
+  let generati = null;  // payload della versione «Generati», se la si sta guardando
   let vista = parametri[1] === "prepara" ? "prepara" : "turni";
 
   const barra = el("div", { class: "giorni" });
@@ -59,7 +60,7 @@ export default async function settimana(root, { parametri }) {
 
   function disegnaCorpo() {
     if (vista === "prepara") { monta(corpo, disegnaPrepara(sett, ricarica)); return; }
-    const gruppi = turniDelGiorno(sett, giorno);
+    const gruppi = turniDelGiorno(generati || sett, giorno);
     const festivo = (sett.festivi || []).find((f) => f.data === giorno);
     const err = sett.violazioni.filter((v) => v.livello === "errore").length;
     const avv = sett.violazioni.length - err;
@@ -73,7 +74,9 @@ export default async function settimana(root, { parametri }) {
       sett.stato === "nuova" && !sett.assegnazioni.length ? el("div", { class: "card" },
         el("p", {}, "Settimana ancora da preparare."),
         el("button", { class: "btn btn-primario btn-blocco", style: "margin-top:10px", onClick: genera }, "Genera i turni")) : null,
-      disegnaGiorno(gruppi, (info) => apriPosto(info, sett, giorno, ricarica)),
+      generati ? el("div", { class: "avviso" }, "Stai guardando i turni Generati: sola lettura, come li ha prodotti il programma. ",
+        el("button", { class: "btn", style: "min-height:36px;margin-top:8px", onClick: () => { generati = null; disegnaBarra(); disegnaCorpo(); } }, "Torna agli Effettivi")) : null,
+      disegnaGiorno(gruppi, generati ? null : (info) => apriPosto(info, sett, giorno, ricarica)),
       liberi && (liberi.liberi.length || liberi.ferie.length || liberi.indisponibili.length) ? el("section", { class: "card" },
         el("div", { class: "card-titolo" }, "Dipendenti liberi"),
         el("div", {}, liberi.liberi.map((p) => el("span", { style: "display:inline-block;margin:0 6px 6px 0" },
@@ -125,8 +128,10 @@ export default async function settimana(root, { parametri }) {
         : { valore: "conferma", titolo: "Conferma la settimana", sotto: "Rende definitivi i turni" },
       { valore: "email", titolo: "Invia i turni per email", sotto: conf ? "Ai dipendenti e ai volontari" : "Disponibile a settimana confermata" },
       { valore: "rimuovi", titolo: "Togli i turni generati", sotto: "Restano volontari e turni fissati" },
+      { valore: "generati", titolo: "Vedi i turni Generati", sotto: "Confronto con quanto prodotto dal programma" },
+      sett.report ? { valore: "report", titolo: "Report della generazione", sotto: "Qualità, scoperti, festività" } : null,
       { valore: "oggi", titolo: "Vai a questa settimana" },
-    ]);
+    ].filter(Boolean));
     try {
       if (voce === "genera") await genera();
       else if (voce === "conferma") {
@@ -134,10 +139,32 @@ export default async function settimana(root, { parametri }) {
         ricarica(await api.conferma(lun)); mostra("Settimana confermata");
       } else if (voce === "riapri") { ricarica(await api.riapri(lun)); mostra("Settimana riaperta"); }
       else if (voce === "email") apriEmail();
+      else if (voce === "generati") {
+        generati = await conAttesa("Carico i turni generati…", "", () => api.tabelloneGenerato(lun));
+        if (vista !== "turni") { vista = "turni"; disegnaSelettore(); }
+        disegnaBarra(); disegnaCorpo();
+      } else if (voce === "report") apriReport();
       else if (voce === "rimuovi") {
         if (await conferma("Togliere tutti i turni generati di questa settimana?", { ok: "Togli", pericolo: true })) { ricarica(await api.rimuoviGenerati(lun)); mostra("Turni generati tolti"); }
       } else if (voce === "oggi") location.hash = `#/settimana/${mondayOf(oggi)}/${oggi}`;
     } catch (e) { mostraErrore(e); }
+  }
+
+  function apriReport() {
+    const r = sett.report;
+    const q = r.qualita;
+    foglio("Report della generazione", () => [
+      el("div", {}, pill(etichetta("statoReport", r.stato) || r.stato, r.stato === "ottimo" ? "verde" : r.stato === "ammissibile" ? "ambra" : "rosso")),
+      r.messaggio ? el("p", {}, r.messaggio) : null,
+      el("div", { class: "griglia2" },
+        r.durata_s !== undefined ? el("div", { class: "numero" }, el("b", { class: "num" }, `${formatOre(Math.round(r.durata_s * 10) / 10)} s`), el("span", {}, "durata")) : null,
+        r.media_ore ? el("div", { class: "numero" }, el("b", { class: "num" }, `${formatOre(Math.round(r.media_ore * 10) / 10)} h`), el("span", {}, "media ore")) : null,
+        q ? el("div", { class: "numero" }, el("b", { class: "num" }, `${formatOre(q.gap_pct)}%`), el("span", {}, "distanza dall'ottimo")) : null,
+        q ? el("div", { class: "numero" }, el("b", { class: "num" }, String(Math.round(q.punteggio))), el("span", {}, "penalità (meno è meglio)")) : null),
+      r.qualita_precedente ? el("p", { class: "muto piccolo" }, `Generazione precedente: penalità ${Math.round(r.qualita_precedente.punteggio)}.`) : null,
+      (r.scoperti || []).length ? [el("div", { class: "card-titolo" }, `Posti scoperti (${r.scoperti.length})`),
+        gruppo(...r.scoperti.map((t) => riga({ titolo: `${ddmm(t.data)} · ${t.postazione}`, sotto: `${etichetta("fasciaBreve", t.fascia)} · ${etichetta("ruolo", t.ruolo)}`, freccia: false })))] : avviso("Nessun posto scoperto.", "ok"),
+    ]);
   }
 
   function apriEmail() {

@@ -90,7 +90,7 @@ h1, h2, h3, p { margin: 0; }
 button.riga:active, a.riga:active { background: var(--card-2); }
 .riga-corpo { flex: 1; min-width: 0; }
 .riga-titolo { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
-.riga-sotto { font-size: 13px; color: var(--muto); }
+.riga-sotto { font-size: 13px; color: var(--muto); white-space: pre-line; }
 .riga-fine { color: var(--muto); font-size: 14px; white-space: nowrap; }
 .riga svg.freccia { width: 18px; height: 18px; color: var(--muto); flex: none; }
 .riga svg.ico { width: 24px; height: 24px; flex: none; color: var(--verde); }
