@@ -57,3 +57,12 @@ def test_con_password_la_pagina_e_pubblica_ma_le_api_no(tmp_path):
     c = TestClient(create_app(str(tmp_path / "t.db"), password="segreta"))
     assert c.get("/app/").status_code == 200  # serve per mostrare la schermata della password
     assert c.get("/api/settimane/2026-11-02").status_code == 401
+
+
+def test_pdf_dei_turni_di_un_dipendente(client):
+    p = client.post("/api/persone", json={"nome": "Rossi Marco", "tipo": "dipendente", "qualifica": "autista"}).json()
+    r = client.get(f"/api/settimane/2026-11-02/pdf/{p['id']}")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.content.startswith(b"%PDF")
+    assert client.get("/api/settimane/2026-11-02/pdf/9999").status_code == 404

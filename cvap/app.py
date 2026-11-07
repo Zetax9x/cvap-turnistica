@@ -1212,6 +1212,19 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
             (inviate if errore is None else errori).append(voce if errore is None else {**voce, "errore": errore})
         return {"inviate": inviate, "errori": errori}
 
+    @app.get("/api/settimane/{data}/pdf/{persona_id}")
+    def pdf_turni_persona(data: str, persona_id: IdPath, conn: Conn):
+        """PDF dei turni della settimana di un dipendente (lo stesso allegato alle email)."""
+        p = db.get_persona(conn, persona_id)
+        if p is None:
+            raise HTTPException(404, "Persona non trovata")
+        from .pdf_turni_personali import genera
+        inizio = lunedi(_data(data))
+        contenuto = genera(payload_settimana(conn, inizio), p)
+        return Response(contenuto, media_type="application/pdf", headers={
+            "Content-Disposition": f'inline; filename="turni-{p["id"]}-{inizio.isoformat()}.pdf"',
+            "Cache-Control": "no-store"})
+
     @app.post("/api/settimane/{data}/email/prova")
     def prova_email(data: str, body: ProvaEmailIn, conn: Conn):
         if not postino.configurato:
