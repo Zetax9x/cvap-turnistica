@@ -29,6 +29,12 @@ export default async function statistiche(root, { parametri }) {
   await carica();
 }
 
+/** «48 lavorate + 12 ferie + 6 malattia»: come le ore totali sono composte (vuoto se non ci sono assenze). */
+const composizione = (d) => {
+  const parti = [["ore_ferie", "ferie"], ["ore_malattia", "malattia"]].filter(([k]) => d[k]).map(([k, n]) => `${formatOre(d[k])} ${n}`);
+  return parti.length ? [`${formatOre(d.ore_lavorate || 0)} lavorate`, ...parti].join(" + ") : "";
+};
+
 const num = (n, testo) => el("div", { class: "numero" }, el("b", { class: "num" }, String(n)), el("span", {}, testo));
 
 // ---------------------------------------------------------------- persone
@@ -40,13 +46,14 @@ async function persone(versione) {
   const lista = el("div");
   const disegna = () => {
     const sel = dati.filter((d) => d.tipo === tipo);
-    const maxOre = Math.max(1, ...sel.map((d) => d.ore_lavorate));
+    const maxOre = Math.max(1, ...sel.map((d) => d.ore_totali));
     monta(segm, [["dipendente", "Dipendenti"], ["volontario", "Volontari"]].map(([v, t]) =>
       el("button", { type: "button", "aria-pressed": String(tipo === v), onClick: () => { tipo = v; disegna(); } }, t)));
     monta(lista, sel.length ? gruppo(...sel.map((d) => riga({
       titolo: d.nome, avatar: avatar(d.nome, d.tipo), onClick: () => dettaglioPersona(d, versione()),
-      sotto: el("div", {}, `${formatOre(d.ore_lavorate)} h · ${d.settimane} sett.`,
-        el("div", { class: "barra", style: "margin-top:6px" }, el("i", { style: `width:${(d.ore_lavorate / maxOre) * 100}%` }))),
+      sotto: el("div", {}, `${formatOre(d.ore_totali)} h totali · ${d.settimane} sett.`,
+        composizione(d) ? el("div", {}, composizione(d)) : null,
+        el("div", { class: "barra", style: "margin-top:6px" }, el("i", { style: `width:${(d.ore_totali / maxOre) * 100}%` }))),
       fine: d.tipo === "dipendente" ? el("span", { class: "riga-fine num" }, formatSaldo(d.saldo_ore)) : null,
     }))) : el("div", { class: "vuoto" }, "Ancora nessuna settimana confermata."));
   };
@@ -58,10 +65,12 @@ function dettaglioPersona(d, versione) {
   const festivi = d.festivi ? d.festivi.turni : 0;
   foglio(d.nome, (chiudi) => [
     el("div", { class: "griglia2" },
-      num(d.settimane, "settimane"), num(formatOre(d.ore_lavorate), "ore lavorate"),
-      num(formatOre(d.ore_giorno), "ore di giorno"), num(formatOre(d.ore_notte), "ore di notte"),
-      num(formatOre(d.ore_ferie), "ore di ferie"), num(formatOre(d.ore_malattia), "ore di malattia"),
-      num(festivi, "turni festivi"), num(d.ascoli ? d.ascoli.turni : 0, "turni a Ascoli")),
+      num(d.settimane, "settimane"), num(formatOre(d.ore_totali), "ore totali"),
+      num(formatOre(d.ore_lavorate), "ore lavorate"), num(formatOre(d.ore_ferie), "ore di ferie"),
+      num(formatOre(d.ore_malattia), "ore di malattia"), num(formatOre(d.ore_giorno), "ore di giorno"),
+      num(formatOre(d.ore_notte), "ore di notte"), num(festivi, "turni festivi"),
+      num(d.ascoli ? d.ascoli.turni : 0, "turni a Ascoli"), num(Object.values(d.weekend || {}).reduce((a, b) => a + b, 0), "turni nel weekend")),
+    el("p", { class: "muto piccolo" }, "Ore totali = ore lavorate + 6 ore per ogni giorno di ferie o malattia."),
     d.tipo === "dipendente" ? el("p", { class: "muto" }, `Saldo ore rispetto alla media: ${formatSaldo(d.saldo_ore)} h`) : null,
     d.ore_sostituzioni ? el("p", { class: "muto" }, `Sostituzioni (ore extra, non contate sopra): ${formatOre(d.ore_sostituzioni)} h`) : null,
     el("div", { class: "card-titolo" }, "Weekend e sedi"),
@@ -84,9 +93,10 @@ function riepilogoPeriodo(d, versione) {
         const r = await api.riepilogoPersona(d.persona_id, dal.value, al.value, versione);
         const x = r.riepilogo;
         monta(risultato,
-          el("div", { class: "griglia2" }, num(x.turni, "turni"), num(formatOre(x.ore_lavorate), "ore lavorate"),
-            num(x.turni_notte, "notti"), num(x.turni_festivi, "turni festivi"),
-            num(x.giorni_ferie, "giorni di ferie"), num(x.giorni_malattia, "giorni di malattia")),
+          el("div", { class: "griglia2" }, num(x.turni, "turni"), num(formatOre(x.ore_totali), "ore totali"),
+            num(formatOre(x.ore_lavorate), "ore lavorate"), num(formatOre(x.ore_ferie_malattia), "ore accreditate (ferie e malattia)"),
+            num(x.giorni_ferie, "giorni di ferie"), num(x.giorni_malattia, "giorni di malattia"),
+            num(x.turni_notte, "notti"), num(x.turni_festivi, "turni festivi")),
           x.postazioni.length ? gruppo(...x.postazioni.map((p) => riga({ titolo: p.postazione, fine: `${p.turni} turni · ${formatOre(p.ore)} h`, freccia: false }))) : null,
           gruppo(...r.giorni.filter((g) => g.turni.length || g.assenza).map((g) => riga({
             titolo: `${GIORNI_BREVI[indiceGiorno(g.data)]} ${ddmm(g.data)}`, freccia: false,

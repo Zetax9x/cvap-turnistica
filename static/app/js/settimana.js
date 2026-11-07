@@ -94,7 +94,7 @@ export default async function settimana(root, { parametri }) {
       el("div", { class: "card-titolo" }, `Ore della settimana · media ${formatOre(sett.media_ore)} h`),
       righe.map((r) => el("div", { style: "margin-bottom:10px" },
         el("div", { style: "display:flex;justify-content:space-between;font-size:14px" },
-          el("span", {}, r.nome), el("span", { class: "num muto" }, `${formatOre(r.ore)} h${r.ore_sostituzioni ? ` + ${formatOre(r.ore_sostituzioni)} extra` : ""}`)),
+          el("span", {}, r.nome), el("span", { class: "num muto" }, `${formatOre(r.ore)} h${r.ore_ferie ? ` + ${formatOre(r.ore_ferie)} ferie/malattia` : ""}${r.ore_sostituzioni ? ` + ${formatOre(r.ore_sostituzioni)} extra` : ""}`)),
         el("div", { class: "barra" }, el("i", { class: r.max_ore_settimana && r.ore > r.max_ore_settimana ? "sopra" : "",
           style: `width:${Math.min(100, (r.ore / Math.max(1, (sett.media_ore || 36) * 1.4)) * 100)}%` })))));
   }
