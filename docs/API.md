@@ -707,3 +707,12 @@ tocca i dati veri. Scrive un report HTML (`--out`, predefinito `simulazione.html
   (`worker_limitati`), utile per confrontare più configurazioni con lo stesso tempo.
 - Taratura dei pesi (novembre 2026, 3 anni, 20 s a settimana, 2 worker): i pesi di partenza restano; numeri in
   `docs/PIANO-rotazioni.md`, 3.3.
+
+## Notifiche push (app per telefono)
+
+Un solo dispositivo iscritto (nella tabella `impostazioni`: chiavi `push_vapid_privata`, `push_iscrizione`). Tutte dietro la password.
+- `GET /api/push` → `{chiave, iscritto}`: `chiave` è la chiave pubblica VAPID (base64 url, 87 caratteri) da dare a `pushManager.subscribe`.
+- `PUT /api/push/iscrizione` `{endpoint (https), keys: {p256dh, auth}}` → `{iscritto: true}`; sostituisce l'iscrizione precedente · 422 se non valida.
+- `DELETE /api/push/iscrizione` → 204.
+- `POST /api/push/prova` → `{inviata: true}` · 400 se nessuno è iscritto, se l'iscrizione è scaduta (404/410 dal servizio: viene tolta) o se l'invio fallisce.
+- `POST /api/cambi-turno/conferme`: alla **prima** registrazione di un cambio avvisa il dispositivo iscritto (`{titolo, testo, url}`); la ripetizione con la stessa chiave non riavvisa; un errore di invio non cambia l'esito.

@@ -38,8 +38,9 @@ function disegnaSchede(attiva) {
   }, icona(s.icona), el("span", {}, s.testo))));
 }
 
-async function mostraVista() {
+async function mostraVista(conservaScroll = false) {
   const mio = ++seq;
+  const scroll = conservaScroll === true ? schermata.scrollTop : 0;
   const { sezione, parametri } = leggiIndirizzo();
   const nome = VISTE[sezione] ? sezione : (VISTE[DI_SCHEDA[sezione]] ? DI_SCHEDA[sezione] : "oggi");
   disegnaSchede(DI_SCHEDA[sezione] || nome);
@@ -49,6 +50,7 @@ async function mostraVista() {
     const modulo = await VISTE[nome]();
     if (mio !== seq) return;
     pulizia = (await modulo.default(schermata, { sezione, parametri })) || null;
+    if (scroll) schermata.scrollTop = scroll;
   } catch (e) {
     if (mio !== seq || (e && e.status === 401)) return;
     monta(schermata, el("div", { class: "contenuto", style: "padding-top:24px" },
@@ -112,6 +114,36 @@ async function avvia() {
 }
 
 window.addEventListener("hashchange", mostraVista);
+
+// ---- dati sempre freschi: al ritorno nell'app dopo una pausa e con «tira per aggiornare» ----
+const PAUSA_MS = 30_000;
+let nascostaDa = 0;
+const fogliAperti = () => document.querySelector("#strati .foglio, #strati .sovrapposto");
+function aggiorna() {
+  if (!document.getElementById("app").hidden && !fogliAperti()) mostraVista(true);
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") nascostaDa = Date.now();
+  else if (nascostaDa && Date.now() - nascostaDa > PAUSA_MS) { nascostaDa = 0; aggiorna(); }
+});
+{
+  const indicatore = el("div", { class: "tira", "aria-hidden": "true" }, el("span", { class: "spinner" }));
+  document.body.append(indicatore);
+  let y0 = null, tirata = 0;
+  schermata.addEventListener("touchstart", (e) => { y0 = schermata.scrollTop === 0 && !fogliAperti() ? e.touches[0].clientY : null; tirata = 0; }, { passive: true });
+  schermata.addEventListener("touchmove", (e) => {
+    if (y0 === null) return;
+    tirata = Math.max(0, e.touches[0].clientY - y0);
+    indicatore.style.transform = `translate(-50%, ${Math.min(tirata, 90) - 50}px)`;
+    indicatore.style.opacity = String(Math.min(1, tirata / 70));
+  }, { passive: true });
+  schermata.addEventListener("touchend", () => {
+    const abbastanza = y0 !== null && tirata > 70;
+    y0 = null;
+    indicatore.style.transform = ""; indicatore.style.opacity = "";
+    if (abbastanza) aggiorna();
+  });
+}
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/app/sw.js", { scope: "/app/" }).catch(() => { /* senza SW l'app funziona lo stesso */ });

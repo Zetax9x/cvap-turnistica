@@ -17,6 +17,21 @@ export function turniDelGiorno(sett, data) {
   };
   for (const f of sett.fabbisogno || []) if (f.data === data) turno(f.postazione, f.fascia, f.segmento).ruoli[f.ruolo].quantita += f.quantita;
   for (const a of sett.assegnazioni) if (a.data === data) turno(a.postazione, a.fascia, a.segmento).ruoli[a.ruolo].ass.push(a);
+  // postazioni normali: servono sempre un autista e un soccorritore per turno (giorno 8–20 e notte 20–8), anche mezzi turni
+  // dei volontari; se manca una metà del giorno è quella a risultare scoperta. Prima della generazione non si segna nulla.
+  if (sett.stato !== "nuova" || sett.assegnazioni.length) {
+    for (const p of sett.postazioni || []) {
+      for (const fascia of ["giorno", "notte"]) {
+        for (const ruolo of RUOLI) {
+          const segs = new Set(sett.assegnazioni.filter((a) => a.data === data && a.postazione === p && a.fascia === fascia && a.ruolo === ruolo).map((a) => a.segmento));
+          if (!segs.size) turno(p, fascia, "intero").ruoli[ruolo].quantita = Math.max(1, turno(p, fascia, "intero").ruoli[ruolo].quantita);
+          else if (fascia === "giorno" && !segs.has("intero")) {
+            for (const meta of ["mattina", "pomeriggio"]) if (!segs.has(meta)) turno(p, "giorno", meta).ruoli[ruolo].quantita = 1;
+          }
+        }
+      }
+    }
+  }
   const ordine = [...(sett.postazioni || []), ...(sett.postazioni_a_richiesta || []), EXTRA];
   const nomi = [...per.keys()].sort((x, y) => {
     const ix = ordine.indexOf(x), iy = ordine.indexOf(y);
