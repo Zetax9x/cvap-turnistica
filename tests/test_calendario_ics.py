@@ -88,7 +88,7 @@ def test_testo_speciale_e_righe_lunghe_secondo_lo_standard():
     [e] = eventi(testo)
     assert e["SUMMARY"] == r"Acquasanta\; prova\, uno"
     assert e["DESCRIPTION"] == calendario_ics.testo_ics(lungo) + r"\nRiga 2"
-    assert e["DTSTART"] == "20261019T060000Z" and e["DTEND"] == "20261019T180000Z"
+    assert e["DTSTART"] == "20261019T060000Z" and "DTEND" not in e and "DURATION" not in e
 
 
 def test_nome_nel_link_senza_accenti_e_spazi():
@@ -119,11 +119,13 @@ def test_il_calendario_contiene_i_turni_delle_settimane_confermate(client):
     assert "X-WR-CALNAME:Turni - Mario Rossi" in r.text
     giorno, notte = sorted(eventi(r.text), key=lambda e: e["DTSTART"])
     assert giorno["SUMMARY"] == "Acquasanta · Autista"
-    assert (giorno["DTSTART"], giorno["DTEND"]) == ("20261019T060000Z", "20261019T180000Z")
+    assert giorno["DTSTART"] == "20261019T060000Z" and "DTEND" not in giorno
     assert "Giorno 8–20" in giorno["DESCRIPTION"] and "Luca Bianchi (soccorritore)" in giorno["DESCRIPTION"]
     assert giorno["LOCATION"] == "Acquasanta"
     assert notte["SUMMARY"] == "Venarotta · Autista"
-    assert (notte["DTSTART"], notte["DTEND"]) == ("20261022T180000Z", "20261023T060000Z")
+    # la notte 20–8 compare solo alle 20 (ora di Roma = 18 UTC) e non occupa due giorni
+    assert notte["DTSTART"] == "20261022T180000Z" and "DTEND" not in notte
+    assert "Notte 20–8" in notte["DESCRIPTION"]
     assert giorno["UID"] != notte["UID"]
 
 

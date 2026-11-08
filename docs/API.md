@@ -253,7 +253,8 @@ calendari(persona_id INTEGER PK REFERENCES persone(id), codice TEXT UNIQUE /*20 
 - `GET /turni/<nome>-<codice>.ics` (anche HEAD): **senza password**, fuori da `/api`; conta solo il codice (anche
   `/turni/<codice>.ics`). 404 se il codice non esiste o la persona non è un dipendente attivo. `text/calendar`:
   turni Effettivi della persona nelle settimane `confermata`, da 62 giorni prima a 400 dopo oggi; orari in UTC dall'ora
-  di Roma (`orari_utc`), `UID` stabile per data, postazione, fascia, segmento, ruolo e persona; `SUMMARY`
+  di Roma (`orari_utc`); ogni evento ha **solo `DTSTART`** (niente `DTEND`: durata zero), così la notte 20–8 non occupa due
+  giorni del calendario, e l'orario completo ("Notte 20–8") sta nella `DESCRIPTION`; `UID` stabile per data, postazione, fascia, segmento, ruolo e persona; `SUMMARY`
   "<postazione> · <ruolo>", `DESCRIPTION` con orario, ruolo e colleghi che si sovrappongono nella stessa postazione.
 - `GET /api/calendari/{id}` → `{persona_id, nome, percorso}` (crea il codice se manca) · `POST /api/calendari/{id}/rigenera`
   → stesso formato con un codice nuovo (il vecchio link smette di funzionare). 404 persona inesistente, 400 se non è

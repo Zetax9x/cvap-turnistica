@@ -1,8 +1,12 @@
 """Calendario dei turni per il telefono: un file .ics (RFC 5545) per dipendente.
 
 Contiene i turni effettivi (cambi turno compresi) delle sole settimane confermate, da due mesi fa a un anno
-avanti. Gli orari sono in UTC, calcolati dall'ora di Roma: così le notti a cavallo del cambio dell'ora durano
-quanto devono e ogni calendario li mostra giusti. Il file si raggiunge con un link segreto (`db_calendari`),
+avanti. Gli orari sono in UTC, calcolati dall'ora di Roma, così ogni calendario mostra l'inizio giusto anche
+a cavallo del cambio dell'ora.
+
+Gli eventi hanno solo l'orario di inizio (DTSTART, senza DTEND: durata zero secondo RFC 5545, 3.6.1): una notte
+20–8 non occupa così due giorni del calendario. L'orario completo del turno ("Notte 20–8") resta nella
+descrizione. Il file si raggiunge con un link segreto (`db_calendari`),
 perché i programmi di calendario non possono inserire la password del sito.
 """
 import hashlib
@@ -28,7 +32,7 @@ PRODID = "-//Croce Verde Ascoli Piceno//CVAP Turnistica//IT"
 class Evento:
     uid: str
     inizio: datetime  # con fuso orario
-    fine: datetime
+    fine: datetime  # non va nel file (solo l'inizio), ma resta per chi usa gli eventi
     titolo: str
     luogo: str
     descrizione: str
@@ -82,7 +86,7 @@ def componi(nome: str, eventi: list[Evento], adesso: datetime) -> str:
              "REFRESH-INTERVAL;VALUE=DURATION:PT1H", "X-PUBLISHED-TTL:PT1H"]
     for e in sorted(eventi, key=lambda e: (e.inizio, e.uid)):
         righe += ["BEGIN:VEVENT", f"UID:{e.uid}", f"DTSTAMP:{_quando(adesso)}", f"DTSTART:{_quando(e.inizio)}",
-                  f"DTEND:{_quando(e.fine)}", f"SUMMARY:{testo_ics(e.titolo)}", f"LOCATION:{testo_ics(e.luogo)}",
+                  f"SUMMARY:{testo_ics(e.titolo)}", f"LOCATION:{testo_ics(e.luogo)}",
                   f"DESCRIPTION:{testo_ics(e.descrizione)}", "TRANSP:OPAQUE", "END:VEVENT"]
     righe.append("END:VCALENDAR")
     return "".join(r + "\r\n" for riga in righe for r in _piega(riga))
