@@ -291,9 +291,12 @@ def equita(settimane: Sequence[tuple[date, SettimanaPassata]], persone: Sequence
             ruoli.setdefault(a.postazione, set()).add(a.ruolo)
     punti = [generate[i] for i in _punti(len(generate), ANDAMENTO_PUNTI_MAX)]
     # lo storico alla fine di ogni settimana dell'andamento; l'ultimo è quello di tutto il periodo
-    storici = [(ordinate[i][0], calcola_storico([s for _, s in ordinate[:i + 1]])) for i in punti]
+    # come il generatore: nel saldo delle ore le settimane con assenze parziali non contano
+    storici = [(ordinate[i][0], calcola_storico([s for _, s in ordinate[:i + 1]], saldo_assenze_parziali=False))
+               for i in punti]
     # lo storico di SETTIMANE_TENDENZA settimane generate fa, per l'andamento di ogni persona
-    storico_prima = (calcola_storico([s for _, s in ordinate[:generate[-1 - SETTIMANE_TENDENZA] + 1]])
+    storico_prima = (calcola_storico([s for _, s in ordinate[:generate[-1 - SETTIMANE_TENDENZA] + 1]],
+                                     saldo_assenze_parziali=False)
                      if len(generate) > SETTIMANE_TENDENZA else None)
     out = {}
     for rot in (*ROTAZIONI, *extra):

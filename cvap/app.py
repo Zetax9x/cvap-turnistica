@@ -1596,7 +1596,8 @@ def create_app(db_path: str, password: str | None = None, postino=None,
         # Nelle statistiche contano solo settimane generate e confermate.
         # Il generatore mantiene il proprio storico, incluse le bozze.
         passate = solo_generate([_settimana_passata(conn, r, versione) for r in righe])
-        storico = calcola_storico(passate)
+        # saldo ore come quello del generatore e dell'equità: le settimane con assenze parziali non lo cambiano
+        storico = calcola_storico(passate, saldo_assenze_parziali=False)
         persone = {p["id"]: p for p in db.lista_persone(conn)}
         festivi, _ = dati_festivi.festivi_statistiche(conn, [pid for pid in storico if pid in persone], versione=versione)
 

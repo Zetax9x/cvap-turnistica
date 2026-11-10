@@ -102,8 +102,9 @@ def solo_generate(settimane: list[SettimanaPassata]) -> list[SettimanaPassata]:
 def calcola_storico(settimane: list[SettimanaPassata], *, saldo_assenze_parziali: bool = True) -> dict[int, StoricoPersona]:
     """Nel saldo contano anche le ore accreditate per assenze parziali.
 
-    Il generatore può mantenere la regola senza recupero nelle settimane con assenze
-    passando `saldo_assenze_parziali=False`.
+    Il generatore, il quadro dell'equità e le statistiche passano `saldo_assenze_parziali=False`: nelle settimane
+    con assenze (ferie o malattia per una parte della settimana) il saldo delle ore non cambia, così chi è stato
+    assente non deve recuperare e non risulta indietro.
     """
     storico: dict[int, StoricoPersona] = {}
     for s in dalla_prima_generata(settimane):

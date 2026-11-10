@@ -839,14 +839,14 @@ def test_genera_rispetta_ferie_e_indisponibilita(client):
     assert not [v for v in s["violazioni"] if v["livello"] == "errore"]
 
 
-def test_statistiche_ferie_parziali_contribuiscono_al_saldo(client):
+def test_statistiche_ferie_parziali_non_cambiano_il_saldo(client):
+    """Come nel generatore: chi è assente per una parte della settimana non va in negativo né deve recuperare."""
     ids = staff_14(client)
     client.post("/api/ferie", json={"persona_id": ids[0], "dal": "2026-10-19", "al": "2026-10-23"})
     assert client.post(f"/api/settimane/{LUNEDI_A}/genera", json={"tempo_max": 5}).status_code == 200
     assert client.post(f"/api/settimane/{LUNEDI_A}/conferma").status_code == 200
     stats = {x["persona_id"]: x for x in client.get("/api/statistiche").json()}
-    media = sum(s["ore_totali"] for s in stats.values()) / len(ids)
-    assert stats[ids[0]]["saldo_ore"] == pytest.approx(stats[ids[0]]["ore_totali"] - media)
+    assert stats[ids[0]]["saldo_ore"] == 0
 
 
 def test_statistiche_ore_totali_comprendono_ferie_e_malattia(client):
