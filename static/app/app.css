@@ -247,3 +247,13 @@ thead .gr-prima { background: var(--card-2); padding: 6px; }
 .gr-vol { background: var(--verde-soft); color: var(--verde-testo); }
 .gr-man { background: var(--blu-soft); color: var(--blu); }
 .gr-vuoto { outline: 1.5px dashed var(--rosso); color: var(--rosso); background: transparent; }
+
+/* Registro delle azioni */
+.registro-voce { align-items: flex-start; }
+.registro-testa { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 4px; }
+.registro-dettagli { margin: 6px 0 0; font-size: 13px; display: grid; gap: 2px; }
+.registro-dettagli > div { display: flex; flex-wrap: wrap; gap: 0 6px; }
+.registro-dettagli dt { color: var(--muto); }
+.registro-dettagli dt::after { content: ":"; }
+.registro-dettagli dd { margin: 0; overflow-wrap: anywhere; }
+.registro-motivo dd { color: var(--rosso); }

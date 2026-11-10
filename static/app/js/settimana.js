@@ -183,7 +183,38 @@ export default async function settimana(root, { parametri }) {
       r.qualita_precedente ? el("p", { class: "muto piccolo" }, `Generazione precedente: penalità ${Math.round(r.qualita_precedente.punteggio)}.`) : null,
       (r.scoperti || []).length ? [el("div", { class: "card-titolo" }, `Posti scoperti (${r.scoperti.length})`),
         gruppo(...r.scoperti.map((t) => riga({ titolo: `${ddmm(t.data)} · ${t.postazione}`, sotto: `${etichetta("fasciaBreve", t.fascia)} · ${etichetta("ruolo", t.ruolo)}`, freccia: false })))] : avviso("Nessun posto scoperto.", "ok"),
+      diagnostica(r),
     ]);
+  }
+
+  /** Come il pannello «Diagnostica della generazione» del sito: regole allentate e peso dell'equità. */
+  function diagnostica(r) {
+    const voci = (r.diagnostica && r.diagnostica.voci) || [];
+    if (!voci.length) return r.qualita ? el("p", { class: "muto piccolo" }, "Il dettaglio delle regole è disponibile rigenerando la settimana.") : null;
+    const numero = (n) => Number(n).toLocaleString("it-IT", { useGrouping: "always" });
+    const q = r.qualita || {};
+    const regole = voci.filter((v) => v.tipo === "regola");
+    const violate = regole.filter((v) => v.quante > 0);
+    const equita = voci.filter((v) => v.tipo === "equita");
+    const totale = equita.reduce((t, v) => t + Math.abs(v.punti), 0) || 1;
+    return [
+      el("div", { class: "card-titolo", style: "margin-top:16px" }, "Ricerca"),
+      gruppo(
+        riga({ titolo: "Soluzione", fine: r.stato === "ottimo" ? "ottima" : "buona", freccia: false }),
+        riga({ titolo: "Limite inferiore", sotto: "Nessuna soluzione può fare meglio", fine: numero(q.limite_inferiore ?? 0), freccia: false }),
+        riga({ titolo: "Miglioramenti trovati", fine: numero(q.soluzioni ?? 0), freccia: false }),
+        riga({ titolo: "Migliore trovata dopo", fine: `${formatOre(q.tempo_migliore_s ?? 0)} s su ${formatOre(q.durata_s ?? 0)} s`, freccia: false }),
+        riga({ titolo: "Scambi Acquasanta/Venarotta", fine: numero(r.diagnostica.scambi_sedi || 0), freccia: false })),
+      (q.gap_pct || 0) > 5 ? avviso("La distanza dall'ottimo è alta: rigenerando con più tempo la soluzione può migliorare.") : null,
+      el("div", { class: "card-titolo", style: "margin-top:16px" }, "Regole con evidenza"),
+      violate.length ? null : avviso("Tutte rispettate: il generatore non ha dovuto allentarne nessuna.", "ok"),
+      gruppo(...regole.map((v) => riga({ titolo: v.etichetta, sotto: v.spiegazione, freccia: false,
+        fine: v.quante > 0 ? pill(`${numero(v.quante)} volte`, "rosso") : "0" }))),
+      el("div", { class: "card-titolo", style: "margin-top:16px" }, "Equità nel tempo"),
+      el("p", { class: "muto piccolo" }, "Peso di ogni criterio nel punteggio; i punti possono essere negativi."),
+      gruppo(...equita.map((v) => riga({ titolo: v.etichetta, sotto: `${v.spiegazione} · ${numero(v.punti)} punti`, freccia: false,
+        fine: `${Math.round((Math.abs(v.punti) / totale) * 100)}%` }))),
+    ];
   }
 
   function apriEmail() {
