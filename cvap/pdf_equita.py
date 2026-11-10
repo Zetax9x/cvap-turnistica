@@ -150,6 +150,8 @@ def _confronti(c: dict) -> list:
 
 
 def _statistiche(righe: list[dict]) -> list:
+    """Solo i dipendenti: i volontari non compaiono."""
+    righe = [r for r in righe if r["tipo"] == "dipendente"]
     out = [Paragraph("Statistiche dei turni", _H2)]
     if not righe:
         return out + [_p("Nessuna settimana con turni generati.", _TESTO)]
@@ -157,15 +159,14 @@ def _statistiche(righe: list[dict]) -> list:
     for r in righe:
         saldo = r.get("saldo_ore", 0)
         sedi = r.get("sedi", {})
-        dati.append([Markup(f"<b>{escape(r['nome'])}</b>"), "Dipendente" if r["tipo"] == "dipendente" else "Volontario",
-                     r["settimane"], et._ore_totali(r),
-                     f"{saldo:+.1f}".replace(".", ",") if r["tipo"] == "dipendente" else "—",
+        dati.append([Markup(f"<b>{escape(r['nome'])}</b>"), r["settimane"], et._ore_totali(r),
+                     f"{saldo:+.1f}".replace(".", ","),
                      f"{r['ore_giorno']} / {r['ore_notte']}", f"{sedi.get('Acquasanta', 0)} / {sedi.get('Venarotta', 0)}",
                      sum(r["weekend"].values()), r["standby"], r["programmati"], et._ascoli(r), r.get("assistenze", 0)])
-    return out + [_tabella(["Persona", "Tipo", "Settimane", "Ore totali", "Saldo ore", "Ore giorno / notte",
+    return out + [_tabella(["Dipendente", "Settimane", "Ore totali", "Saldo ore", "Ore giorno / notte",
                             "Acquasanta / Venarotta", "Weekend", "Standby", "Programmati", "Ascoli (g / n)", "Assistenze"],
-                           dati, [14, 9, 7, 13, 7, 9, 9, 6, 6, 7, 8, 7], set(range(2, 12))),
-                  _p("Solo le settimane con turni generati. Ore totali: ore lavorate più 6 h per ogni giorno di ferie o "
+                           dati, [14, 7, 13, 7, 9, 9, 6, 6, 7, 8, 7], set(range(1, 11))),
+                  _p("Solo i dipendenti e le settimane con turni generati. Ore totali: ore lavorate più 6 h per ogni giorno di ferie o "
                      "malattia. Saldo ore: differenza rispetto alla media dei dipendenti.", _NOTA)]
 
 

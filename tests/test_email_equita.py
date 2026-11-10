@@ -128,3 +128,15 @@ def test_settimana_intera_di_malattia_nelle_note(client, postino):
     genera_e_conferma(client, "2026-10-26")
     testo = leggi_pdf(aspetta(postino, 1)[0])
     assert "malattia 8 giorni" in testo
+
+
+def test_nel_pdf_le_statistiche_non_hanno_i_volontari(client, postino):
+    client.put("/api/email-equita", json={"email": "io@example.org"})
+    crea(client, "Vol. Dario Tosi", tipo="volontario")
+    vol = next(p for p in client.get("/api/persone").json() if p["nome"] == "Vol. Dario Tosi")
+    r = client.post(f"/api/settimane/{LUNEDI}/assegnazioni", json={"data": "2026-10-24", "postazione": "Acquasanta",
+                    "fascia": "giorno", "segmento": "intero", "ruolo": "autista", "persona_id": vol["id"]})
+    assert r.status_code == 201, r.text
+    genera_e_conferma(client)
+    statistiche = leggi_pdf(aspetta(postino, 1)[0]).split("Statistiche dei turni")[1].split("Statistiche delle indisponibilità")[0]
+    assert "Autista 1" in statistiche and "Dario Tosi" not in statistiche and "Volontario" not in statistiche
