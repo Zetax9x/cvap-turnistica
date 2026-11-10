@@ -110,3 +110,16 @@ def test_pdf_di_tabellone_e_liberi(client):
         assert r.status_code == 200, percorso
         assert r.headers["content-type"] == "application/pdf"
         assert r.content.startswith(b"%PDF") and len(r.content) > 1500
+
+
+def test_interfaccia_sempre_ricontrollata_dal_browser(tmp_path):
+    """Dopo un aggiornamento il browser non deve restare con JavaScript e CSS vecchi."""
+    from fastapi.testclient import TestClient
+    from cvap.app import create_app
+    c = TestClient(create_app(str(tmp_path / "t.db")))
+    for percorso in ("/", "/static/js/util.js", "/static/style.css", "/app/"):
+        r = c.get(percorso)
+        assert r.status_code == 200, percorso
+        assert r.headers["cache-control"] == "no-cache", percorso
+    etag = c.get("/static/js/util.js").headers["etag"]
+    assert c.get("/static/js/util.js", headers={"If-None-Match": etag}).status_code == 304
