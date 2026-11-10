@@ -9,6 +9,16 @@ from cvap.app import create_app
 from .test_email import LUNEDI, PostinoFinto, contenuto, crea
 
 
+def leggi_pdf(m):
+    """Il testo del PDF allegato all'email."""
+    from io import BytesIO
+
+    from pypdf import PdfReader
+    allegati = [p for p in m.iter_attachments() if p.get_content_type() == "application/pdf"]
+    assert len(allegati) == 1, "manca il PDF allegato"
+    return "\n".join(pagina.extract_text() for pagina in PdfReader(BytesIO(allegati[0].get_content())).pages)
+
+
 @pytest.fixture
 def postino():
     return PostinoFinto()
@@ -49,8 +59,10 @@ def test_arriva_solo_all_indirizzo_impostato_e_non_ai_riepiloghi(client, postino
     inviati = aspetta(postino, 1)
     time.sleep(0.3)
     assert [m["To"] for m in inviati] == ["io@example.org"]
-    testo = contenuto(inviati[0])
+    testo = leggi_pdf(inviati[0])
     assert inviati[0]["Subject"].startswith("Equità dei turni dopo la settimana dal 19/10")
+    corpo = contenuto(inviati[0])
+    assert "PDF allegato" in corpo and "Posti scoperti nella settimana" in corpo
     for sezione in ("Generazione della settimana", "Equità dei turni", "Statistiche dei turni",
                     "Statistiche delle indisponibilità", "Giorni e notti", "Sabato giorno", "Acquasanta e Venarotta",
                     "Autista 1", "Scarto", "4 settimane fa", "Andamento", "Altri confronti", "Weekend interi liberi",
@@ -97,9 +109,9 @@ def test_niente_festivita_e_ferie_o_malattia_nelle_note(client, postino):
     assert client.post("/api/ferie", json={"persona_id": pid, "dal": "2026-10-23", "al": "2026-10-23",
                                            "motivo": "malattia"}).status_code == 201
     genera_e_conferma(client)
-    testo = contenuto(aspetta(postino, 1)[0])
+    testo = leggi_pdf(aspetta(postino, 1)[0])
     assert "ferie 2 giorni, malattia 1 giorno" in testo
-    sezione = testo.split("Equità dei turni", 2)[2].split("Statistiche dei turni")[0]
+    sezione = testo.split("Altri confronti")[0]
     assert "Natale" not in sezione
 
 
@@ -114,5 +126,5 @@ def test_settimana_intera_di_malattia_nelle_note(client, postino):
     aspetta(postino, 1)
     postino.inviati.clear()
     genera_e_conferma(client, "2026-10-26")
-    testo = contenuto(aspetta(postino, 1)[0])
+    testo = leggi_pdf(aspetta(postino, 1)[0])
     assert "malattia 8 giorni" in testo

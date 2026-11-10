@@ -754,7 +754,8 @@ Separata dai riepiloghi: un solo indirizzo, salvato in `impostazioni` (`email_eq
 - `GET /email-equita` → `{email, configurato, motivo}` · `PUT /email-equita` `{email}` (null o vuota: nessuna)
   · `POST /email-equita/prova` → la manda subito sull'ultima settimana confermata con turni generati.
 - Alla conferma di una settimana con turni generati (`POST /settimane/{data}/conferma`) l'email parte da sola, in un
-  thread (la conferma non aspetta l'invio, gli errori vanno nel log): `email_turni.componi_equita` con l'esito della
+  thread (la conferma non aspetta l'invio, gli errori vanno nel log): `email_turni.componi_equita`, con poche righe
+  nel corpo (posti scoperti e criteri con la differenza più alta) e in allegato il PDF `pdf_equita.genera_equita` con l'esito della
   generazione (qualità, posti scoperti, regole allentate, peso dei criteri), ogni rotazione del quadro dell'equità
   (`api_equita.quadro_equita`, lo stesso di `GET /statistiche/equita`, festività escluse: differenza, tendenza, più avanti e più
   indietro, tabella di ogni dipendente con fatti, la sua parte, scarto e nelle note ferie e malattia di tutto lo storico), le statistiche dei turni e delle
