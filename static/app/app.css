@@ -190,7 +190,11 @@ button.riga:active, a.riga:active { background: var(--card-2); }
 .foglio-maniglia { width: 40px; height: 5px; border-radius: 3px; background: var(--linea); margin: 8px auto 0; flex: none; }
 .foglio-testa { display: flex; align-items: center; gap: 8px; padding: 10px 16px 6px; }
 .foglio-testa h2 { flex: 1; font-size: 20px; font-weight: 800; }
-.foglio-corpo { overflow-y: auto; padding: 6px 16px 16px; display: flex; flex-direction: column; gap: 12px; -webkit-overflow-scrolling: touch; }
+.foglio-corpo { overflow-y: auto; overscroll-behavior: contain; min-height: 0; padding: 6px 16px 16px; display: flex; flex-direction: column; gap: 12px; -webkit-overflow-scrolling: touch; }
+/* i figli non si comprimono: altrimenti una lista lunga viene tagliata invece di scorrere */
+.foglio-corpo > * { flex-shrink: 0; }
+.velo { touch-action: none; }
+body.foglio-aperto .schermata { overflow: hidden; }
 @keyframes velo { from { opacity: 0 } }
 @keyframes su { from { transform: translateY(100%) } }
 

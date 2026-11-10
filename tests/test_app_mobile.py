@@ -110,3 +110,13 @@ def test_pdf_di_tabellone_e_liberi(client):
         assert r.status_code == 200, percorso
         assert r.headers["content-type"] == "application/pdf"
         assert r.content.startswith(b"%PDF") and len(r.content) > 1500
+
+
+def test_i_fogli_con_liste_lunghe_scorrono_e_non_trascinano_lo_sfondo():
+    """Senza queste regole una lista lunga viene compressa e tagliata, e il dito scorre la pagina sotto."""
+    css = (RADICE / "app.css").read_text(encoding="utf-8")
+    corpo = re.search(r"\.foglio-corpo\s*\{([^}]*)\}", css).group(1)
+    assert "overflow-y: auto" in corpo and "min-height: 0" in corpo and "overscroll-behavior: contain" in corpo
+    assert re.search(r"\.foglio-corpo\s*>\s*\*\s*\{[^}]*flex-shrink:\s*0", css)
+    assert re.search(r"body\.foglio-aperto\s+\.schermata\s*\{[^}]*overflow:\s*hidden", css)
+    assert "foglio-aperto" in (RADICE / "js" / "ui.js").read_text(encoding="utf-8")
