@@ -756,7 +756,7 @@ Separata dai riepiloghi: un solo indirizzo, salvato in `impostazioni` (`email_eq
 - Alla conferma di una settimana con turni generati (`POST /settimane/{data}/conferma`) l'email parte da sola, in un
   thread (la conferma non aspetta l'invio, gli errori vanno nel log): `email_turni.componi_equita` con l'esito della
   generazione (qualità, posti scoperti, regole allentate, peso dei criteri), ogni rotazione del quadro dell'equità
-  (`api_equita.quadro_equita`, lo stesso di `GET /statistiche/equita`: differenza, tendenza, più avanti e più
-  indietro, tabella di ogni dipendente con fatti, la sua parte e scarto), le statistiche dei turni e delle
+  (`api_equita.quadro_equita`, lo stesso di `GET /statistiche/equita`, festività escluse: differenza, tendenza, più avanti e più
+  indietro, tabella di ogni dipendente con fatti, la sua parte, scarto e nelle note ferie e malattia di tutto lo storico), le statistiche dei turni e delle
   indisponibilità. Ogni nuova conferma (anche dopo una riapertura) la manda di nuovo. In modalità semplice queste API
   non sono consentite.
