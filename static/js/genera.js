@@ -186,40 +186,114 @@ function campo(etichettaTesto, controllo) {
   return el("label", { class: "guida-campo" }, el("span", {}, etichettaTesto), controllo);
 }
 
-/** Standby e Programmati (dal fabbisogno, un equipaggio = autista + soccorritore) e Assistenze ed Extra. */
+const plurale = (n, uno, tanti) => `${n} ${n === 1 ? uno : tanti}`;
+const quantita = (data, postazione, fascia, segmento, ruolo) => {
+  const f = (stato.settimana.fabbisogno || []).find((x) => x.data === data && x.postazione === postazione
+    && x.fascia === fascia && x.segmento === segmento && x.ruolo === ruolo);
+  return f ? Number(f.quantita) || 0 : 0;
+};
+
+/** Standby e Programmati richiesti (dal fabbisogno) e Assistenze ed Extra, per il riepilogo. */
 function serviziSettimana() {
   const s = stato.settimana;
   const righe = [];
   for (const [postazione, fascia, segmento, testo] of TURNI_RICHIESTA) {
     for (const g of s.giorni) {
-      const voci = (s.fabbisogno || []).filter((f) => f.postazione === postazione && f.fascia === fascia
-        && f.segmento === segmento && f.data === g);
-      if (!voci.length) continue;
-      const equipaggi = Math.max(...voci.map((v) => v.quantita));
-      righe.push({ tipo: "fabbisogno", data: g, postazione, fascia, segmento, testo, quanti: `${equipaggi} ${equipaggi === 1 ? "equipaggio" : "equipaggi"}` });
+      const [a, so] = RUOLI.map((r) => quantita(g, postazione, fascia, segmento, r));
+      if (!a && !so) continue;
+      const quanti = [a && plurale(a, "autista", "autisti"), so && plurale(so, "soccorritore", "soccorritori")].filter(Boolean).join(" e ");
+      righe.push({ tipo: "fabbisogno", data: g, testo, quanti });
     }
   }
   for (const e of s.extra || []) {
-    const persone = [e.autisti && `${e.autisti} ${e.autisti === 1 ? "autista" : "autisti"}`,
-      e.soccorritori && `${e.soccorritori} ${e.soccorritori === 1 ? "soccorritore" : "soccorritori"}`].filter(Boolean).join(" e ");
-    righe.push({ tipo: "extra", id: e.id, data: e.data, testo: `${e.nome} ${e.inizio}–${e.fine}`, quanti: persone });
+    const quanti = [e.autisti && plurale(e.autisti, "autista", "autisti"),
+      e.soccorritori && plurale(e.soccorritori, "soccorritore", "soccorritori")].filter(Boolean).join(" e ");
+    righe.push({ tipo: "extra", id: e.id, data: e.data, testo: `${e.nome} ${e.inizio}–${e.fine}`, quanti });
   }
   return righe.sort((a, b) => a.data.localeCompare(b.data));
 }
 
 function tabellaServizi(righe, conTogli) {
-  const togli = (r) => (r.tipo === "extra" ? api.eliminaExtra(r.id)
-    : api.impostaFabbisogno(stato.settimana.inizio, RUOLI.map((ruolo) => ({
-      data: r.data, postazione: r.postazione, fascia: r.fascia, segmento: r.segmento, ruolo, quantita: 0 }))));
   return tabella(["Giorno", "Servizio", "Personale", ...(conTogli ? [""] : [])], righe.map((r) => el("tr", {},
     el("td", {}, giorno(r.data)), el("td", {}, r.testo), el("td", {}, r.quanti),
-    conTogli ? el("td", {}, rimuovi("Togli", () => esegui(() => togli(r), "Tolto."))) : null)), "Nessuno.");
+    conTogli ? el("td", {}, rimuovi("Togli", () => esegui(() => api.eliminaExtra(r.id), "Tolta."))) : null)),
+  conTogli ? "Nessuna assistenza o extra inserita." : "Nessuno.");
+}
+
+/** Salva voci del fabbisogno e ridisegna rimettendo il cursore sul controllo appena cambiato. */
+async function salvaFabbisogno(voci, idFocus) {
+  try {
+    stato.settimana = await api.impostaFabbisogno(stato.settimana.inizio, voci);
+  } catch (err) {
+    toastErrore(err);
+  }
+  disegna();
+  const nodo = idFocus && document.getElementById(idFocus);
+  if (nodo) nodo.focus();
+}
+
+function intestazioneGiorni(s, primaColonna) {
+  return el("thead", {}, el("tr", {}, el("th", { scope: "col" }, primaColonna),
+    s.giorni.map((g) => el("th", { scope: "col", class: `disp-cella${indiceGiorno(g) >= 5 ? " weekend" : ""}` }, giorno(g)))));
+}
+
+/** Come nel programma completo: una casella per giorno e turno; ogni Standby è un autista e un soccorritore. */
+function grigliaStandby(s) {
+  const tbody = el("tbody", {}, ["giorno", "notte"].map((fascia) => {
+    const turno = orarioTurno(fascia, "standby");
+    return el("tr", {}, el("th", { scope: "row" }, turno), s.giorni.map((g) => {
+      const richiesto = RUOLI.some((r) => quantita(g, STANDBY, fascia, "standby", r) > 0);
+      const id = `guida-standby-${g}-${fascia}`;
+      return el("td", { class: `disp-cella${indiceGiorno(g) >= 5 ? " weekend" : ""}` }, el("input", {
+        type: "checkbox", id, checked: richiesto, "aria-label": `Standby ${turno} ${giorno(g)}`,
+        onchange: (e) => salvaFabbisogno(RUOLI.map((ruolo) => ({ data: g, postazione: STANDBY, fascia, segmento: "standby",
+          ruolo, quantita: e.target.checked ? 1 : 0 })), id),
+      }));
+    }));
+  }));
+  return el("section", { class: "richieste-blocco" },
+    el("h3", {}, "Standby", el("span", { class: "muted" }, " · spunta i turni: ognuno è un autista e un soccorritore")),
+    el("div", { class: "table-scroll" }, el("table", { class: "tabella tabella-richieste" }, intestazioneGiorni(s, "Turno"), tbody)));
+}
+
+/** Come nel programma completo: per ogni giorno della settimana quanti autisti e soccorritori servono. */
+function grigliaProgrammati(s) {
+  const righe = [];
+  for (const segmento of ["prog_mattina", "prog_pomeriggio"]) {
+    RUOLI.forEach((ruolo, idx) => {
+      const turno = orarioTurno("giorno", segmento);
+      const ruoli = ruolo === "autista" ? "Autisti" : "Soccorritori";
+      righe.push(el("tr", { class: idx === 0 ? "inizio-fascia" : null },
+        el("th", { scope: "row" }, el("span", { class: "fascia-label" }, turno), " ", el("span", { class: "ruolo-label" }, ruoli)),
+        s.giorni.map((g) => {
+          const valore = quantita(g, PROGRAMMATI, "giorno", segmento, ruolo);
+          const id = `guida-prog-${g}-${segmento}-${ruolo}`;
+          return el("td", { class: `disp-cella${indiceGiorno(g) >= 5 ? " weekend" : ""}` }, el("input", {
+            type: "number", class: "input-quantita", id, min: "0", max: "20", step: "1", inputmode: "numeric",
+            value: String(valore), "aria-label": `Programmati ${turno} ${giorno(g)}: numero di ${ruoli.toLowerCase()}`,
+            onchange: (e) => {
+              const n = e.target.value.trim() === "" ? 0 : Number(e.target.value);
+              if (!Number.isInteger(n) || n < 0 || n > 20) {
+                toast("Indica un numero intero da 0 a 20.", "avviso");
+                e.target.value = String(valore);
+                return;
+              }
+              salvaFabbisogno([{ data: g, postazione: PROGRAMMATI, fascia: "giorno", segmento, ruolo, quantita: n }], id);
+            },
+          }));
+        })));
+    });
+  }
+  return el("section", { class: "richieste-blocco" },
+    el("h3", {}, "Programmati", el("span", { class: "muted" }, " · quante persone servono per turno, giorno per giorno")),
+    el("div", { class: "table-scroll" }, el("table", { class: "tabella tabella-richieste" }, intestazioneGiorni(s, "Turno"), el("tbody", {}, righe))));
 }
 
 function passoServizi() {
   const s = stato.settimana;
   const righe = serviziSettimana();
-  const conStandby = (s.postazioni_a_richiesta || []).length > 0;
+  const attive = s.postazioni_a_richiesta || [];
+  const conStandby = attive.length > 0;
   const titolo = el("h2", {}, "1. Standby, Programmati e Assistenze");
   if (stato.servizi === null && !righe.length) {
     return [titolo,
@@ -233,30 +307,9 @@ function passoServizi() {
         el("button", { type: "button", class: "btn btn-ghost", onclick: () => { stato.passo = null; disegna(); } }, "Annulla"))];
   }
   const moduli = [];
-  if (conStandby) {
-    const quando = el("select", {}, s.giorni.map((g) => opzione(g, giorno(g))));
-    const servizio = el("select", {}, TURNI_RICHIESTA.map(([, , , t], i) => opzione(String(i), t)));
-    const equipaggi = el("input", { type: "number", min: 1, max: 20, value: 1, required: true });
-    servizio.addEventListener("change", () => {
-      const standby = TURNI_RICHIESTA[Number(servizio.value)][0] === STANDBY;
-      equipaggi.max = standby ? 1 : 20;
-      if (standby) equipaggi.value = 1;
-      equipaggi.disabled = standby;
-    });
-    servizio.dispatchEvent(new Event("change"));
-    const aggiungi = (e) => {
-      e.preventDefault();
-      const [postazione, fascia, segmento, testo] = TURNI_RICHIESTA[Number(servizio.value)];
-      const quantita = Number(equipaggi.value) || 1;
-      esegui(() => api.impostaFabbisogno(s.inizio, RUOLI.map((ruolo) => ({ data: quando.value, postazione, fascia, segmento, ruolo, quantita }))),
-        `${testo} aggiunto.`);
-    };
-    moduli.push(el("h3", {}, "Standby e Programmati"),
-      el("p", { class: "muted" }, "Ogni equipaggio è un autista e un soccorritore. Lo Standby è sempre un equipaggio."),
-      el("form", { class: "card guida-form", onsubmit: aggiungi },
-        campo("Giorno", quando), campo("Servizio", servizio), campo("Equipaggi", equipaggi),
-        el("button", { type: "submit", class: "btn btn-secondary" }, "Aggiungi")));
-  }
+  if (attive.includes(STANDBY)) moduli.push(grigliaStandby(s));
+  if (attive.includes(PROGRAMMATI)) moduli.push(grigliaProgrammati(s));
+  if (!conStandby) moduli.push(el("p", { class: "muted" }, "In questa settimana (con Ascoli) Standby e Programmati non ci sono."));
   const nomeExtra = el("input", { required: true, maxlength: 100, placeholder: "Es. Assistenza partita" });
   const quandoExtra = el("select", {}, s.giorni.map((g) => opzione(g, giorno(g))));
   const ore = (valore) => el("select", {}, Array.from({ length: 24 }, (_, h) => opzione(String(h), `${h}:00`, String(valore))));
@@ -276,10 +329,9 @@ function passoServizi() {
       campo("Autisti", autisti), campo("Soccorritori", soccorritori),
       el("button", { type: "submit", class: "btn btn-secondary" }, "Aggiungi")));
   return [titolo,
-    el("p", {}, "Inserisci i servizi richiesti questa settimana. Quando hai finito premi Avanti."),
+    el("p", {}, "Indica i servizi richiesti questa settimana: le modifiche si salvano subito. Quando hai finito premi Avanti."),
     ...moduli,
-    el("h3", {}, "Inseriti"),
-    tabellaServizi(righe, true),
+    tabellaServizi(righe.filter((r) => r.tipo === "extra"), true),
     pulsantiPasso()];
 }
 
