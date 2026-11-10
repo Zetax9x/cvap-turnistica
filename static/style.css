@@ -303,6 +303,16 @@ input[type="checkbox"] { min-height: 0; width: 1.1rem; height: 1.1rem; accent-co
 .report-msg { margin: .2rem 0 0; }
 .report-scoperti-titolo { margin: .5rem 0 .2rem; font-weight: 700; color: var(--err); }
 .report-scoperti { margin: 0; padding-left: 1.2rem; columns: 2 18rem; font-size: .92rem; }
+.diagnostica { max-width: none; }
+.diag-sezione + .diag-sezione { margin-top: 1rem; }
+.diag-sezione h3 { margin: 0 0 .4rem; font-size: 1rem; }
+.diag-dati { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: .4rem 1.25rem; margin: 0; }
+.diag-dato dt { font-size: .82rem; color: var(--muted); }
+.diag-dato dd { margin: 0; font-variant-numeric: tabular-nums; }
+.diag-consiglio { margin: .5rem 0 0; color: var(--warn); }
+.diag-tabella { margin: .4rem 0; }
+.diag-tabella tr.diag-violata th, .diag-tabella tr.diag-violata td { color: var(--err); font-weight: 650; }
+.diag-spiegazione { font-weight: 400; font-size: .84rem; }
 
 /* ---------- Griglia turni ---------- */
 

@@ -1063,6 +1063,7 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                 "media_ore": ris.media_ore,
                 "durata_s": durata,
                 "qualita": ris.qualita,
+                "diagnostica": ris.diagnostica,
                 "qualita_precedente": qualita_precedente,
                 "festivi": riepilogo_generazione(festivi, [a for a in fissi if not ore_extra(a)] + ris.assegnazioni, [p.id for p in dipendenti],
                                                  {f["id"]: f["nome"] for f in db_festivita.lista_festivita(conn)}),
