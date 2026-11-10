@@ -97,8 +97,9 @@ non di ferie (calcolata dalle assegnazioni reali, così le modifiche manuali con
 ## Endpoint REST (prefisso `/api`, JSON)
 
 Con `APP_PASSWORD` impostata (`create_app(..., password=...)`) tutte le API tranne accesso/sessione/uscita e i percorsi pubblici `/api/cambi-turno/*` rispondono
-401 senza il cookie `cvap_sessione` (HttpOnly, SameSite=Lax, 30 giorni, firmato HMAC: vedi `cvap/accesso.py`).
-- `GET /sessione` → `{protetto, autenticato}` · `POST /accesso` `{password}` → 200 e cookie · 401 se errata ·
+401 senza il cookie `cvap_sessione` (con `APP_PASSWORD_MASTER`, `create_app(..., password_master=...)`, il cookie
+porta anche il ruolo `normale` o `master` dentro la firma; HttpOnly, SameSite=Lax, 30 giorni, firmato HMAC: vedi `cvap/accesso.py`).
+- `GET /sessione` → `{protetto, autenticato, master}` · `POST /accesso` `{password}` → 200 `{autenticato, master}` e cookie · 401 se errata ·
   `POST /uscita` → 204 (cancella il cookie)
 
 - `GET /persone` → `[{id, nome, tipo, qualifica, attivo, autista_programmati, max_ore_settimana, email}]` (tutte, anche non attive)
@@ -717,3 +718,14 @@ Un solo dispositivo iscritto (nella tabella `impostazioni`: chiavi `push_vapid_p
 - `DELETE /api/push/iscrizione` → 204.
 - `POST /api/push/prova` → `{inviata: true}` · 400 se nessuno è iscritto, se l'iscrizione è scaduta (404/410 dal servizio: viene tolta) o se l'invio fallisce.
 - `POST /api/cambi-turno/conferme`: alla **prima** registrazione di un cambio avvisa il dispositivo iscritto (`{titolo, testo, url}`); la ripetizione con la stessa chiave non riavvisa; un errore di invio non cambia l'esito.
+
+## Registro delle azioni (`cvap/registro.py`)
+
+Ogni richiesta alle API che modifica dati (POST, PUT, PATCH, DELETE; non le anteprime) è scritta nella tabella
+`registro_azioni` con data e ora, accesso (`normale`, `master`, `pubblico` = pagina dei cambi turno dei dipendenti,
+`aperto` = sito senza password), metodo, percorso, codice di risposta e una descrizione in italiano. Gli accessi
+riusciti e i tentativi con password sbagliata (accesso `anonimo`) li scrive `POST /accesso`; le richieste rifiutate
+con 401 non si registrano. Si tengono le ultime 20.000 righe circa.
+
+- `GET /registro?limite=200&prima_di=<id>&accesso=<accesso>` → `[{id, quando, accesso, metodo, percorso, esito,
+  descrizione}]` dalla più recente; `prima_di` carica le precedenti. 403 se non si è entrati con la password master.

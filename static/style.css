@@ -1693,3 +1693,9 @@ a.btn { text-decoration: none; }
   .giorno-btn { flex-wrap: wrap; }
   .griglia thead th { vertical-align: middle; }
 }
+
+/* Registro delle azioni (solo accesso master) */
+.registro-filtri { display: flex; align-items: center; gap: .6rem; margin-bottom: .75rem; }
+.registro-tabella { overflow-x: auto; margin-bottom: .75rem; }
+.registro-quando { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.registro-percorso { font-size: .8rem; word-break: break-all; }
