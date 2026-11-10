@@ -130,7 +130,7 @@ function scegliDipendente(sett, ricarica) {
 function editorIndisponibilita(sett, persona, ricarica) {
   foglio(`Indisponibilità · ${persona.nome}`, (chiudi) => {
     const scelte = new Set(sett.indisponibilita.filter((i) => i.persona_id === persona.id).map((i) => `${i.data}|${i.parte}`));
-    const ETICHETTA = { mattina: "Mattina", pomeriggio: "Pomeriggio", notte: "Notte" };
+    const ETICHETTA = { mattina: "Mattina 8–14", pomeriggio: "Pomeriggio 14–20", notte: "Notte 20–8" };
     const righe = sett.giorni.map((g) => el("div", { class: "card", style: "padding:10px 12px" },
       el("div", { style: "font-weight:700;margin-bottom:6px" }, giornoLungo(g)),
       el("div", { class: "segmenti" }, PARTI_TURNO.map((p) => {
@@ -148,7 +148,8 @@ function editorIndisponibilita(sett, persona, ricarica) {
         chiudi(); mostra("Indisponibilità salvate");
       } catch (e) { mostraErrore(e); salva.disabled = false; }
     } }, "Salva");
-    return [el("p", { class: "muto piccolo" }, "Tocca i turni in cui non è disponibile."), righe, salva];
+    return [el("p", { class: "muto piccolo" }, "Tocca i turni in cui non è disponibile: mattina e pomeriggio insieme sono il giorno intero (8–20), "
+      + "tutti e tre tutto il giorno (8–8). La notte è quella che inizia la sera del giorno."), righe, salva];
   });
 }
 

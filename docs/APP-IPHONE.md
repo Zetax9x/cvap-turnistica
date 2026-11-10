@@ -32,6 +32,9 @@ vedono turni vecchi. Offline l'app si apre ma mostra l'errore di rete.
   già lavorate), assenze; filtro Effettivi/Generati.
 - **Altro**: ferie e malattie (con verifica della copertura e turni da far coprire), copertura del mese giorno per
   giorno, cambi turno, impostazioni (settimana A, scarto ore, destinatari dei riepiloghi con invio, festività a rotazione).
+  Con la password master anche il **Registro delle azioni** (chi ha fatto cosa, con quale password e il dettaglio).
+- Nel **Report della generazione** c'è anche la diagnostica: regole allentate, peso di ogni criterio di equità,
+  scambi tra Acquasanta e Venarotta. Con la password normale, quando c'è la master, l'app rimanda alla procedura guidata del sito.
 
 ## Notifiche
 Un avviso sul telefono quando un dipendente registra un cambio turno dalla pagina pubblica (solo alla prima
