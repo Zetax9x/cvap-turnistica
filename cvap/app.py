@@ -147,6 +147,10 @@ class DivietoIn(BaseModel):
     turno: Literal[TURNI_VIETABILI] | None = None
 
 
+class EmailEquitaIn(BaseModel):
+    email: Email = None  # None o vuota: nessuna email dell'equità
+
+
 class ImpostazioniIn(BaseModel):
     data_riferimento_a: DataValida | None = None
     scarto_ore_max: int | None = Field(default=None, ge=db.SCARTO_ORE_MAX_RANGE[0], le=db.SCARTO_ORE_MAX_RANGE[1])
@@ -1194,12 +1198,70 @@ def create_app(db_path: str, password: str | None = None, postino=None,
                                  datetime.now().isoformat(timespec="seconds"), report)
             return payload_settimana(conn, inizio)
 
+    def email_equita(conn, inizio: date, indirizzo: str):
+        s = payload_settimana(conn, inizio)
+        return email_turni.componi_equita(s, indirizzo, None, equita=api_equita.quadro_equita(conn, _settimana_passata),
+                                          statistiche=statistiche(conn), statistiche_indisp=statistiche_indisponibilita(conn))
+
+    def invia_equita(inizio: date) -> None:
+        """Dopo la conferma di una settimana con turni generati: email dell'equità al solo indirizzo impostato
+        apposta (Impostazioni → Email dell'equità), separato dai riepiloghi. In un thread, così la conferma non
+        aspetta l'invio; gli errori finiscono nel log."""
+        def lavoro():
+            log = logging.getLogger("cvap")
+            try:
+                conn = db.apri(db_path)
+                try:
+                    indirizzo = db.get_email_equita(conn)
+                    if not indirizzo:
+                        return
+                    messaggio = email_equita(conn, inizio, indirizzo)
+                finally:
+                    conn.close()
+                errore = postino.invia([messaggio]).get(indirizzo)
+                if errore:
+                    log.warning("Email dell'equità non inviata a %s: %s", indirizzo, errore)
+            except Exception:
+                log.exception("Email dell'equità non preparata")
+        threading.Thread(target=lavoro, daemon=True, name="email-equita").start()
+
+    @app.get("/api/email-equita")
+    def leggi_email_equita(conn: Conn):
+        return {"email": db.get_email_equita(conn), "configurato": postino.configurato,
+                "motivo": None if postino.configurato else _motivo_non_configurato(postino)}
+
+    @app.put("/api/email-equita")
+    def imposta_email_equita(body: EmailEquitaIn, conn: Conn):
+        db.set_email_equita(conn, body.email)
+        return leggi_email_equita(conn)
+
+    @app.post("/api/email-equita/prova")
+    def prova_email_equita(conn: Conn):
+        """Manda subito l'email dell'equità all'indirizzo impostato, sull'ultima settimana confermata e generata."""
+        if not postino.configurato:
+            raise _errore(_motivo_non_configurato(postino))
+        indirizzo = db.get_email_equita(conn)
+        if not indirizzo:
+            raise _errore("Prima imposta l'indirizzo dell'email dell'equità")
+        confermate = [r for r in db.lista_settimane(conn) if r["stato"] == "confermata"]
+        generate = [r for r in confermate if solo_generate([_settimana_passata(conn, r)])]
+        if not generate:
+            raise _errore("Non ci sono ancora settimane confermate con turni generati")
+        ultima = max(date.fromisoformat(r["inizio"]) for r in generate)
+        errore = postino.invia([email_equita(conn, ultima, indirizzo)]).get(indirizzo)
+        if errore:
+            raise _errore(f"Email non inviata: {errore}")
+        return {"inviata": indirizzo, "settimana": ultima.isoformat()}
+
     @app.post("/api/settimane/{data}/conferma")
     def conferma(data: str, conn: Conn):
         with scrittura():
             inizio = lunedi(_data(data))
             db.imposta_stato(conn, inizio, "confermata")
-            return payload_settimana(conn, inizio)
+            s = payload_settimana(conn, inizio)
+        if postino.configurato and any(a["origine"] == "generato" for a in s["assegnazioni"]):
+            invia_equita(inizio)
+        return s
 
     @app.post("/api/settimane/{data}/riapri")
     def riapri(data: str, conn: Conn):
