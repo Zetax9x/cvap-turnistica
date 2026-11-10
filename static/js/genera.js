@@ -9,7 +9,16 @@ import {
 } from "./util.js";
 
 const TEMPO_GENERAZIONE = 180;  // secondi
-const PASSI = ["Volontari", "Ferie e malattie", "Indisponibilità", "Riepilogo", "Generazione"];
+const PASSI = ["Servizi", "Volontari", "Ferie e malattie", "Indisponibilità", "Riepilogo", "Generazione"];
+const P = { servizi: 0, volontari: 1, ferie: 2, indisponibilita: 3, riepilogo: 4, generazione: 5 };
+const STANDBY = "Standby";
+const PROGRAMMATI = "Programmati";
+// turni richiedibili (come TURNI_RICHIEDIBILI in app.py): [postazione, fascia, segmento, etichetta]
+const TURNI_RICHIESTA = [
+  [STANDBY, "giorno", "standby", "Standby giorno 7–19"], [STANDBY, "notte", "standby", "Standby notte 19–7"],
+  [PROGRAMMATI, "giorno", "prog_mattina", "Programmati mattina 7–14"],
+  [PROGRAMMATI, "giorno", "prog_pomeriggio", "Programmati pomeriggio 14–20"],
+];
 const RUOLI = ["autista", "soccorritore"];
 // turni che un volontario può coprire: [fascia, segmento, etichetta]
 const TURNI_VOLONTARI = [
@@ -17,7 +26,8 @@ const TURNI_VOLONTARI = [
   ["giorno", "pomeriggio", "Pomeriggio 14–20"], ["notte", "intero", "Notte 20–8"],
 ];
 
-const stato = { root: null, data: null, settimana: null, persone: [], ferie: [], passo: null, generando: false };
+// servizi: null = non ancora chiesto se servono Standby, Programmati o Assistenze; true/false = risposta
+const stato = { root: null, data: null, settimana: null, persone: [], ferie: [], passo: null, generando: false, servizi: null };
 
 const giorno = (iso) => `${GIORNI_BREVI[indiceGiorno(iso)]} ${ddmm(iso)}`;
 const annoBreve = (iso) => `${ddmm(iso)}/${parseISO(iso).getFullYear()}`;
@@ -176,6 +186,103 @@ function campo(etichettaTesto, controllo) {
   return el("label", { class: "guida-campo" }, el("span", {}, etichettaTesto), controllo);
 }
 
+/** Standby e Programmati (dal fabbisogno, un equipaggio = autista + soccorritore) e Assistenze ed Extra. */
+function serviziSettimana() {
+  const s = stato.settimana;
+  const righe = [];
+  for (const [postazione, fascia, segmento, testo] of TURNI_RICHIESTA) {
+    for (const g of s.giorni) {
+      const voci = (s.fabbisogno || []).filter((f) => f.postazione === postazione && f.fascia === fascia
+        && f.segmento === segmento && f.data === g);
+      if (!voci.length) continue;
+      const equipaggi = Math.max(...voci.map((v) => v.quantita));
+      righe.push({ tipo: "fabbisogno", data: g, postazione, fascia, segmento, testo, quanti: `${equipaggi} ${equipaggi === 1 ? "equipaggio" : "equipaggi"}` });
+    }
+  }
+  for (const e of s.extra || []) {
+    const persone = [e.autisti && `${e.autisti} ${e.autisti === 1 ? "autista" : "autisti"}`,
+      e.soccorritori && `${e.soccorritori} ${e.soccorritori === 1 ? "soccorritore" : "soccorritori"}`].filter(Boolean).join(" e ");
+    righe.push({ tipo: "extra", id: e.id, data: e.data, testo: `${e.nome} ${e.inizio}–${e.fine}`, quanti: persone });
+  }
+  return righe.sort((a, b) => a.data.localeCompare(b.data));
+}
+
+function tabellaServizi(righe, conTogli) {
+  const togli = (r) => (r.tipo === "extra" ? api.eliminaExtra(r.id)
+    : api.impostaFabbisogno(stato.settimana.inizio, RUOLI.map((ruolo) => ({
+      data: r.data, postazione: r.postazione, fascia: r.fascia, segmento: r.segmento, ruolo, quantita: 0 }))));
+  return tabella(["Giorno", "Servizio", "Personale", ...(conTogli ? [""] : [])], righe.map((r) => el("tr", {},
+    el("td", {}, giorno(r.data)), el("td", {}, r.testo), el("td", {}, r.quanti),
+    conTogli ? el("td", {}, rimuovi("Togli", () => esegui(() => togli(r), "Tolto."))) : null)), "Nessuno.");
+}
+
+function passoServizi() {
+  const s = stato.settimana;
+  const righe = serviziSettimana();
+  const conStandby = (s.postazioni_a_richiesta || []).length > 0;
+  const titolo = el("h2", {}, "1. Standby, Programmati e Assistenze");
+  if (stato.servizi === null && !righe.length) {
+    return [titolo,
+      el("p", {}, conStandby
+        ? "Questa settimana servono Standby, Programmati o Assistenze ed Extra?"
+        : "Questa settimana servono Assistenze ed Extra? (Standby e Programmati ci sono solo nelle settimane senza Ascoli.)"),
+      el("div", { class: "guida-scelta" },
+        el("button", { type: "button", class: "btn btn-secondary btn-grande", onclick: () => { stato.servizi = false; stato.passo = P.volontari; disegna(); } }, "No, nessuno"),
+        el("button", { type: "button", class: "btn btn-primary btn-grande", onclick: () => { stato.servizi = true; disegna(); } }, "Sì")),
+      el("div", { class: "guida-azioni" },
+        el("button", { type: "button", class: "btn btn-ghost", onclick: () => { stato.passo = null; disegna(); } }, "Annulla"))];
+  }
+  const moduli = [];
+  if (conStandby) {
+    const quando = el("select", {}, s.giorni.map((g) => opzione(g, giorno(g))));
+    const servizio = el("select", {}, TURNI_RICHIESTA.map(([, , , t], i) => opzione(String(i), t)));
+    const equipaggi = el("input", { type: "number", min: 1, max: 20, value: 1, required: true });
+    servizio.addEventListener("change", () => {
+      const standby = TURNI_RICHIESTA[Number(servizio.value)][0] === STANDBY;
+      equipaggi.max = standby ? 1 : 20;
+      if (standby) equipaggi.value = 1;
+      equipaggi.disabled = standby;
+    });
+    servizio.dispatchEvent(new Event("change"));
+    const aggiungi = (e) => {
+      e.preventDefault();
+      const [postazione, fascia, segmento, testo] = TURNI_RICHIESTA[Number(servizio.value)];
+      const quantita = Number(equipaggi.value) || 1;
+      esegui(() => api.impostaFabbisogno(s.inizio, RUOLI.map((ruolo) => ({ data: quando.value, postazione, fascia, segmento, ruolo, quantita }))),
+        `${testo} aggiunto.`);
+    };
+    moduli.push(el("h3", {}, "Standby e Programmati"),
+      el("p", { class: "muted" }, "Ogni equipaggio è un autista e un soccorritore. Lo Standby è sempre un equipaggio."),
+      el("form", { class: "card guida-form", onsubmit: aggiungi },
+        campo("Giorno", quando), campo("Servizio", servizio), campo("Equipaggi", equipaggi),
+        el("button", { type: "submit", class: "btn btn-secondary" }, "Aggiungi")));
+  }
+  const nomeExtra = el("input", { required: true, maxlength: 100, placeholder: "Es. Assistenza partita" });
+  const quandoExtra = el("select", {}, s.giorni.map((g) => opzione(g, giorno(g))));
+  const ore = (valore) => el("select", {}, Array.from({ length: 24 }, (_, h) => opzione(String(h), `${h}:00`, String(valore))));
+  const dalle = ore(9);
+  const alle = ore(13);
+  const autisti = el("input", { type: "number", min: 0, max: 20, value: 1 });
+  const soccorritori = el("input", { type: "number", min: 0, max: 20, value: 1 });
+  const aggiungiExtra = (e) => {
+    e.preventDefault();
+    esegui(() => api.creaExtra(s.inizio, { data: quandoExtra.value, nome: nomeExtra.value.trim(), inizio: Number(dalle.value),
+      fine: Number(alle.value), autisti: Number(autisti.value) || 0, soccorritori: Number(soccorritori.value) || 0 }),
+    `${nomeExtra.value.trim()} aggiunta.`);
+  };
+  moduli.push(el("h3", {}, "Assistenze ed Extra"),
+    el("form", { class: "card guida-form", onsubmit: aggiungiExtra },
+      campo("Nome", nomeExtra), campo("Giorno", quandoExtra), campo("Dalle", dalle), campo("Alle", alle),
+      campo("Autisti", autisti), campo("Soccorritori", soccorritori),
+      el("button", { type: "submit", class: "btn btn-secondary" }, "Aggiungi")));
+  return [titolo,
+    el("p", {}, "Inserisci i servizi richiesti questa settimana. Quando hai finito premi Avanti."),
+    ...moduli,
+    el("h3", {}, "Inseriti"),
+    tabellaServizi(righe, true),
+    pulsantiPasso()];
+}
+
 function passoVolontari() {
   const s = stato.settimana;
   const lista = el("datalist", { id: "guida-volontari" }, volontari().map((p) => el("option", { value: p.nome })));
@@ -196,7 +303,7 @@ function passoVolontari() {
     }), `Turno di ${testo} aggiunto.`);
   };
   return [
-    el("h2", {}, "1. Turni dei volontari"),
+    el("h2", {}, "2. Turni dei volontari"),
     el("p", {}, "Inserisci i turni che coprono i volontari questa settimana. Se non ce ne sono, premi Avanti."),
     el("form", { class: "card guida-form", onsubmit: aggiungi }, lista,
       campo("Volontario", chi), campo("Ruolo", ruolo), campo("Giorno", quando), campo("Postazione", dove), campo("Turno", turno),
@@ -224,7 +331,7 @@ function passoFerie() {
       `${motivo.value === "ferie" ? "Ferie aggiunte" : "Malattia aggiunta"} per ${nome(Number(chi.value))}.`);
   };
   return [
-    el("h2", {}, "2. Ferie e malattie"),
+    el("h2", {}, "3. Ferie e malattie"),
     el("p", {}, "Inserisci chi è in ferie o in malattia questa settimana. Se nessuno, premi Avanti."),
     el("form", { class: "card guida-form", onsubmit: aggiungi },
       campo("Dipendente", chi), campo("Dal", dal), campo("Al", al), campo("Motivo", motivo),
@@ -262,7 +369,7 @@ function passoIndisponibilita() {
     esegui(() => impostaGiorno(id, quando.value, new Set(parti.value.split("+"))), `Indisponibilità di ${nome(id)} salvata.`);
   };
   return [
-    el("h2", {}, "3. Indisponibilità"),
+    el("h2", {}, "4. Indisponibilità"),
     el("p", {}, "Inserisci chi non può lavorare in un giorno o in una parte del giorno. Se nessuno, premi Avanti."),
     el("form", { class: "card guida-form", onsubmit: aggiungi },
       campo("Dipendente", chi), campo("Giorno", quando), campo("Non disponibile", parti),
@@ -277,6 +384,7 @@ function passoIndisponibilita() {
 
 function passoRiepilogo() {
   const vol = turniVolontari();
+  const servizi = serviziSettimana();
   const ferie = ferieSettimana();
   const indisp = indisponibilita();
   const sezione = (titolo, n, contenuto, passo) => el("section", { class: "guida-riepilogo" },
@@ -290,16 +398,17 @@ function passoRiepilogo() {
     if (ok) genera();
   };
   return [
-    el("h2", {}, "4. Riepilogo"),
+    el("h2", {}, "5. Riepilogo"),
     el("p", {}, "Controlla che sia tutto corretto. Se manca qualcosa premi Modifica nella sezione giusta."),
+    sezione("Standby, Programmati e Assistenze", servizi.length, tabellaServizi(servizi, false), P.servizi),
     sezione("Turni dei volontari", vol.length, tabella(["Volontario", "Ruolo", "Giorno", "Postazione", "Turno"], vol.map((a) =>
       el("tr", {}, el("td", {}, a.persona_nome), el("td", {}, etichetta("ruolo", a.ruolo)), el("td", {}, giorno(a.data)),
-        el("td", {}, a.postazione), el("td", {}, orarioTurno(a.fascia, a.segmento)))), "Nessuno."), 0),
+        el("td", {}, a.postazione), el("td", {}, orarioTurno(a.fascia, a.segmento)))), "Nessuno."), P.volontari),
     sezione("Ferie e malattie", ferie.length, tabella(["Dipendente", "Motivo", "Dal", "Al"], ferie.map((f) =>
       el("tr", {}, el("td", {}, nome(f.persona_id)), el("td", {}, etichetta("motivoLungo", f.motivo)),
-        el("td", {}, annoBreve(f.dal)), el("td", {}, annoBreve(f.al)))), "Nessuna."), 1),
+        el("td", {}, annoBreve(f.dal)), el("td", {}, annoBreve(f.al)))), "Nessuna."), P.ferie),
     sezione("Indisponibilità", indisp.length, tabella(["Dipendente", "Giorno", "Non disponibile"], indisp.map((i) =>
-      el("tr", {}, el("td", {}, nome(i.persona_id)), el("td", {}, giorno(i.data)), el("td", {}, etichettaParti(i.parti)))), "Nessuna."), 2),
+      el("tr", {}, el("td", {}, nome(i.persona_id)), el("td", {}, giorno(i.data)), el("td", {}, etichettaParti(i.parti)))), "Nessuna."), P.indisponibilita),
     pulsantiPasso({ avanti: "Conferma e genera", suAvanti: avvia }),
   ];
 }
@@ -319,14 +428,14 @@ function passoGenerazione() {
   };
   setTimeout(aggiorna, 0);
   return [
-    el("h2", {}, "5. Generazione in corso"),
+    el("h2", {}, "6. Generazione in corso"),
     el("p", {}, "Il programma sta preparando i turni rispettando riposi, ore ed equità. Non chiudere questa pagina."),
     barra, resto,
   ];
 }
 
 async function genera() {
-  stato.passo = 4;
+  stato.passo = P.generazione;
   stato.generando = true;
   disegna();
   const inizio = stato.settimana.inizio;
@@ -336,7 +445,7 @@ async function genera() {
     stato.passo = null;
     toast("Turni generati e confermati.", "ok");
   } catch (err) {
-    stato.passo = 3;
+    stato.passo = P.riepilogo;
     toastErrore(err);
   } finally {
     stato.generando = false;
@@ -351,14 +460,15 @@ function disegna() {
   const r = stato.root;
   if (!r || !stato.settimana) return;
   const contenuto = stato.passo === null ? [paginaSettimana()]
-    : [indicatorePassi(), ...[passoVolontari, passoFerie, passoIndisponibilita, passoRiepilogo, passoGenerazione][stato.passo]()];
+    : [indicatorePassi(), ...[passoServizi, passoVolontari, passoFerie, passoIndisponibilita, passoRiepilogo,
+      passoGenerazione][stato.passo]()];
   r.replaceChildren(intestazione(), ...contenuto);
 }
 
 export async function mostra(root, parametro) {
   const data = mondayOf(/^\d{4}-\d{2}-\d{2}$/.test(parametro || "") ? parametro : todayISO());
   if (stato.generando) { stato.root = root; disegna(); return; }  // non si cambia settimana durante la generazione
-  if (data !== stato.data) stato.passo = null;
+  if (data !== stato.data) Object.assign(stato, { passo: null, servizi: null });
   Object.assign(stato, { root, data });
   root.replaceChildren(el("p", { class: "muted" }, "Caricamento…"));
   try {

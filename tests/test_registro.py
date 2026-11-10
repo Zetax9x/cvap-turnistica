@@ -225,5 +225,13 @@ def test_modalita_semplice_solo_le_api_della_procedura(app):
     turno_dip = next(a for a in dip["assegnazioni"] if a["persona_id"] == pid)
     assert normale.delete(f"/api/assegnazioni/{turno_dip['id']}").status_code == 403
     assert normale.delete(f"/api/assegnazioni/{volontario['id']}").status_code == 204
+    # Standby e Assistenze ed Extra
+    voci = [{"data": "2026-10-21", "postazione": "Standby", "fascia": "giorno", "segmento": "standby", "ruolo": r,
+             "quantita": 1} for r in ("autista", "soccorritore")]
+    assert normale.put(f"/api/settimane/{settimana}/fabbisogno", json={"voci": voci}).status_code == 200
+    extra = normale.post(f"/api/settimane/{settimana}/extra", json={"data": "2026-10-22", "nome": "Partita", "inizio": 15,
+                                                                     "fine": 18, "autisti": 1, "soccorritori": 1})
+    assert extra.status_code == 201
+    assert normale.delete(f"/api/extra/{extra.json()['extra'][0]['id']}").status_code == 204
     assert normale.get(f"/api/settimane/{settimana}/pdf-tabellone").headers["content-type"] == "application/pdf"
     assert normale.get(f"/api/settimane/{settimana}/pdf-liberi").status_code == 200

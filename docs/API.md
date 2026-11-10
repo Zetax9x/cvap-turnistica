@@ -742,7 +742,7 @@ Con `APP_PASSWORD_MASTER` configurata, chi entra con `APP_PASSWORD` è in modali
 `/accesso` rispondono `semplice: true`): il frontend mostra solo la vista `#genera` (`static/js/genera.js`) e il
 server (`accesso.API_SEMPLICE`) consente solo: `GET /sessione`, `/persone`, `/ferie`, `/settimane/{data}`,
 `/settimane/{data}/pdf-tabellone`, `/settimane/{data}/pdf-liberi`; `POST /accesso`, `/uscita`, `/ferie`,
-`/settimane/{data}/assegnazioni`, `/genera`, `/conferma`; `PUT /settimane/{data}/indisponibilita`;
-`DELETE /ferie/{id}` e `DELETE /assegnazioni/{id}` solo per i turni dei volontari. Tutto il resto risponde 403.
+`/settimane/{data}/assegnazioni`, `/extra`, `/genera`, `/conferma`; `PUT /settimane/{data}/indisponibilita`,
+`/settimane/{data}/fabbisogno`; `DELETE /ferie/{id}`, `/extra/{id}` e `DELETE /assegnazioni/{id}` solo per i turni dei volontari. Tutto il resto risponde 403.
 La procedura genera con `tempo_max` 180 e poi conferma la settimana. L'app per telefono, in modalità semplice,
 rimanda al sito (`/#genera`).
