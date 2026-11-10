@@ -216,7 +216,7 @@ def test_modalita_semplice_solo_le_api_della_procedura(app):
     volontario = next(a for a in s.json()["assegnazioni"] if a["persona_nome"] == "Vol. Anna")
     # il resto del programma no
     for metodo, percorso in (("POST", "/api/persone"), ("GET", "/api/statistiche"), ("PUT", "/api/impostazioni"),
-                             ("POST", f"/api/settimane/{settimana}/riapri"), ("GET", "/api/registro")):
+                             ("DELETE", f"/api/settimane/{settimana}/generati"), ("GET", "/api/registro")):
         assert normale.request(metodo, percorso, json={}).status_code == 403, percorso
     # turni: si tolgono quelli dei volontari, non quelli dei dipendenti
     dip = master.post(f"/api/settimane/{settimana}/assegnazioni", json={
@@ -235,3 +235,6 @@ def test_modalita_semplice_solo_le_api_della_procedura(app):
     assert normale.delete(f"/api/extra/{extra.json()['extra'][0]['id']}").status_code == 204
     assert normale.get(f"/api/settimane/{settimana}/pdf-tabellone").headers["content-type"] == "application/pdf"
     assert normale.get(f"/api/settimane/{settimana}/pdf-liberi").status_code == 200
+    # «Ho fatto un errore, rigenera»: si riapre la settimana confermata
+    assert normale.post(f"/api/settimane/{settimana}/conferma").status_code == 200
+    assert normale.post(f"/api/settimane/{settimana}/riapri").json()["stato"] == "bozza"

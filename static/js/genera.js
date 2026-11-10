@@ -151,12 +151,42 @@ function paginaSettimana() {
   return el("section", {},
     el("div", { class: "guida-stato" },
       el("span", { class: `badge ${confermata ? "badge-confermata" : "badge-bozza"}` }, confermata ? "Confermata" : "Non ancora confermata"),
-      confermata ? el("span", { class: "muted" }, "I turni sono definitivi e non si possono modificare da qui.")
+      confermata ? el("span", { class: "muted" }, "I turni sono definitivi.")
         : el("span", { class: "muted" }, "I turni sono stati preparati ma non ancora confermati.")),
     el("div", { class: "guida-pdf" },
       el("button", { type: "button", class: "btn btn-primary", onclick: () => scaricaPdf("tabellone") }, "Scarica PDF turni"),
       el("button", { type: "button", class: "btn btn-secondary", onclick: () => scaricaPdf("liberi") }, "Scarica PDF liberi")),
-    tabellaTurni(s));
+    tabellaTurni(s),
+    correzione(s));
+}
+
+/** Sotto i turni: rifare la settimana dal primo passo, tenendo tutto quello che è già stato inserito. */
+function correzione(s) {
+  if (s.cambi_attivi) {
+    return el("p", { class: "muted guida-correzione" }, "In questa settimana ci sono cambi turno già registrati: "
+      + "non si può più rigenerare. Per correggere qualcosa chiedi a chi gestisce il programma.");
+  }
+  const riprendi = () => { stato.passo = P.servizi; disegna(); };
+  if (s.stato !== "confermata") {
+    return el("div", { class: "guida-correzione" },
+      el("button", { type: "button", class: "btn btn-secondary", onclick: riprendi }, "Riprendi la modifica e rigenera"),
+      el("button", { type: "button", class: "btn btn-ghost", onclick: () => esegui(() => api.conferma(s.inizio), "Settimana confermata.") },
+        "Conferma i turni così come sono"));
+  }
+  const rigenera = async () => {
+    const ok = await chiediConferma("Torni al primo passo con tutto quello che hai già inserito (servizi, volontari, ferie, "
+      + "indisponibilità) e puoi correggere quello che serve. Alla fine la settimana viene generata di nuovo da capo "
+      + "e i turni attuali vengono sostituiti.", { titolo: "Rigenerare la settimana?", ok: "Sì, correggi e rigenera" });
+    if (!ok) return;
+    try {
+      stato.settimana = await api.riapri(s.inizio);
+      riprendi();
+    } catch (err) {
+      toastErrore(err);
+    }
+  };
+  return el("div", { class: "guida-correzione" },
+    el("button", { type: "button", class: "btn btn-secondary", onclick: rigenera }, "Ho fatto un errore, rigenera la settimana"));
 }
 
 // ---------------------------------------------------------------- procedura guidata
@@ -445,8 +475,9 @@ function passoRiepilogo() {
     contenuto);
   const avvia = async () => {
     const ok = await chiediConferma(
-      `La generazione dura circa ${Math.round(TEMPO_GENERAZIONE / 60)} minuti. Al termine la settimana viene confermata `
-      + "e i turni non si potranno più modificare da qui. Procedere?", { titolo: "Generare la settimana?", ok: "Genera" });
+      `La generazione dura circa ${Math.round(TEMPO_GENERAZIONE / 60)} minuti. `
+      + (generata(stato.settimana) ? "I turni attuali vengono sostituiti da quelli nuovi. " : "")
+      + "Al termine la settimana viene confermata. Procedere?", { titolo: "Generare la settimana?", ok: "Genera" });
     if (ok) genera();
   };
   return [

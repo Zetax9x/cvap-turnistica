@@ -72,7 +72,7 @@ API_SEMPLICE = [(metodo, re.compile(percorso + "$")) for metodo, percorso in (
     ("GET", rf"/api/settimane/{_D}"),
     ("GET", rf"/api/settimane/{_D}/pdf-(tabellone|liberi)"),
     ("POST", r"/api/(accesso|uscita|ferie)"),
-    ("POST", rf"/api/settimane/{_D}/(assegnazioni|genera|conferma)"),
+    ("POST", rf"/api/settimane/{_D}/(assegnazioni|genera|conferma|riapri)"),
     ("POST", rf"/api/settimane/{_D}/extra"),
     ("PUT", rf"/api/settimane/{_D}/(indisponibilita|fabbisogno)"),
     ("DELETE", r"/api/(assegnazioni|ferie|extra)/\d+"),
