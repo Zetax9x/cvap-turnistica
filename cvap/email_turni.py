@@ -7,7 +7,7 @@ una versione in testo semplice. L'impronta dei turni personali serve a reinviare
 import hashlib
 import html
 import json
-from datetime import date
+from datetime import date, timedelta
 from email.message import EmailMessage
 
 from .modello import EXTRA, META, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, orario, parti_turno, segmento_intero
@@ -594,19 +594,17 @@ def _scarto(x) -> str:
 
 
 def note_assenze(ferie: list[dict], dal: date, al: date) -> dict[int, str]:
-    """Per dipendente, le ferie e le malattie inserite che cadono tra `dal` e `al`, con le date e i giorni:
-    «malattia 08/11–15/11 (8 giorni)». Si leggono dalle assenze inserite, non dallo storico dell'equità, che non
-    conta le settimane di assenza intera."""
-    out: dict[int, list[str]] = {}
-    for f in sorted(ferie, key=lambda x: x["dal"]):
+    """Per dipendente, i giorni di ferie e di malattia inseriti tra `dal` e `al`: «ferie 2 giorni, malattia 8 giorni».
+    Si leggono dalle assenze inserite, non dallo storico dell'equità, che non conta le settimane di assenza intera."""
+    giorni: dict[int, dict[str, set]] = {}
+    for f in ferie:
         inizio, fine = max(date.fromisoformat(f["dal"]), dal), min(date.fromisoformat(f["al"]), al)
-        if inizio > fine:
-            continue
-        giorni = (fine - inizio).days + 1
-        periodo = _dm(inizio.isoformat()) if giorni == 1 else f"{_dm(inizio.isoformat())}–{_dm(fine.isoformat())}"
-        nome = "malattia" if f.get("motivo") == "malattia" else "ferie"
-        out.setdefault(f["persona_id"], []).append(f"{nome} {periodo} ({giorni} {'giorno' if giorni == 1 else 'giorni'})")
-    return {pid: ", ".join(voci) for pid, voci in out.items()}
+        motivo = "malattia" if f.get("motivo") == "malattia" else "ferie"
+        while inizio <= fine:
+            giorni.setdefault(f["persona_id"], {}).setdefault(motivo, set()).add(inizio)
+            inizio += timedelta(days=1)
+    return {pid: ", ".join(f"{m} {len(g[m])} {'giorno' if len(g[m]) == 1 else 'giorni'}" for m in ("ferie", "malattia") if m in g)
+            for pid, g in giorni.items()}
 
 
 def sezione_equita(quadro: dict, assenze: dict[int, str] | None = None) -> tuple[str, str]:
@@ -622,7 +620,7 @@ def sezione_equita(quadro: dict, assenze: dict[int, str] | None = None) -> tuple
                f'{"settimana" if len(settimane) == 1 else "settimane"} confermate con turni generati'
                + (f", dal {_dmy(settimane[0])}" if settimane else "") + ". Scarto positivo: "
                "ha fatto più della sua parte; negativo: meno. È lo stesso calcolo che usa il generatore. "
-               "Nelle note le ferie e le malattie inserite nel periodo. Ogni giorno di assenza conta 6 ore lavorate; "
+               "Nelle note i giorni di ferie e di malattia inseriti nel periodo. Ogni giorno di assenza conta 6 ore lavorate; "
                "le settimane di assenza intera non entrano nel conto (né le ore né la parte che spetterebbe), "
                "così chi è stato assente non risulta indietro. "
                "Andamento: lo scarto di oggi rispetto a quello di 4 settimane generate fa.</p>"]

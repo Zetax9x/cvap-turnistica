@@ -98,7 +98,7 @@ def test_niente_festivita_e_ferie_o_malattia_nelle_note(client, postino):
                                            "motivo": "malattia"}).status_code == 201
     genera_e_conferma(client)
     testo = contenuto(aspetta(postino, 1)[0])
-    assert "ferie 20/10–21/10 (2 giorni), malattia 23/10 (1 giorno)" in testo
+    assert "ferie 2 giorni, malattia 1 giorno" in testo
     sezione = testo.split("Equità dei turni", 2)[2].split("Statistiche dei turni")[0]
     assert "Natale" not in sezione
 
@@ -115,4 +115,4 @@ def test_settimana_intera_di_malattia_nelle_note(client, postino):
     postino.inviati.clear()
     genera_e_conferma(client, "2026-10-26")
     testo = contenuto(aspetta(postino, 1)[0])
-    assert "malattia 25/10–01/11 (8 giorni)" in testo
+    assert "malattia 8 giorni" in testo
