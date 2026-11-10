@@ -142,6 +142,15 @@ def rotazione_festivita(festivita: Mapping, conti: Mapping[int, ContoFestivita])
                      turni_storico=lambda pid: conti.get(pid, vuoto).turni)
 
 
+def _andamento_persona(scarto: float | None, prima: float | None) -> str | None:
+    """"si_avvicina" | "si_allontana" | "stabile": lo scarto di oggi rispetto a SETTIMANE_TENDENZA settimane fa."""
+    if scarto is None or prima is None:
+        return None
+    if abs(abs(scarto) - abs(prima)) <= max(SOGLIA_TENDENZA * max(abs(scarto), abs(prima)), 0.05):
+        return "stabile"
+    return "si_avvicina" if abs(scarto) < abs(prima) else "si_allontana"
+
+
 def _r(x: float) -> float:
     return round(x, DECIMALI) + 0.0  # + 0.0: niente "-0.0"
 
@@ -234,16 +243,22 @@ def _mostrati(rot: Rotazione, scelti: list[dict], persone: Sequence[dict]) -> li
     return sorted([*scelti, *ex], key=lambda p: (p["nome"].lower(), p["id"]))
 
 
-def _dettaglio(rot: Rotazione, persone: list[dict], valori: dict[int, tuple[float, float]]) -> list[dict]:
+def _dettaglio(rot: Rotazione, persone: list[dict], valori: dict[int, tuple[float, float]],
+               valori_prima: dict[int, tuple[float, float]] | None = None) -> list[dict]:
+    """`valori_prima`: gli stessi valori SETTIMANE_TENDENZA settimane generate fa, per l'andamento di ognuno."""
     out = []
     for p in persone:
         fatti_quota = valori.get(p["id"])
         f, q = fatti_quota if fatti_quota else (None, None)
+        prima = (valori_prima or {}).get(p["id"])
+        scarto = None if f is None else _r(f - q)
+        scarto_prima = None if prima is None else _r(prima[0] - prima[1])
         out.append({"persona_id": p["id"], "nome": p["nome"], "attivo": bool(p["attivo"]),
                     "partecipa": fatti_quota is not None,
                     "motivo": None if fatti_quota is not None else _motivo(rot, p),
                     "fatti": None if f is None else _r(f), "quota": None if q is None else _r(q),
-                    "scarto": None if f is None else _r(f - q)})
+                    "scarto": scarto, "scarto_prima": scarto_prima,
+                    "andamento": _andamento_persona(scarto, scarto_prima)})
     # chi partecipa per primo, dallo scarto più alto; a pari scarto in ordine di nome (già ordinati)
     return sorted(out, key=lambda d: (not d["partecipa"], -(d["scarto"] or 0)))
 
@@ -260,7 +275,8 @@ def equita(settimane: Sequence[tuple[date, SettimanaPassata]], persone: Sequence
     (le festività, vedi il commento del modulo: senza andamento, calcolate anche senza settimane generate).
     Restituisce `{chiave: {nome, unita, sopra, sotto, fatti, quota, festivita, con_dati, piu_avanti, piu_indietro,
     differenza, tendenza, andamento: [{settimana, differenza}], dipendenti: [{persona_id, nome, attivo, partecipa,
-    motivo, fatti, quota, scarto}]}}` nell'ordine del registro. `con_dati`: False per una festività senza turni né
+    motivo, fatti, quota, scarto, scarto_prima, andamento}]}}` nell'ordine del registro (`scarto_prima`: lo scarto
+    SETTIMANE_TENDENZA settimane generate fa; `andamento`: si_avvicina | si_allontana | stabile | None). `con_dati`: False per una festività senza turni né
     quota per nessuno (la pagina la nasconde); sempre True per le altre rotazioni."""
     vietate = vietate or {}
     ordinate = sorted(settimane, key=lambda x: x[0])
@@ -276,6 +292,9 @@ def equita(settimane: Sequence[tuple[date, SettimanaPassata]], persone: Sequence
     punti = [generate[i] for i in _punti(len(generate), ANDAMENTO_PUNTI_MAX)]
     # lo storico alla fine di ogni settimana dell'andamento; l'ultimo è quello di tutto il periodo
     storici = [(ordinate[i][0], calcola_storico([s for _, s in ordinate[:i + 1]])) for i in punti]
+    # lo storico di SETTIMANE_TENDENZA settimane generate fa, per l'andamento di ogni persona
+    storico_prima = (calcola_storico([s for _, s in ordinate[:generate[-1 - SETTIMANE_TENDENZA] + 1]])
+                     if len(generate) > SETTIMANE_TENDENZA else None)
     out = {}
     for rot in (*ROTAZIONI, *extra):
         mostrati = _mostrati(rot, scelti, persone)
@@ -286,7 +305,9 @@ def equita(settimane: Sequence[tuple[date, SettimanaPassata]], persone: Sequence
             {"settimana": inizio.isoformat(), "differenza": _differenza(_valori(rot, st, ids, esclusi))}
             for inizio, st in storici]
         valori = _valori(rot, storici[-1][1] if storici else {}, [p["id"] for p in mostrati], esclusi)
-        dettaglio = _dettaglio(rot, mostrati, valori)
+        valori_prima = None if rot.festivita or storico_prima is None else _valori(
+            rot, storico_prima, [p["id"] for p in mostrati], esclusi)
+        dettaglio = _dettaglio(rot, mostrati, valori, valori_prima)
         out[rot.chiave] = {
             "nome": rot.nome, "unita": rot.unita, "sopra": rot.sopra, "sotto": rot.sotto,
             "fatti": rot.fatti, "quota": rot.quota, "festivita": rot.festivita,

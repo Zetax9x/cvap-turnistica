@@ -53,7 +53,8 @@ def test_arriva_solo_all_indirizzo_impostato_e_non_ai_riepiloghi(client, postino
     assert inviati[0]["Subject"].startswith("Equità dei turni dopo la settimana dal 19/10")
     for sezione in ("Generazione della settimana", "Equità dei turni", "Statistiche dei turni",
                     "Statistiche delle indisponibilità", "Giorni e notti", "Sabato giorno", "Acquasanta e Venarotta",
-                    "Autista 1", "Scarto"):
+                    "Autista 1", "Scarto", "4 settimane fa", "Andamento", "Altri confronti", "Weekend interi liberi",
+                    "Sequenze pesanti", "Con chi si lavora"):
         assert sezione in testo, sezione
 
 

@@ -575,6 +575,8 @@ def componi_riepilogo(s: dict, contenuti: list[str], indirizzo: str, nome: str |
 
 
 # --- equità: email automatica a ogni settimana confermata, a un indirizzo a parte -------------------------
+_ANDAMENTO = {"si_avvicina": "↓ si avvicina alla sua parte", "si_allontana": "↑ si allontana dalla sua parte",
+              "stabile": "→ stabile"}
 _TENDENZA = {"si_riduce": "la differenza si sta riducendo", "aumenta": "la differenza sta aumentando",
              "stabile": "la differenza è stabile"}
 
@@ -619,7 +621,8 @@ def sezione_equita(quadro: dict, statistiche: list[dict] | None = None) -> tuple
                f'{"settimana" if len(settimane) == 1 else "settimane"} confermate con turni generati'
                + (f", dal {_dmy(settimane[0])}" if settimane else "") + ". Scarto positivo: "
                "ha fatto più della sua parte; negativo: meno. È lo stesso calcolo che usa il generatore. "
-               "Nelle note i giorni di ferie e di malattia su tutto lo storico: ognuno conta 6 ore lavorate.</p>"]
+               "Nelle note i giorni di ferie e di malattia su tutto lo storico: ognuno conta 6 ore lavorate. "
+               "Andamento: lo scarto di oggi rispetto a quello di 4 settimane generate fa.</p>"]
     txt = []
     for rot in rotazioni:
         unita = rot.get("unita", "turni")
@@ -642,10 +645,13 @@ def sezione_equita(quadro: dict, statistiche: list[dict] | None = None) -> tuple
             nota = "; ".join(x for x in ("" if d["partecipa"] else (d.get("motivo") or "non partecipa"),
                                          assenze.get(d["persona_id"], "")) if x)
             nome = _e(d["nome"]) + ("" if d.get("attivo", True) else " <i>(non attivo)</i>")
+            andamento = _ANDAMENTO.get(d.get("andamento"), "—")
             righe.append(f'<tr><td style="{_TC}"><b>{nome}</b></td>'
                          f'<td style="{_TC}text-align:right;">{_num(d["fatti"])}</td>'
                          f'<td style="{_TC}text-align:right;">{_num(d["quota"])}</td>'
                          f'<td style="{_TC}text-align:right;color:{colore};font-weight:bold;">{_scarto(d["scarto"])}</td>'
+                         f'<td style="{_TC}text-align:right;color:#4d5868;">{_scarto(d.get("scarto_prima"))}</td>'
+                         f'<td style="{_TC}">{andamento}</td>'
                          f'<td style="{_TC}color:#4d5868;">{_e(nota)}</td></tr>')
             txt.append(f"    {d['nome']}: {_num(d['fatti'])} / {_num(d['quota'])} ({_scarto(d['scarto'])}){' · ' + nota if nota else ''}")
         blocchi.append(
@@ -655,9 +661,54 @@ def sezione_equita(quadro: dict, statistiche: list[dict] | None = None) -> tuple
             f'<table cellspacing="0" style="border-collapse:collapse;width:100%;"><tr>'
             f'<th style="{_TH}">Dipendente</th><th style="{_TH}">{_e(rot.get("fatti", "Fatti"))}</th>'
             f'<th style="{_TH}">{_e(rot.get("quota", "La sua parte"))}</th><th style="{_TH}">Scarto</th>'
+            f'<th style="{_TH}">4 settimane fa</th><th style="{_TH}">Andamento</th>'
             f'<th style="{_TH}">Note</th></tr>{"".join(righe)}</table>'
             f'<p style="font-size:11px;color:#4d5868;margin:2px 0 0;">Scarto positivo: {_e(rot.get("sopra", ""))}; '
             f'negativo: {_e(rot.get("sotto", ""))}.</p>')
+    return "".join(blocchi), "\n".join(txt)
+
+
+def _tabella(intestazioni: list[str], righe: list[list], destra: set[int]) -> str:
+    corpo = "".join("<tr>" + "".join(
+        f'<td style="{_TC}{"text-align:right;" if i in destra else ""}">{"<b>" if i == 0 else ""}{_e(v)}{"</b>" if i == 0 else ""}</td>'
+        for i, v in enumerate(riga)) + "</tr>" for riga in righe)
+    return (f'<table cellspacing="0" style="border-collapse:collapse;width:100%;"><tr>'
+            + "".join(f'<th style="{_TH}">{_e(t)}</th>' for t in intestazioni) + f"</tr>{corpo}</table>")
+
+
+def sezione_confronti(c: dict) -> tuple[str, str]:
+    """Weekend interi liberi, sequenze pesanti, con chi si lavora (cvap/confronti.py)."""
+    if not c or not c.get("settimane"):
+        return "<p>Nessuna settimana confermata con turni generati.</p>", "Nessuna settimana confermata con turni generati."
+    w = c["weekend_liberi"]
+    nota = '<p style="font-size:11px;color:#4d5868;margin:2px 0 0;">'
+    blocchi = [
+        '<h3 style="font-size:15px;margin:16px 0 4px;">Weekend interi liberi</h3>'
+        f'<p style="font-size:13px;margin:0 0 4px;">Differenza tra chi ne ha avuti di più e chi di meno: '
+        f'<b>{_num(w["differenza"])}</b> · media del gruppo {_num(w["media"])}% dei weekend</p>'
+        + _tabella(["Dipendente", "Weekend liberi", "Settimane", "La sua parte", "Scarto"],
+                   [[d["nome"], d["liberi"], d["settimane"], _num(d["quota"]), _scarto(d["scarto"])] for d in w["dipendenti"]],
+                   {1, 2, 3, 4})
+        + f"{nota}Nessun turno né sabato né domenica. Le settimane tutte in ferie o malattia non contano.</p>",
+        '<h3 style="font-size:15px;margin:16px 0 4px;">Sequenze pesanti</h3>'
+        + _tabella(["Dipendente", "Notti di fila", "Tre di fila (stessa fascia)", "Massimo giorni di fila"],
+                   [[d["nome"], d["notti_di_fila"], d["tre_di_fila"], d["giorni_di_fila_max"]] for d in c["sequenze"]],
+                   {1, 2, 3})
+        + f"{nota}Notti di fila: due notti in giorni consecutivi. Tre di fila: tre giorni consecutivi nella stessa "
+          "fascia. Giorni di fila: il massimo di giorni consecutivi con almeno un turno.</p>",
+        '<h3 style="font-size:15px;margin:16px 0 4px;">Con chi si lavora</h3>'
+        + _tabella(["Dipendente", "Turni in compagnia", "Colleghi diversi", "Più spesso con"],
+                   [[d["nome"], d["turni"], d["colleghi_diversi"],
+                     " · ".join(f"{f['nome']} ({f['turni']}, {f['percentuale']}%)" for f in d["frequenti"]) or "—"]
+                    for d in c["colleghi"]], {1, 2})
+        + f"{nota}Stesso giorno, postazione e fascia, volontari compresi.</p>",
+    ]
+    txt = (["Weekend interi liberi:"] + [f"  {d['nome']}: {d['liberi']} su {d['settimane']} ({_scarto(d['scarto'])})"
+                                         for d in w["dipendenti"]]
+           + ["Sequenze pesanti:"] + [f"  {d['nome']}: notti di fila {d['notti_di_fila']}, tre di fila {d['tre_di_fila']}, "
+                                      f"massimo giorni di fila {d['giorni_di_fila_max']}" for d in c["sequenze"]]
+           + ["Con chi si lavora:"] + [f"  {d['nome']}: " + (", ".join(f"{f['nome']} {f['turni']}" for f in d["frequenti"]) or "—")
+                                       for d in c["colleghi"]])
     return "".join(blocchi), "\n".join(txt)
 
 
@@ -689,11 +740,12 @@ def _sezione_generazione(s: dict) -> tuple[str, str]:
 
 
 def componi_equita(s: dict, indirizzo: str, nome: str | None, *, equita: dict, statistiche: list[dict],
-                   statistiche_indisp: list[dict]) -> EmailMessage:
+                   statistiche_indisp: list[dict], confronti: dict | None = None) -> EmailMessage:
     """Email automatica dopo la conferma di una settimana generata: esito della generazione, equità di ogni
     rotazione con il dettaglio per dipendente, statistiche dei turni e delle indisponibilità."""
     periodo = f"dal {_dm(s['inizio'])} al {_dmy(s['fine'])}"
     sezioni = [("Generazione della settimana", _sezione_generazione(s)), ("Equità dei turni", sezione_equita(equita, statistiche)),
+               ("Altri confronti", sezione_confronti(confronti or {})),
                ("Statistiche dei turni", _sezione_statistiche(statistiche)),
                ("Statistiche delle indisponibilità", _sezione_statistiche_indisp(statistiche_indisp))]
     saluto = f"Ciao <b>{_e(nome)}</b>, la" if nome else "La"

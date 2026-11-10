@@ -24,9 +24,11 @@ export async function mostra(root) {
 async function carica() {
   const numero = nuovoCaricamento();
   try {
-    const dati = await api.statisticheEquita(stato.dal, stato.al, versioneStatistiche());
+    const [dati, confronti] = await Promise.all([api.statisticheEquita(stato.dal, stato.al, versioneStatistiche()),
+      api.statisticheConfronti(stato.dal, stato.al, versioneStatistiche())]);
     if (superato(numero)) return;
     stato.dati = dati;
+    stato.confronti = confronti;
     render();
     focusTitolo(stato.root);
   } catch (err) {
@@ -96,6 +98,56 @@ function render() {
     + "Weekend, Standby, Programmati e Assistenze: la parte attesa è in proporzione alle settimane lavorate; "
     + "per Ascoli alle settimane con Ascoli. Chi ha il divieto per una postazione non entra nel suo conto. "
     + "I volontari non compaiono."));
+  if (stato.confronti && settimane.length) root.append(...renderConfronti(stato.confronti));
+}
+
+// ---------- altri confronti: weekend liberi, sequenze pesanti, con chi si lavora ----------
+
+function tabellaSemplice(titolo, intestazioni, righe) {
+  return el("div", { class: "table-scroll" }, el("table", { class: "tabella tabella-equita-dettaglio eq-confronti" },
+    el("caption", { class: "sr-only" }, titolo),
+    el("thead", {}, el("tr", {}, intestazioni.map(([t, num]) => el("th", { scope: "col", class: num ? "num" : null }, t)))),
+    el("tbody", {}, righe)));
+}
+
+const nome = (d) => [d.nome, d.attivo ? null : el("span", { class: "muted" }, " (non attivo)")];
+
+function renderConfronti(c) {
+  const w = c.weekend_liberi;
+  const weekend = [
+    el("h2", { class: "eq-confronti-titolo" }, "Weekend interi liberi"),
+    el("p", { class: "muted" }, "Weekend senza nessun turno, né sabato né domenica. La parte di ognuno è la media del gruppo "
+      + `(${formatOre(w.media)}% dei weekend) per le settimane in cui c'era; le settimane tutte in ferie o malattia non contano. `
+      + `Distanza tra chi ne ha avuti di più e chi di meno: ${formatOre(w.differenza)}.`),
+    tabellaSemplice("Weekend interi liberi per dipendente",
+      [["Dipendente"], ["Weekend liberi", 1], ["Settimane", 1], ["La sua parte", 1], ["Differenza", 1]],
+      w.dipendenti.map((d) => el("tr", {}, el("th", { scope: "row" }, nome(d)), el("td", { class: "num" }, String(d.liberi)),
+        el("td", { class: "num" }, String(d.settimane)), el("td", { class: "num" }, formatOre(d.quota)),
+        el("td", { class: `num ${d.scarto > 0 ? "eq-sopra" : d.scarto < 0 ? "eq-sotto" : ""}` }, formatSaldo(d.scarto))))),
+  ];
+  const sequenze = [
+    el("h2", { class: "eq-confronti-titolo" }, "Sequenze pesanti"),
+    el("p", { class: "muted" }, "Notti di fila: quante volte ha fatto due notti in giorni consecutivi. Tre di fila: tre giorni "
+      + "consecutivi nella stessa fascia (il generatore li evita ma li ammette quando serve). Giorni di fila: il massimo "
+      + "di giorni consecutivi con almeno un turno."),
+    tabellaSemplice("Sequenze pesanti per dipendente",
+      [["Dipendente"], ["Notti di fila", 1], ["Tre di fila", 1], ["Massimo giorni di fila", 1]],
+      c.sequenze.map((d) => el("tr", {}, el("th", { scope: "row" }, nome(d)),
+        el("td", { class: `num ${d.notti_di_fila ? "eq-sopra" : ""}` }, String(d.notti_di_fila)),
+        el("td", { class: `num ${d.tre_di_fila ? "eq-sopra" : ""}` }, String(d.tre_di_fila)),
+        el("td", { class: "num" }, String(d.giorni_di_fila_max))))),
+  ];
+  const colleghi = [
+    el("h2", { class: "eq-confronti-titolo" }, "Con chi si lavora"),
+    el("p", { class: "muted" }, "Colleghi nello stesso turno (giorno, postazione e fascia), volontari compresi: quanti turni "
+      + "in compagnia, quanti colleghi diversi e con chi capita più spesso."),
+    tabellaSemplice("Con chi lavora ogni dipendente",
+      [["Dipendente"], ["Turni in compagnia", 1], ["Colleghi diversi", 1], ["Più spesso con"]],
+      c.colleghi.map((d) => el("tr", {}, el("th", { scope: "row" }, nome(d)), el("td", { class: "num" }, String(d.turni)),
+        el("td", { class: "num" }, String(d.colleghi_diversi)),
+        el("td", {}, d.frequenti.length ? d.frequenti.map((f) => `${f.nome} (${f.turni}, ${f.percentuale}%)`).join(" · ") : "—")))),
+  ];
+  return [...weekend, ...sequenze, ...colleghi];
 }
 
 /** "ore" | "turni", al singolare per 1 (1 turno, ma 0,5 turni). */
@@ -201,8 +253,20 @@ function grafico(r) {
 
 // ---------- dettaglio per dipendente ----------
 
+const ANDAMENTI = {
+  si_avvicina: ["Si avvicina alla sua parte", "↓", "eq-tend-giu"],
+  si_allontana: ["Si allontana dalla sua parte", "↑", "eq-tend-su"],
+  stabile: ["Stabile", "→", "eq-tend-pari"],
+};
+
+function andamentoPersona(andamento) {
+  const a = ANDAMENTI[andamento];
+  return a ? el("span", { class: `eq-tendenza ${a[2]}` }, `${a[1]} ${a[0]}`) : el("span", { class: "muted" }, "—");
+}
+
 function renderDettaglio(r) {
   const validi = r.dipendenti.filter((d) => d.partecipa);
+  const conAndamento = validi.some((d) => d.andamento);
   const esclusi = r.dipendenti.filter((d) => !d.partecipa);
   const scala = Math.max(...validi.map((d) => Math.abs(d.scarto)), 0) || 1;
   const contenuto = [];
@@ -214,13 +278,17 @@ function renderDettaglio(r) {
         el("th", { scope: "col", class: "num" }, r.fatti),
         el("th", { scope: "col", class: "num" }, r.quota),
         el("th", { scope: "col", class: "num" }, "Differenza"),
-        el("th", { scope: "col" }, "Rispetto alla sua parte"))),
+        el("th", { scope: "col" }, "Rispetto alla sua parte"),
+        conAndamento ? el("th", { scope: "col", class: "num" }, "4 settimane fa") : null,
+        conAndamento ? el("th", { scope: "col" }, "Andamento") : null)),
       el("tbody", {}, validi.map((d) => el("tr", {},
         el("th", { scope: "row" }, d.nome, d.attivo ? null : el("span", { class: "muted" }, " (non attivo)")),
         el("td", { class: "num" }, formatOre(d.fatti)),
         el("td", { class: "num" }, formatOre(d.quota)),
         el("td", { class: `num ${d.scarto > 0 ? "eq-sopra" : d.scarto < 0 ? "eq-sotto" : ""}` }, unita(r, d.scarto)),
-        el("td", {}, barra(r, d, scala)))))));
+        el("td", {}, barra(r, d, scala)),
+        conAndamento ? el("td", { class: "num muted" }, d.scarto_prima === null ? "—" : unita(r, d.scarto_prima)) : null,
+        conAndamento ? el("td", {}, andamentoPersona(d.andamento)) : null)))));
   } else {
     contenuto.push(el("p", { class: "muted" }, "Nessun dipendente ha ancora turni di questo tipo nel periodo."));
   }
