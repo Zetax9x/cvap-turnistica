@@ -155,7 +155,7 @@ function render() {
   root.append(renderSchede(""), el("header", { class: "view-header" },
     el("div", { class: "view-header-riga" }, el("h1", {}, titoloVersione("Statistiche")), bottoneStampa()),
     el("p", { class: "muted" },
-      "Contano solo le settimane generate e confermate: le bozze e le settimane compilate solo a mano sono escluse. Il saldo ore confronta le ore totali con la media dei dipendenti, settimana per settimana. Con ferie o malattia per alcuni giorni, somma le ore lavorate e 6 ore per ogni giorno di assenza. Solo chi è assente tutta la settimana è escluso dal conteggio. Un saldo positivo (+) indica ore in più, negativo (−) ore in meno. Per chi ha un limite di ore, il riferimento non supera quel limite; per i volontari il saldo è sempre 0.")));
+      "Contano solo le settimane generate e confermate: le bozze e le settimane compilate solo a mano sono escluse. Il saldo ore confronta le ore lavorate con la media dei dipendenti, settimana per settimana, come fa il generatore: le settimane con ferie o malattia, anche per un solo giorno, non lo cambiano, così chi è stato assente non risulta indietro. Nelle ore totali ogni giorno di assenza conta 6 ore; chi è assente tutta la settimana è escluso dal conteggio. Un saldo positivo (+) indica ore in più, negativo (−) ore in meno. Per chi ha un limite di ore, il riferimento non supera quel limite; per i volontari il saldo è sempre 0.")));
 
   root.append(el("div", { class: "filtri", role: "group", "aria-label": "Filtra per tipo" },
     [["tutti", "Tutti"], ["dipendente", "Dipendenti"], ["volontario", "Volontari"]].map(([v, t]) =>

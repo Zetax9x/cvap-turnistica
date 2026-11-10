@@ -775,3 +775,12 @@ fascia; giorni di fila: il massimo di giorni consecutivi con un turno. Colleghi:
 volontari compresi. Nel quadro dell'equità ogni dipendente ha anche `scarto_prima` (4 settimane generate fa) e
 `andamento` (`si_avvicina` | `si_allontana` | `stabile`). Tutto compare nella pagina Statistiche → Equità e
 nell'email dell'equità.
+
+
+## Saldo delle ore con le assenze
+
+Il saldo delle ore (`StoricoPersona.saldo_ore`) si calcola ovunque come nel generatore
+(`calcola_storico(..., saldo_assenze_parziali=False)`): le settimane con ferie o malattia, anche di un solo giorno,
+non lo cambiano, e quelle di assenza intera non contano proprio. Vale per il generatore, per il quadro dell'equità
+(rotazione «Ore lavorate»: scarto = saldo centrato sulla media del gruppo) e per `GET /statistiche` (`saldo_ore`).
+Le ore totali (`ore_totali`, «Ore fatte») continuano a contare 6 ore per ogni giorno di assenza.

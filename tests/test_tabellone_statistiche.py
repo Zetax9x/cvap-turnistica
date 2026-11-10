@@ -102,11 +102,13 @@ def test_saldo_assenza_parziale_e_intera_settimana_in_tutte_le_viste(client, mot
         righe = {r["persona_id"]: r for r in client.get("/api/statistiche", params=params).json()}
         assert righe[anna]["ore_lavorate"] == 30
         assert righe[anna]["ore_totali"] == 42
-        assert righe[anna]["saldo_ore"] == -3
+        # come nel generatore: la settimana con l'assenza parziale non cambia il saldo di Anna
+        assert righe[anna]["saldo_ore"] == 0
         assert righe[bruno]["saldo_ore"] == 3
         assert carlo not in righe
         ore = next(r for r in client.get("/api/statistiche/equita", params=params).json()["rotazioni"] if r["chiave"] == "ore")
         dettaglio = next(d for d in ore["dipendenti"] if d["persona_id"] == anna)
+        # l'equità centra i saldi sulla media del gruppo (0 e +3): Anna -1,5, come la vede il generatore
         assert dettaglio["fatti"] == 42
-        assert dettaglio["quota"] == 45
-        assert dettaglio["scarto"] == -3
+        assert dettaglio["quota"] == 43.5
+        assert dettaglio["scarto"] == -1.5

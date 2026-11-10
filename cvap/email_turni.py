@@ -503,7 +503,7 @@ def _sezione_statistiche(righe: list[dict]) -> tuple[str, str]:
              + "".join(f'<th style="{_TH}">{c}</th>' for c in colonne) + f'</tr>{"".join(corpo)}</table>'
              '<p style="font-size:11px;color:#4d5868;margin:4px 0 0;">Solo le settimane con turni generati. '
              'Ore totali: ore lavorate più 6 h per ogni giorno di ferie o malattia. '
-             'Saldo ore: differenza rispetto alla media dei dipendenti. '
+             'Saldo ore: differenza rispetto alla media dei dipendenti (le settimane con ferie o malattia non lo cambiano). '
              'Festivi: turni nelle festività a rotazione negli ultimi 5 anni (anni passati inseriti compresi), '
              "tra parentesi l'ultimo anno in cui l'ha lavorata.</p>")
     return (html_ if righe else "<p>Nessuna settimana con turni generati.</p>"), "\n".join(txt)

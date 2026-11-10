@@ -95,8 +95,10 @@ def _equita(quadro: dict, assenze: dict[int, str]) -> list:
         f"Calcolata su {len(settimane)} {'settimana' if len(settimane) == 1 else 'settimane'} confermate con turni generati"
         + (f", dal {et._dmy(settimane[0])}" if settimane else "") + ". Scarto positivo: ha fatto più della sua parte; "
         "negativo: meno. È lo stesso calcolo che usa il generatore. Nelle note i giorni di ferie e di malattia inseriti nel "
-        "periodo: ogni giorno di assenza conta 6 ore lavorate; le settimane di assenza intera non entrano nel conto (né le "
-        "ore né la parte che spetterebbe). Andamento: lo scarto di oggi rispetto a 4 settimane generate fa.", _NOTA))
+        "periodo. Ore lavorate: come nel generatore, le settimane con ferie o malattia (anche di un solo giorno) non "
+        "cambiano lo scarto, così chi è stato assente non risulta indietro; nelle ore fatte ogni giorno di assenza conta "
+        "6 ore e le settimane di assenza intera non ci sono. Andamento: lo scarto di oggi rispetto a 4 settimane generate fa.",
+        _NOTA))
     for rot in rotazioni:
         unita = "turno" if rot.get("differenza") == 1 and rot.get("unita") == "turni" else rot.get("unita", "turni")
         riassunto = [f"Differenza tra chi è più avanti e chi è più indietro: <b>{et._num(rot.get('differenza'))} {unita}</b>"]
@@ -167,7 +169,8 @@ def _statistiche(righe: list[dict]) -> list:
                             "Acquasanta / Venarotta", "Weekend", "Standby", "Programmati", "Ascoli (g / n)", "Assistenze"],
                            dati, [14, 7, 13, 7, 9, 9, 6, 6, 7, 8, 7], set(range(1, 11))),
                   _p("Solo i dipendenti e le settimane con turni generati. Ore totali: ore lavorate più 6 h per ogni giorno di ferie o "
-                     "malattia. Saldo ore: differenza rispetto alla media dei dipendenti.", _NOTA)]
+                     "malattia. Saldo ore: differenza rispetto alla media dei dipendenti; le settimane con ferie o malattia "
+                     "non lo cambiano, come nel generatore.", _NOTA)]
 
 
 def _indisponibilita(righe: list[dict]) -> list:
