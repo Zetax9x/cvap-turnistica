@@ -27,7 +27,9 @@ const TURNI_VOLONTARI = [
 ];
 
 // servizi: null = non ancora chiesto se servono Standby, Programmati o Assistenze; true/false = risposta
-const stato = { root: null, data: null, settimana: null, persone: [], ferie: [], passo: null, generando: false, servizi: null };
+// copertura: esito del controllo preventivo per i dati attuali ({chiave, esito} o {chiave, inCorso})
+const stato = { root: null, data: null, settimana: null, persone: [], ferie: [], passo: null, generando: false, servizi: null,
+  copertura: null };
 
 const giorno = (iso) => `${GIORNI_BREVI[indiceGiorno(iso)]} ${ddmm(iso)}`;
 const annoBreve = (iso) => `${ddmm(iso)}/${parseISO(iso).getFullYear()}`;
@@ -113,6 +115,7 @@ async function scaricaPdf(tipo) {
 /** Tabella dei turni in sola lettura: una riga per postazione, fascia e ruolo; una colonna per giorno. */
 function tabellaTurni(s) {
   const postazioni = [...s.postazioni, ...new Set(s.assegnazioni.map((a) => a.postazione).filter((p) => !s.postazioni.includes(p)))];
+  const scopertiReport = new Set(((s.report || {}).scoperti || []).map(chiaveCella));
   const righe = [];
   for (const postazione of postazioni) {
     for (const fascia of ["giorno", "notte"]) {
@@ -124,7 +127,9 @@ function tabellaTurni(s) {
             el("div", { class: "muted" }, `${etichetta("fasciaBreve", fascia)} · ${etichetta("ruolo", ruolo)}`)),
           s.giorni.map((g) => {
             const chi = turni.filter((a) => a.data === g);
-            return el("td", { class: chi.length ? null : "guida-vuoto" }, chi.length
+            const scoperto = scopertiReport.has(chiaveCella({ data: g, postazione, fascia, ruolo }));
+            if (scoperto && !chi.length) return el("td", { class: "guida-scoperto" }, "Scoperto");
+            return el("td", { class: chi.length ? (scoperto ? "guida-scoperto" : null) : "guida-vuoto" }, chi.length
               ? chi.map((a) => el("div", {}, a.persona_nome,
                 a.segmento === "intero" ? null : el("span", { class: "muted" }, ` ${orarioTurno(a.fascia, a.segmento)}`)))
               : "—");
@@ -156,8 +161,46 @@ function paginaSettimana() {
     el("div", { class: "guida-pdf" },
       el("button", { type: "button", class: "btn btn-primary", onclick: () => scaricaPdf("tabellone") }, "Scarica PDF turni"),
       el("button", { type: "button", class: "btn btn-secondary", onclick: () => scaricaPdf("liberi") }, "Scarica PDF liberi")),
+    ...avvisiGenerazione(s),
     tabellaTurni(s),
     correzione(s));
+}
+
+const FRASI_TECNICHE = [
+  /Soluzione buona ma non dimostrata ottima nel tempo disponibile\.\s*/, /Tutti i posti coperti nel rispetto delle regole\.\s*/,
+  /Tutti i posti sono già coperti\.\s*/, /\d+ posti non coperti: servono altri dipendenti o volontari\.\s*/,
+];
+
+const chiaveCella = (u) => `${u.data}|${u.postazione}|${u.fascia}|${u.ruolo}`;
+
+/** Esito della generazione: posti scoperti, note del generatore, controlli (errori e avvisi). */
+function avvisiGenerazione(s) {
+  const report = s.report || {};
+  const scoperti = report.scoperti || [];
+  const note = FRASI_TECNICHE.reduce((t, f) => t.replace(f, ""), report.messaggio || "").trim();
+  const controlli = (s.violazioni || []).slice().sort((a, b) => (a.livello === "errore" ? 0 : 1) - (b.livello === "errore" ? 0 : 1));
+  const blocchi = [];
+  if (scoperti.length) {
+    blocchi.push(el("section", { class: "guida-avviso guida-avviso-errore" },
+      el("div", { class: "guida-avviso-titolo" }, el("span", { class: "guida-avviso-icona", "aria-hidden": "true" }, "!"),
+        el("strong", {}, scoperti.length === 1 ? "1 posto è rimasto scoperto" : `${scoperti.length} posti sono rimasti scoperti`)),
+      el("ul", { class: "guida-elenco" }, scoperti.map((u) => {
+        const assenti = assentiDelGiorno(u.data, u.ruolo);
+        return el("li", {}, el("strong", {}, `${giorno(u.data)} · ${u.postazione} · ${orarioTurno(u.fascia, u.segmento)} · ${etichetta("ruolo", u.ruolo)}`),
+          assenti.length ? el("div", { class: "muted" }, `Non disponibili quel giorno: ${assenti.join(", ")}.`) : null);
+      })),
+      el("p", {}, "Puoi chiedere a qualcuno di spostare ferie o indisponibilità, oppure trovare un volontario, "
+        + "e poi correggere e rigenerare. Se va bene così, conferma comunque: i posti restano da coprire a mano.")));
+  }
+  if (note || controlli.length) {
+    blocchi.push(el("section", { class: "guida-avviso guida-avviso-incerto" },
+      el("div", { class: "guida-avviso-titolo" }, el("span", { class: "guida-avviso-icona", "aria-hidden": "true" }, "i"),
+        el("strong", {}, "Da controllare")),
+      note ? el("p", {}, note) : null,
+      controlli.length ? el("ul", { class: "guida-elenco" }, controlli.map((v) =>
+        el("li", { class: v.livello === "errore" ? "guida-errore" : null }, v.messaggio))) : null));
+  }
+  return blocchi;
 }
 
 /** Sotto i turni: rifare la settimana dal primo passo, tenendo tutto quello che è già stato inserito. */
@@ -169,9 +212,9 @@ function correzione(s) {
   const riprendi = () => { stato.passo = P.servizi; disegna(); };
   if (s.stato !== "confermata") {
     return el("div", { class: "guida-correzione" },
-      el("button", { type: "button", class: "btn btn-secondary", onclick: riprendi }, "Riprendi la modifica e rigenera"),
-      el("button", { type: "button", class: "btn btn-ghost", onclick: () => esegui(() => api.conferma(s.inizio), "Settimana confermata.") },
-        "Conferma i turni così come sono"));
+      el("button", { type: "button", class: "btn btn-primary", onclick: riprendi }, "Correggi e rigenera"),
+      el("button", { type: "button", class: "btn btn-secondary", onclick: () => esegui(() => api.conferma(s.inizio), "Settimana confermata.") },
+        ((s.report || {}).scoperti || []).length ? "Conferma comunque" : "Conferma i turni così come sono"));
   }
   const rigenera = async () => {
     const ok = await chiediConferma("Torni al primo passo con tutto quello che hai già inserito (servizi, volontari, ferie, "
@@ -493,7 +536,73 @@ function passoIndisponibilita() {
   ];
 }
 
+// ---------------------------------------------------------------- controllo preventivo
+
+/** I dati che cambiano l'esito del controllo: se non cambiano, non si rifà. */
+function chiaveCopertura(s) {
+  return JSON.stringify([s.inizio, s.ferie, s.indisponibilita, s.fabbisogno, s.extra, turniVolontari().map((a) => a.id)]);
+}
+
+function controllaCopertura() {
+  const s = stato.settimana;
+  const chiave = chiaveCopertura(s);
+  if (stato.copertura && stato.copertura.chiave === chiave) return;
+  stato.copertura = { chiave, inCorso: true };
+  api.coperturaPreventiva(s.inizio).then((esito) => {
+    if (stato.copertura?.chiave === chiave) stato.copertura = { chiave, esito };
+  }, (err) => {
+    if (stato.copertura?.chiave === chiave) stato.copertura = { chiave, errore: err.message };
+  }).then(() => { if (stato.passo === P.riepilogo) disegna(); });
+}
+
+/** Chi del ruolo non c'è quel giorno, e perché: chi potrebbe spostare ferie o indisponibilità. */
+function assentiDelGiorno(data, ruolo) {
+  const s = stato.settimana;
+  const adatti = dipendenti().filter((p) => p.qualifica === ruolo || ruolo === "soccorritore");
+  const ferie = new Map((s.ferie || []).filter((x) => x.data === data).map((x) => [x.persona_id, x.motivo]));
+  const parti = new Map(indisponibilita().filter((i) => i.data === data).map((i) => [i.persona_id, i.parti]));
+  return adatti.flatMap((p) => ferie.has(p.id) ? [`${p.nome} (${etichetta("motivo", ferie.get(p.id)).toLowerCase()})`]
+    : parti.has(p.id) ? [`${p.nome} (indisponibile: ${etichettaParti(parti.get(p.id)).toLowerCase()})`] : []);
+}
+
+function riquadroCopertura() {
+  const c = stato.copertura;
+  const riquadro = (classe, icona, titolo, ...resto) => el("section", { class: `guida-avviso guida-avviso-${classe}`, "aria-live": "polite" },
+    el("div", { class: "guida-avviso-titolo" }, el("span", { class: "guida-avviso-icona", "aria-hidden": "true" }, icona), el("strong", {}, titolo)),
+    ...resto);
+  if (!c || c.inCorso) return riquadro("attesa", "…", "Controllo se la settimana è copribile…");
+  if (c.errore) return riquadro("incerto", "?", "Non sono riuscito a controllare la copertura", el("p", {}, c.errore));
+  const solo = c.esito.solo_dipendenti || {};
+  const conVol = c.esito.con_volontari || {};
+  if (conVol.stato === "copribile") {
+    return riquadro("ok", "✓", solo.stato === "copribile"
+      ? "La settimana è copribile con le ferie e le indisponibilità inserite."
+      : "La settimana è copribile grazie ai volontari inseriti.");
+  }
+  if (conVol.stato !== "non_copribile") {
+    return riquadro("incerto", "?", "Il controllo non è riuscito a dare una risposta sicura",
+      el("p", {}, "Puoi generare lo stesso: alla fine vedrai se qualche posto è rimasto scoperto."));
+  }
+  const scoperti = conVol.scoperti || [];
+  return riquadro("errore", "!", "Attenzione: con queste ferie e indisponibilità la settimana non è copribile",
+    el("p", {}, scoperti.length ? "Non ci sono abbastanza persone per questi turni:" : "Mancano persone per coprire tutti i turni."),
+    scoperti.length ? el("ul", { class: "guida-elenco" }, scoperti.map((u) => {
+      const assenti = assentiDelGiorno(u.data, u.ruolo);
+      return el("li", {}, el("strong", {}, `${giorno(u.data)} · ${u.postazione} · ${orarioTurno(u.fascia, u.segmento)} · ${etichetta("ruolo", u.ruolo)}`),
+        assenti.length ? el("div", { class: "muted" }, `Non disponibili quel giorno: ${assenti.join(", ")}.`) : null);
+    })) : null,
+    el("p", {}, "Prima di generare puoi chiedere a una di queste persone se può spostare le ferie o l'indisponibilità, "
+      + "oppure aggiungere un volontario per quel turno. Se generi lo stesso, quei posti resteranno scoperti."),
+    el("div", { class: "guida-scelta" },
+      el("button", { type: "button", class: "btn btn-secondary", onclick: () => { stato.passo = P.indisponibilita; disegna(); } }, "Modifica indisponibilità"),
+      el("button", { type: "button", class: "btn btn-secondary", onclick: () => { stato.passo = P.ferie; disegna(); } }, "Modifica ferie e malattie"),
+      el("button", { type: "button", class: "btn btn-secondary", onclick: () => { stato.passo = P.volontari; disegna(); } }, "Aggiungi un volontario")));
+}
+
+const nonCopribile = () => stato.copertura?.esito?.con_volontari?.stato === "non_copribile";
+
 function passoRiepilogo() {
+  controllaCopertura();
   const vol = turniVolontari();
   const servizi = serviziSettimana();
   const ferie = ferieSettimana();
@@ -504,13 +613,16 @@ function passoRiepilogo() {
     contenuto);
   const avvia = async () => {
     const ok = await chiediConferma(
-      `La generazione dura circa ${Math.round(TEMPO_GENERAZIONE / 60)} minuti. `
+      (nonCopribile() ? "Attenzione: la settimana non è copribile, alcuni posti resteranno scoperti. " : "")
+      + `La generazione dura circa ${Math.round(TEMPO_GENERAZIONE / 60)} minuti. `
       + (generata(stato.settimana) ? "I turni attuali vengono sostituiti da quelli nuovi. " : "")
-      + "Al termine la settimana viene confermata. Procedere?", { titolo: "Generare la settimana?", ok: "Genera" });
+      + "Al termine, se tutti i posti sono coperti, la settimana viene confermata. Procedere?",
+      { titolo: "Generare la settimana?", ok: nonCopribile() ? "Genera lo stesso" : "Genera" });
     if (ok) genera();
   };
   return [
     el("h2", {}, "5. Riepilogo"),
+    riquadroCopertura(),
     el("p", {}, "Controlla che sia tutto corretto. Se manca qualcosa premi Modifica nella sezione giusta."),
     sezione("Standby, Programmati e Assistenze", servizi.length, tabellaServizi(servizi, false), P.servizi),
     sezione("Turni dei volontari", vol.length, tabella(["Volontario", "Ruolo", "Giorno", "Postazione", "Turno"], vol.map((a) =>
@@ -552,10 +664,16 @@ async function genera() {
   disegna();
   const inizio = stato.settimana.inizio;
   try {
-    await api.genera(inizio, TEMPO_GENERAZIONE);
-    await api.conferma(inizio);
+    const risultato = await api.genera(inizio, TEMPO_GENERAZIONE);
+    const scoperti = ((risultato.report || {}).scoperti || []).length;
+    if (scoperti) {
+      toast(`Turni generati, ma ${scoperti === 1 ? "1 posto è rimasto scoperto" : `${scoperti} posti sono rimasti scoperti`}: `
+        + "la settimana non è stata confermata.", "avviso", 10000);
+    } else {
+      await api.conferma(inizio);
+      toast("Turni generati e confermati.", "ok");
+    }
     stato.passo = null;
-    toast("Turni generati e confermati.", "ok");
   } catch (err) {
     stato.passo = P.riepilogo;
     toastErrore(err);

@@ -70,7 +70,7 @@ _D = r"\d{4}-\d{2}-\d{2}"
 API_SEMPLICE = [(metodo, re.compile(percorso + "$")) for metodo, percorso in (
     ("GET", r"/api/(sessione|persone|ferie)"),
     ("GET", rf"/api/settimane/{_D}"),
-    ("GET", rf"/api/settimane/{_D}/pdf-(tabellone|liberi)"),
+    ("GET", rf"/api/settimane/{_D}/(pdf-tabellone|pdf-liberi|copertura-preventiva)"),
     ("POST", r"/api/(accesso|uscita|ferie)"),
     ("POST", rf"/api/settimane/{_D}/(assegnazioni|genera|conferma|riapri)"),
     ("POST", rf"/api/settimane/{_D}/extra"),

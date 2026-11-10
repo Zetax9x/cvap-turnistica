@@ -741,8 +741,8 @@ riuscita e, per la generazione, turni generati, posti scoperti e qualità della 
 Con `APP_PASSWORD_MASTER` configurata, chi entra con `APP_PASSWORD` è in modalità semplice (`/sessione` e
 `/accesso` rispondono `semplice: true`): il frontend mostra solo la vista `#genera` (`static/js/genera.js`) e il
 server (`accesso.API_SEMPLICE`) consente solo: `GET /sessione`, `/persone`, `/ferie`, `/settimane/{data}`,
-`/settimane/{data}/pdf-tabellone`, `/settimane/{data}/pdf-liberi`; `POST /accesso`, `/uscita`, `/ferie`,
+`/settimane/{data}/pdf-tabellone`, `/settimane/{data}/pdf-liberi`, `/settimane/{data}/copertura-preventiva`; `POST /accesso`, `/uscita`, `/ferie`,
 `/settimane/{data}/assegnazioni`, `/extra`, `/genera`, `/conferma`, `/riapri` (per «Ho fatto un errore, rigenera la settimana»); `PUT /settimane/{data}/indisponibilita`,
 `/settimane/{data}/fabbisogno`; `DELETE /ferie/{id}`, `/extra/{id}` e `DELETE /assegnazioni/{id}` solo per i turni dei volontari. Tutto il resto risponde 403.
-La procedura genera con `tempo_max` 180 e poi conferma la settimana. L'app per telefono, in modalità semplice,
+Nel riepilogo la procedura fa il controllo preventivo di copertura; genera con `tempo_max` 180 e conferma la settimana solo se non restano posti scoperti (altrimenti la lascia in bozza con «Correggi e rigenera» e «Conferma comunque»). L'app per telefono, in modalità semplice,
 rimanda al sito (`/#genera`).
