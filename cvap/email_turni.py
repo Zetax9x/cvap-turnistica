@@ -10,6 +10,7 @@ import json
 from datetime import date
 from email.message import EmailMessage
 
+from .vincoli import ORE_FERIE_GIORNO
 from .modello import EXTRA, META, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, orario, parti_turno, segmento_intero
 
 GIORNI = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
@@ -591,17 +592,34 @@ def _scarto(x) -> str:
     return ("+" if x > 0 else "") + _num(x)
 
 
-def sezione_equita(quadro: dict) -> tuple[str, str]:
-    """Ogni rotazione dell'equità (come in Statistiche → Equità) con il dettaglio di ogni dipendente:
-    fatti, la sua parte, scarto, più avanti e più indietro, differenza e tendenza."""
-    rotazioni = [r for r in quadro.get("rotazioni", []) if r.get("con_dati", True)]
+def _assenze_storico(statistiche: list[dict] | None) -> dict[int, str]:
+    """Per dipendente, i giorni di ferie e di malattia su tutto lo storico (6 ore a giorno), per le note."""
+    out = {}
+    for r in statistiche or []:
+        parti = []
+        for chiave, nome in (("ore_ferie", "ferie"), ("ore_malattia", "malattia")):
+            giorni = round((r.get(chiave) or 0) / ORE_FERIE_GIORNO)
+            if giorni:
+                parti.append(f"{nome} {giorni} {'giorno' if giorni == 1 else 'giorni'}")
+        if parti:
+            out[r["persona_id"]] = ", ".join(parti)
+    return out
+
+
+def sezione_equita(quadro: dict, statistiche: list[dict] | None = None) -> tuple[str, str]:
+    """Ogni rotazione dell'equità (come in Statistiche → Equità, festività escluse) con il dettaglio di ogni
+    dipendente: fatti, la sua parte, scarto, più avanti e più indietro, differenza e tendenza. Nelle note ferie e
+    malattia di tutto lo storico (da `statistiche`)."""
+    assenze = _assenze_storico(statistiche)
+    rotazioni = [r for r in quadro.get("rotazioni", []) if r.get("con_dati", True) and not r.get("festivita")]
     settimane = quadro.get("settimane", [])
     if not rotazioni:
         return "<p>Nessuna settimana confermata con turni generati.</p>", "Nessuna settimana confermata con turni generati."
     blocchi = [f'<p style="font-size:12px;color:#4d5868;margin:0 0 8px;">Calcolata su {len(settimane)} '
                f'{"settimana" if len(settimane) == 1 else "settimane"} confermate con turni generati'
                + (f", dal {_dmy(settimane[0])}" if settimane else "") + ". Scarto positivo: "
-               "ha fatto più della sua parte; negativo: meno. È lo stesso calcolo che usa il generatore.</p>"]
+               "ha fatto più della sua parte; negativo: meno. È lo stesso calcolo che usa il generatore. "
+               "Nelle note i giorni di ferie e di malattia su tutto lo storico: ognuno conta 6 ore lavorate.</p>"]
     txt = []
     for rot in rotazioni:
         unita = rot.get("unita", "turni")
@@ -621,7 +639,8 @@ def sezione_equita(quadro: dict) -> tuple[str, str]:
                    + (f", {_TENDENZA.get(rot['tendenza'], '')}" if rot.get("tendenza") else ""))
         for d in rot.get("dipendenti", []):
             colore = ("#b51d2b" if (d["scarto"] or 0) > 0 else "#1f6d45" if (d["scarto"] or 0) < 0 else "#1b2330")
-            nota = "" if d["partecipa"] else (d.get("motivo") or "non partecipa")
+            nota = "; ".join(x for x in ("" if d["partecipa"] else (d.get("motivo") or "non partecipa"),
+                                         assenze.get(d["persona_id"], "")) if x)
             nome = _e(d["nome"]) + ("" if d.get("attivo", True) else " <i>(non attivo)</i>")
             righe.append(f'<tr><td style="{_TC}"><b>{nome}</b></td>'
                          f'<td style="{_TC}text-align:right;">{_num(d["fatti"])}</td>'
@@ -662,7 +681,7 @@ def _sezione_generazione(s: dict) -> tuple[str, str]:
         html_.append("<p style=\"font-size:13px;margin:6px 0 2px;\"><b>Regole allentate:</b> " + (
             "; ".join(f"{_e(v['etichetta'])} ({v['quante']})" for v in regole) if regole else "nessuna") + "</p>")
         txt.append("Regole allentate: " + ("; ".join(f"{v['etichetta']} ({v['quante']})" for v in regole) if regole else "nessuna"))
-        equita = [v for v in voci if v["tipo"] == "equita"]
+        equita = [v for v in voci if v["tipo"] == "equita" and v["voce"] != "festivita"]
         totale = sum(abs(v["punti"]) for v in equita) or 1
         html_.append("<p style=\"font-size:13px;margin:2px 0;\"><b>Peso dei criteri di equità in questa settimana:</b> "
                      + "; ".join(f"{_e(v['etichetta'])} {round(abs(v['punti']) / totale * 100)}%" for v in equita) + "</p>")
@@ -674,7 +693,7 @@ def componi_equita(s: dict, indirizzo: str, nome: str | None, *, equita: dict, s
     """Email automatica dopo la conferma di una settimana generata: esito della generazione, equità di ogni
     rotazione con il dettaglio per dipendente, statistiche dei turni e delle indisponibilità."""
     periodo = f"dal {_dm(s['inizio'])} al {_dmy(s['fine'])}"
-    sezioni = [("Generazione della settimana", _sezione_generazione(s)), ("Equità dei turni", sezione_equita(equita)),
+    sezioni = [("Generazione della settimana", _sezione_generazione(s)), ("Equità dei turni", sezione_equita(equita, statistiche)),
                ("Statistiche dei turni", _sezione_statistiche(statistiche)),
                ("Statistiche delle indisponibilità", _sezione_statistiche_indisp(statistiche_indisp))]
     saluto = f"Ciao <b>{_e(nome)}</b>, la" if nome else "La"

@@ -81,3 +81,22 @@ def test_invio_a_mano(client, postino):
     assert r.status_code == 200, r.text
     assert r.json() == {"inviata": "io@example.org", "settimana": LUNEDI}
     assert [m["To"] for m in postino.inviati] == ["io@example.org"]
+
+
+def test_niente_festivita_e_ferie_o_malattia_nelle_note(client, postino):
+    from cvap import db  # noqa: F401
+    client.put("/api/email-equita", json={"email": "io@example.org"})
+    natale = next(f for f in client.get("/api/festivita").json() if f["nome"] == "Natale")
+    r = client.put(f"/api/festivita/{natale['id']}", json={**{k: natale[k] for k in ("nome", "regola", "giorno",
+                   "mese", "offset_pasqua", "data", "conta_giorno", "conta_notte") if k in natale}, "attiva": True, "peso": 1})
+    assert r.status_code == 200, r.text
+    assert any(x["nome"] == "Natale" and x["festivita"] for x in client.get("/api/statistiche/equita").json()["rotazioni"])
+    pid = client.get("/api/persone").json()[0]["id"]
+    assert client.post("/api/ferie", json={"persona_id": pid, "dal": "2026-10-20", "al": "2026-10-21"}).status_code == 201
+    assert client.post("/api/ferie", json={"persona_id": pid, "dal": "2026-10-23", "al": "2026-10-23",
+                                           "motivo": "malattia"}).status_code == 201
+    genera_e_conferma(client)
+    testo = contenuto(aspetta(postino, 1)[0])
+    assert "ferie 2 giorni, malattia 1 giorno" in testo
+    sezione = testo.split("Equità dei turni", 2)[2].split("Statistiche dei turni")[0]
+    assert "Natale" not in sezione
