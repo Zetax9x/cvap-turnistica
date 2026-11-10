@@ -6,7 +6,6 @@ import { testata, gruppo, riga, avviso, caricamento, mostra, mostraErrore, fogli
 const CONTENUTI = [
   ["turni", "Turni della settimana"], ["liberi", "Liberi"], ["indisponibilita", "Indisponibilità"],
   ["statistiche", "Statistiche dei turni"], ["statistiche_indisponibilita", "Statistiche indisponibilità"],
-  ["equita", "Equità dei turni (anche in automatico a ogni settimana confermata)"],
 ];
 
 export default async function impostazioni(root) {
@@ -14,7 +13,7 @@ export default async function impostazioni(root) {
   root.append(testata("Impostazioni", { indietro: () => { location.hash = "#/altro"; } }), corpo);
   async function carica() {
     try {
-      const [s, dest, fest] = await Promise.all([api.impostazioni(), api.destinatari(), api.festivita()]);
+      const [s, dest, fest, eq] = await Promise.all([api.impostazioni(), api.destinatari(), api.festivita(), api.emailEquita()]);
       monta(corpo,
         gruppo(
           riga({ titolo: "Settimana di riferimento A", fine: ddmm(s.data_riferimento_a), onClick: () => data(s) }),
@@ -27,6 +26,13 @@ export default async function impostazioni(root) {
         el("div", { class: "azioni" },
           el("button", { class: "btn", onClick: () => destinatario(null, carica) }, icona("piu"), "Aggiungi"),
           el("button", { class: "btn btn-primario", disabled: !dest.length, onClick: () => inviaRiepiloghi(dest) }, "Invia riepiloghi")),
+
+        el("div", { class: "card-titolo", style: "margin:4px 4px 0" }, "Email dell'equità"),
+        gruppo(riga({ titolo: eq.email || "Nessun indirizzo", sotto: "Riepilogo dell'equità a ogni settimana confermata, separato dai riepiloghi",
+          onClick: () => emailEquita(eq, carica) })),
+        el("button", { class: "btn btn-blocco", disabled: !eq.email || !eq.configurato, onClick: async () => {
+          try { const r = await api.provaEmailEquita(); mostra(`Inviata a ${r.inviata}`); } catch (e) { mostraErrore(e); }
+        } }, "Invia adesso l'email dell'equità"),
 
         el("div", { class: "card-titolo", style: "margin:4px 4px 0" }, "Festività a rotazione"),
         gruppo(...fest.map((f) => riga({
@@ -157,5 +163,20 @@ function festivita(f, dopo) {
         if (!(await conferma(`Eliminare «${f.nome}»?`, { ok: "Elimina", pericolo: true }))) return;
         try { await api.eliminaFestivita(f.id); chiudi(); mostra("Eliminata"); await dopo(); } catch (e) { mostraErrore(e); }
       } }, "Elimina") : null];
+  });
+}
+
+
+function emailEquita(eq, ricarica) {
+  foglio("Email dell'equità", (chiudi) => {
+    const campo = el("input", { class: "input", type: "email", value: eq.email || "", placeholder: "nome@esempio.it", autocomplete: "email" });
+    const salva = el("button", { class: "btn btn-primario btn-blocco", onClick: async () => {
+      salva.disabled = true;
+      try { await api.impostaEmailEquita(campo.value.trim()); chiudi(); mostra("Indirizzo salvato"); ricarica(); }
+      catch (e) { mostraErrore(e); salva.disabled = false; }
+    } }, "Salva");
+    return [el("p", { class: "muto piccolo" }, "L'unico indirizzo che riceve, a ogni settimana confermata, il riepilogo "
+      + "dettagliato dell'equità dei turni. Lascia vuoto per non riceverla."), campo,
+    eq.configurato ? null : avviso(eq.motivo || "Invio email non configurato."), salva];
   });
 }

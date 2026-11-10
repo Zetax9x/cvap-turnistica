@@ -545,6 +545,22 @@ def set_scarto_ore_max(conn: sqlite3.Connection, ore: int) -> int:
     return ore
 
 
+def get_email_equita(conn: sqlite3.Connection) -> str | None:
+    """L'unico indirizzo che riceve l'email dell'equità a ogni settimana confermata (None = nessuno)."""
+    r = conn.execute("SELECT valore FROM impostazioni WHERE chiave = 'email_equita'").fetchone()
+    return r["valore"] if r and r["valore"] else None
+
+
+def set_email_equita(conn: sqlite3.Connection, email: str | None) -> str | None:
+    with conn:
+        if email:
+            conn.execute("INSERT INTO impostazioni(chiave, valore) VALUES ('email_equita', ?) "
+                         "ON CONFLICT(chiave) DO UPDATE SET valore = excluded.valore", (email,))
+        else:
+            conn.execute("DELETE FROM impostazioni WHERE chiave = 'email_equita'")
+    return email or None
+
+
 # --- assegnazioni ---------------------------------------------------------------
 
 def _a_assegnazione(r: sqlite3.Row) -> Assegnazione:

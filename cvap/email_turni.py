@@ -377,14 +377,13 @@ def componi(s: dict, persona: dict, indirizzo: str | None = None, *, aggiornamen
 
 # --- riepiloghi per gli indirizzi di Impostazioni ----------------------------------------------
 
-CONTENUTI = ("turni", "liberi", "indisponibilita", "statistiche", "statistiche_indisponibilita", "equita")
+CONTENUTI = ("turni", "liberi", "indisponibilita", "statistiche", "statistiche_indisponibilita")
 TITOLI = {
     "turni": "Turni della settimana",
     "liberi": "Dipendenti liberi",
     "indisponibilita": "Indisponibilità della settimana",
     "statistiche": "Statistiche dei turni",
     "statistiche_indisponibilita": "Statistiche delle indisponibilità",
-    "equita": "Equità dei turni",
 }
 PARTI = {"mattina": "mattina", "pomeriggio": "pomeriggio", "notte": "notte"}
 AVVISI = {"smonto_notte": "smonto notte", "notte": "notte"}
@@ -529,7 +528,7 @@ def _sezione_statistiche_indisp(righe: list[dict]) -> tuple[str, str]:
 
 def componi_riepilogo(s: dict, contenuti: list[str], indirizzo: str, nome: str | None = None, *,
                       statistiche: list[dict] | None = None, statistiche_indisp: list[dict] | None = None,
-                      equita: dict | None = None, aggiornamento: bool = False) -> EmailMessage:
+                      aggiornamento: bool = False) -> EmailMessage:
     """Email con le sole sezioni scelte (`contenuti`, nell'ordine di CONTENUTI)."""
     periodo = f"dal {_dm(s['inizio'])} al {_dmy(s['fine'])}"
     bozza = s.get("stato") != "confermata"
@@ -546,8 +545,6 @@ def componi_riepilogo(s: dict, contenuti: list[str], indirizzo: str, nome: str |
             h, t = _sezione_indisponibilita(s)
         elif c == "statistiche":
             h, t = _sezione_statistiche(statistiche or [])
-        elif c == "equita":
-            h, t = sezione_equita(equita or {})
         else:
             h, t = _sezione_statistiche_indisp(statistiche_indisp or [])
         sezioni_html.append(f'<h2 style="font-size:18px;margin:22px 0 6px;">{TITOLI[c]}</h2>{h}')
@@ -576,7 +573,7 @@ def componi_riepilogo(s: dict, contenuti: list[str], indirizzo: str, nome: str |
     return m
 
 
-# --- equità (contenuto "equita" e email automatica a ogni settimana confermata) --------------------------------
+# --- equità: email automatica a ogni settimana confermata, a un indirizzo a parte -------------------------
 _TENDENZA = {"si_riduce": "la differenza si sta riducendo", "aumenta": "la differenza sta aumentando",
              "stabile": "la differenza è stabile"}
 
@@ -689,7 +686,7 @@ def componi_equita(s: dict, indirizzo: str, nome: str | None, *, equita: dict, s
 <p style="font-size:15px;margin:12px 0;">{saluto} settimana è stata confermata: ecco come sono distribuiti i turni, tenendo conto di tutto lo storico.</p>
 {"".join(f'<h2 style="font-size:18px;margin:22px 0 6px;">{t}</h2>{h}' for t, (h, _) in sezioni)}
 <p style="margin:20px 0 0;font-size:12px;color:#4d5868;">Email inviata in automatico dal programma dei turni a ogni settimana confermata.
-Si disattiva togliendo «Equità dei turni» dal destinatario in Impostazioni → Riepiloghi via email.</p>
+Si cambia o si disattiva in Impostazioni → Email dell'equità.</p>
 </div></div></body></html>"""
     m = EmailMessage()
     m["To"] = indirizzo

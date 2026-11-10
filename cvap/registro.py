@@ -63,6 +63,8 @@ _AZIONI = [
     ("PUT", rf"/api/extra/{_ID}", "extra", "Assistenza o Extra «{og}» modificata"),
     ("DELETE", rf"/api/extra/{_ID}", "extra", "Assistenza o Extra «{og}» tolta"),
     ("PUT", r"/api/impostazioni", None, "Impostazioni modificate"),
+    ("PUT", r"/api/email-equita", None, "Indirizzo dell'email dell'equità modificato"),
+    ("POST", r"/api/email-equita/prova", None, "Email dell'equità inviata a mano"),
     ("POST", r"/api/destinatari/invia", None, "Invio dei riepiloghi ai destinatari"),
     ("POST", r"/api/destinatari", None, "Destinatario email aggiunto"),
     ("PUT", rf"/api/destinatari/{_ID}", "destinatario", "Destinatario email {og} modificato"),

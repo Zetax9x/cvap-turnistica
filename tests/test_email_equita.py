@@ -1,4 +1,4 @@
-"""Email dell'equità: contenuto «equita» nei riepiloghi e invio automatico a ogni settimana generata confermata."""
+"""Email dell'equità: un indirizzo a parte, invio automatico a ogni settimana generata confermata e invio a mano."""
 import time
 
 import pytest
@@ -23,11 +23,6 @@ def client(tmp_path, postino):
     return c
 
 
-def destinatario(c, email, contenuti):
-    r = c.post("/api/destinatari", json={"email": email, "contenuti": contenuti})
-    assert r.status_code == 201, r.text
-
-
 def aspetta(postino, n, secondi=10):
     fine = time.monotonic() + secondi
     while len(postino.inviati) < n and time.monotonic() < fine:
@@ -40,11 +35,19 @@ def genera_e_conferma(c, settimana=LUNEDI):
     assert c.post(f"/api/settimane/{settimana}/conferma").status_code == 200
 
 
-def test_alla_conferma_di_una_settimana_generata_arriva_l_email_dell_equita(client, postino):
-    destinatario(client, "io@example.org", ["equita"])
-    destinatario(client, "segreteria@example.org", ["turni"])  # non l'ha scelta: niente
+def test_indirizzo_si_imposta_e_si_toglie(client):
+    assert client.get("/api/email-equita").json()["email"] is None
+    assert client.put("/api/email-equita", json={"email": "io@example.org"}).json()["email"] == "io@example.org"
+    assert client.put("/api/email-equita", json={"email": "non-valida"}).status_code == 422
+    assert client.put("/api/email-equita", json={"email": None}).json()["email"] is None
+
+
+def test_arriva_solo_all_indirizzo_impostato_e_non_ai_riepiloghi(client, postino):
+    client.put("/api/email-equita", json={"email": "io@example.org"})
+    client.post("/api/destinatari", json={"email": "segreteria@example.org", "contenuti": ["statistiche"]})
     genera_e_conferma(client)
     inviati = aspetta(postino, 1)
+    time.sleep(0.3)
     assert [m["To"] for m in inviati] == ["io@example.org"]
     testo = contenuto(inviati[0])
     assert inviati[0]["Subject"].startswith("Equità dei turni dopo la settimana dal 19/10")
@@ -54,19 +57,27 @@ def test_alla_conferma_di_una_settimana_generata_arriva_l_email_dell_equita(clie
         assert sezione in testo, sezione
 
 
-def test_niente_email_senza_turni_generati_o_senza_destinatari(client, postino):
-    assert client.post(f"/api/settimane/{LUNEDI}/conferma").status_code == 200  # settimana senza turni generati
-    destinatario(client, "io@example.org", ["turni"])
-    genera_e_conferma(client, "2026-10-26")
+def test_niente_email_senza_indirizzo_o_senza_turni_generati(client, postino):
+    genera_e_conferma(client)  # nessun indirizzo impostato
+    client.put("/api/email-equita", json={"email": "io@example.org"})
+    assert client.post("/api/settimane/2026-10-26/conferma").status_code == 200  # senza turni generati
     time.sleep(0.5)
     assert postino.inviati == []
 
 
-def test_equita_tra_i_contenuti_dei_riepiloghi(client, postino):
+def test_l_equita_non_e_piu_tra_i_contenuti_dei_riepiloghi(client):
+    r = client.post("/api/destinatari", json={"email": "a@example.org", "contenuti": ["equita"]})
+    assert r.status_code == 422
+
+
+def test_invio_a_mano(client, postino):
+    assert client.post("/api/email-equita/prova").status_code == 400  # senza indirizzo
+    client.put("/api/email-equita", json={"email": "io@example.org"})
+    assert client.post("/api/email-equita/prova").status_code == 400  # nessuna settimana generata
     genera_e_conferma(client)
-    destinatario(client, "io@example.org", ["statistiche", "equita"])
+    aspetta(postino, 1)
     postino.inviati.clear()
-    r = client.post("/api/destinatari/invia", json={"data": LUNEDI})
+    r = client.post("/api/email-equita/prova")
     assert r.status_code == 200, r.text
-    testo = contenuto(postino.inviati[0])
-    assert "Equità dei turni" in testo and "Differenza tra chi è più avanti" in testo
+    assert r.json() == {"inviata": "io@example.org", "settimana": LUNEDI}
+    assert [m["To"] for m in postino.inviati] == ["io@example.org"]

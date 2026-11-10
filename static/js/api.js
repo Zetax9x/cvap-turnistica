@@ -57,6 +57,9 @@ export const api = {
   sessione: () => richiesta("GET", "/sessione"),
   accedi: (password) => richiesta("POST", "/accesso", { password }),
   esci: () => richiesta("POST", "/uscita"),
+  emailEquita: () => richiesta("GET", "/email-equita"),
+  impostaEmailEquita: (email) => richiesta("PUT", "/email-equita", { email: email || null }),
+  provaEmailEquita: () => richiesta("POST", "/email-equita/prova"),
   registro: ({ accesso, prima_di, limite }) => {
     const params = new URLSearchParams({ limite: String(limite) });
     if (accesso) params.set("accesso", accesso);

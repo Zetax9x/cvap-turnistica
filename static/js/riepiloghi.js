@@ -9,7 +9,6 @@ export const CONTENUTI = [
   ["indisponibilita", "Indisponibilità della settimana", "Indisp."],
   ["statistiche", "Statistiche dei turni", "Statistiche"],
   ["statistiche_indisponibilita", "Statistiche delle indisponibilità", "Stat. indisp."],
-  ["equita", "Equità dei turni (arriva anche da sola a ogni settimana confermata)", "Equità"],
 ];
 const DESCR_RESPONSABILE = "Riceve turni e liberi anche quando premi “Invia i turni via email” nella settimana";
 

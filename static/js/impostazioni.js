@@ -145,6 +145,7 @@ function render(imp, salvata = null) {
     renderMassimiOre(),
     renderDivieti(),
     sezioneRiepiloghi,
+    renderEmailEquita(),
   );
   ripristinaSospesi(sospesi);
 }
@@ -156,6 +157,7 @@ const SEZIONI = [
   ["imp-parametri", "Massimi ore"],
   ["imp-divieti", "Divieti"],
   ["imp-riepiloghi", "Email"],
+  ["imp-email-equita", "Email equità"],
 ];
 
 /** Salti alle sezioni: pulsanti e non link "#", perché l'indirizzo con "#" è già usato dal router. */
@@ -391,4 +393,44 @@ function renderDivieti() {
     el("div", { class: "campo" }, el("label", { for: "div-turno" }, "Turno"), turno)),
   el("div", { class: "form-actions" }, invia)));
   return sezione;
+}
+
+
+/** Email dell'equità: un solo indirizzo, separato dai riepiloghi, che la riceve a ogni settimana confermata. */
+function renderEmailEquita() {
+  const campo = el("input", { id: "email-equita", type: "email", autocomplete: "email", placeholder: "nome@esempio.it" });
+  const stato = el("p", { class: "muted", role: "status" }, "Caricamento…");
+  const salva = el("button", { type: "submit", class: "btn btn-primary" }, "Salva");
+  const prova = el("button", { type: "button", class: "btn btn-secondary" }, "Invia adesso");
+  const aggiorna = (d) => {
+    campo.value = d.email || "";
+    stato.textContent = !d.configurato ? (d.motivo || "Invio email non configurato.")
+      : d.email ? `Arriva a ${d.email} ogni volta che si conferma una settimana con turni generati.`
+        : "Nessun indirizzo: l'email dell'equità non viene inviata.";
+    prova.disabled = !d.email || !d.configurato;
+  };
+  api.emailEquita().then(aggiorna, (err) => { stato.textContent = err.message; });
+  prova.addEventListener("click", async () => {
+    prova.disabled = true;
+    try {
+      const r = await api.provaEmailEquita();
+      toast(`Email dell'equità inviata a ${r.inviata}.`, "ok");
+    } catch (err) { toastErrore(err); } finally { prova.disabled = false; }
+  });
+  return el("form", {
+    id: "imp-email-equita", class: "card", "aria-labelledby": "titolo-email-equita",
+    onsubmit: async (e) => {
+      e.preventDefault();
+      salva.disabled = true;
+      try { aggiorna(await api.impostaEmailEquita(campo.value.trim())); toast("Indirizzo salvato.", "ok"); }
+      catch (err) { toastErrore(err); } finally { salva.disabled = false; }
+    },
+  },
+  el("h2", { class: "card-title", id: "titolo-email-equita" }, "Email dell'equità"),
+  el("p", { class: "muted" }, "Riepilogo dettagliato dell'equità dei turni (ogni criterio, ogni dipendente), con l'esito "
+    + "della generazione e le statistiche. Arriva in automatico a un solo indirizzo, separato dai riepiloghi. "
+    + "Lascia vuoto per non riceverla."),
+  el("div", { class: "campo" }, el("label", { for: "email-equita" }, "Indirizzo"), campo),
+  stato,
+  el("div", { class: "form-actions" }, salva, prova));
 }
