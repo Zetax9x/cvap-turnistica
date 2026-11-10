@@ -1634,6 +1634,16 @@ def create_app(db_path: str, password: str | None = None, postino=None,
                                  dati_festivi.nomi_turni_festivi(conn, dal, al))
 
     # --- statici ---
+    @app.middleware("http")
+    async def ricontrolla_interfaccia(request: Request, chiama):
+        """Pagine e file dell'interfaccia: il browser li ricontrolla a ogni apertura (ETag, risposta 304 se
+        non sono cambiati), così dopo un aggiornamento non resta con JavaScript e CSS vecchi."""
+        risposta = await chiama(request)
+        percorso = request.url.path
+        if not percorso.startswith("/api/") and "cache-control" not in risposta.headers:
+            risposta.headers["Cache-Control"] = "no-cache"
+        return risposta
+
     app.mount("/static", StaticFiles(directory=STATIC_DIR, check_dir=False), name="static")
     # App per telefono (PWA): interfaccia a parte che usa le stesse API; il service worker sta in /app/ (scope /app/)
     mimetypes.add_type("application/manifest+json", ".webmanifest")
