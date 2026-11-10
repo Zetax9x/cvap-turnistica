@@ -957,6 +957,8 @@ a.btn { text-decoration: none; }
 }
 .disponibilita-titolo { display: inline; margin: 0; }
 .tabella-disponibilita .disp-cella { text-align: center; }
+.tabella-disponibilita td.disp-cella { padding: .35rem .25rem; }
+.tabella-disponibilita select { width: 100%; min-width: 7.2rem; padding-inline: .3rem; font-size: .86rem; }
 .tabella-disponibilita .weekend { background: var(--weekend); }
 .tabella-disponibilita input[type="checkbox"] { width: 1.15rem; height: 1.15rem; }
 /* giorno con un'indisponibilità: la casella si vede subito */

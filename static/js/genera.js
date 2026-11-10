@@ -5,7 +5,7 @@
 import { api } from "./api.js";
 import {
   el, toast, toastErrore, chiediConferma, addDays, mondayOf, todayISO, ddmm, parseISO, GIORNI_BREVI, indiceGiorno,
-  etichetta, orarioTurno, PARTI_TURNO, SCELTE_INDISPONIBILITA, etichettaParti,
+  etichetta, orarioTurno, PARTI_TURNO, SCELTE_INDISPONIBILITA, etichettaParti, badgeAssenza,
 } from "./util.js";
 
 const TEMPO_GENERAZIONE = 180;  // secondi
@@ -438,28 +438,57 @@ function impostaGiorno(personaId, data, parti) {
   return api.impostaIndisponibilita(stato.settimana.inizio, personaId, turni);
 }
 
+// i salvataggi delle indisponibilità vanno al server uno alla volta, nell'ordine in cui si fanno
+let coda = Promise.resolve();
+
+/** Come nel programma completo: un menu per dipendente e giorno; chi è in ferie o malattia ha il badge. */
 function passoIndisponibilita() {
   const s = stato.settimana;
-  const chi = el("select", { required: true }, opzione("", "Scegli il dipendente"),
-    dipendenti().map((p) => opzione(String(p.id), p.nome)));
-  const quando = el("select", {}, s.giorni.map((g) => opzione(g, giorno(g))));
-  const parti = el("select", {}, SCELTE_INDISPONIBILITA.filter(([v]) => v).map(([v, t]) => opzione(v, t)));
-  const aggiungi = (e) => {
-    e.preventDefault();
-    if (!chi.value) return;
-    const id = Number(chi.value);
-    esegui(() => impostaGiorno(id, quando.value, new Set(parti.value.split("+"))), `Indisponibilità di ${nome(id)} salvata.`);
+  const persone = dipendenti().slice().sort((a, b) => a.nome.localeCompare(b.nome, "it"));
+  const assenze = new Map((s.ferie || []).map((x) => [`${x.persona_id}|${x.data}`, x.motivo]));
+  const parti = new Map(indisponibilita().map((i) => [`${i.persona_id}|${i.data}`, i.parti]));
+  const cambia = (p, g, menu) => {
+    const id = menu.id;
+    const precedente = menu.dataset.precedente;
+    menu.closest("td").classList.toggle("disp-indisponibile", Boolean(menu.value));
+    menu.disabled = true;
+    const scelte = new Set(menu.value ? menu.value.split("+") : []);
+    const salva = coda.then(async () => {
+      stato.settimana = await impostaGiorno(p.id, g, scelte);
+    });
+    coda = salva.catch(() => {});
+    salva.then(() => {
+      disegna();
+      document.getElementById(id)?.focus();
+    }, (err) => {
+      toastErrore(err);
+      menu.value = precedente;
+      menu.closest("td").classList.toggle("disp-indisponibile", Boolean(precedente));
+      menu.disabled = false;
+    });
   };
+  const corpo = el("tbody", {}, persone.map((p) => el("tr", {},
+    el("th", { scope: "row" }, p.nome),
+    s.giorni.map((g) => {
+      const classe = `disp-cella${indiceGiorno(g) >= 5 ? " weekend" : ""}`;
+      if (assenze.has(`${p.id}|${g}`)) return el("td", { class: classe }, badgeAssenza(assenze.get(`${p.id}|${g}`)));
+      const insieme = parti.get(`${p.id}|${g}`) || new Set();
+      const valore = PARTI_TURNO.filter((x) => insieme.has(x)).join("+");
+      const scelte = SCELTE_INDISPONIBILITA.some(([v]) => v === valore)
+        ? SCELTE_INDISPONIBILITA : [...SCELTE_INDISPONIBILITA, [valore, etichettaParti(insieme)]];
+      return el("td", { class: `${classe}${valore ? " disp-indisponibile" : ""}` }, el("select", {
+        id: `guida-disp-${p.id}-${g}`, "aria-label": `${p.nome} indisponibile ${giorno(g)}`, "data-precedente": valore,
+        onchange: (e) => cambia(p, g, e.target),
+      }, scelte.map(([v, t]) => opzione(v, t, valore))));
+    }))));
   return [
     el("h2", {}, "4. Indisponibilità"),
-    el("p", {}, "Inserisci chi non può lavorare in un giorno o in una parte del giorno. Se nessuno, premi Avanti."),
-    el("form", { class: "card guida-form", onsubmit: aggiungi },
-      campo("Dipendente", chi), campo("Giorno", quando), campo("Non disponibile", parti),
-      el("button", { type: "submit", class: "btn btn-secondary" }, "Aggiungi")),
-    tabella(["Dipendente", "Giorno", "Non disponibile", ""], indisponibilita().map((i) => el("tr", {},
-      el("td", {}, nome(i.persona_id)), el("td", {}, giorno(i.data)), el("td", {}, etichettaParti(i.parti)),
-      el("td", {}, rimuovi("Togli", () => esegui(() => impostaGiorno(i.persona_id, i.data, new Set()), "Indisponibilità tolta."))))),
-    "Nessuna indisponibilità inserita."),
+    el("p", {}, "Per ogni giorno scegli quando un dipendente non può lavorare. Le modifiche si salvano subito. "
+      + "La notte è quella che inizia la sera del giorno scelto. Se nessuno ha indisponibilità, premi Avanti."),
+    persone.length
+      ? el("div", { class: "table-scroll" }, el("table", { class: "tabella tabella-disponibilita" },
+        intestazioneGiorni(s, "Dipendente"), corpo))
+      : el("p", { class: "muted" }, "Nessun dipendente attivo."),
     pulsantiPasso(),
   ];
 }
