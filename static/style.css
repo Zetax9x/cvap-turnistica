@@ -1769,3 +1769,19 @@ body.modalita-semplice .nav { display: none; }
   .guida-form { display: grid; }
   .guida-form .btn { width: 100%; }
 }
+.guida-avviso { border: 1px solid var(--border); border-radius: var(--radius); padding: .75rem 1rem; margin: 0 0 1rem;
+  background: var(--surface); max-width: 900px; }
+.guida-avviso p { margin: .4rem 0 0; }
+.guida-avviso-titolo { display: flex; align-items: center; gap: .5rem; }
+.guida-avviso-icona { display: inline-grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: 50%;
+  font-weight: 800; flex: none; background: var(--surface-2); }
+.guida-avviso-ok { border-color: var(--ok); }
+.guida-avviso-ok .guida-avviso-icona { background: var(--ok-bg); color: var(--ok); }
+.guida-avviso-errore { border-color: var(--err); background: var(--err-bg); }
+.guida-avviso-errore .guida-avviso-icona { background: var(--err); color: var(--surface); }
+.guida-avviso-incerto { border-color: var(--warn-border); }
+.guida-avviso-incerto .guida-avviso-icona { background: var(--warn-bg); color: var(--warn); }
+.guida-elenco { margin: .4rem 0 0; padding-left: 1.2rem; }
+.guida-elenco li { margin: .3rem 0; }
+.guida-elenco .guida-errore { color: var(--err); }
+.guida-tabella td.guida-scoperto { background: var(--err-bg); color: var(--err); font-weight: 700; }
