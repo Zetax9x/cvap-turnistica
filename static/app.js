@@ -7,6 +7,7 @@ import * as dipendente from "./js/dipendente.js";
 import * as statistiche from "./js/statistiche.js";
 import * as impostazioni from "./js/impostazioni.js";
 import * as cambiTurno from "./js/cambi-turno-responsabile.js";
+import * as registro from "./js/registro.js";
 import { api } from "./js/api.js";
 import { el } from "./js/util.js";
 import { osservaScorrimento } from "./js/scorrimento.js";
@@ -19,12 +20,14 @@ const VISTE = {
   statistiche: { modulo: statistiche, titolo: "Statistiche" },
   impostazioni: { modulo: impostazioni, titolo: "Impostazioni" },
   cambi: { modulo: cambiTurno, titolo: "Cambi turno" },
+  registro: { modulo: registro, titolo: "Registro", soloMaster: true },
 };
 const PREDEFINITA = "settimana";
 
 function leggiHash() {
   const [nome, ...resto] = location.hash.replace(/^#\/?/, "").split("/");
-  return { nome: VISTE[nome] ? nome : PREDEFINITA, parametro: resto.join("/") || null, valido: !!VISTE[nome] };
+  const valido = !!VISTE[nome] && (master || !VISTE[nome].soloMaster);
+  return { nome: valido ? nome : PREDEFINITA, parametro: resto.join("/") || null, valido };
 }
 
 let vistaCorrente = null;
@@ -57,6 +60,12 @@ function instrada() {
 // ---------------------------------------------------------------- accesso con password
 
 let protetto = false;
+let master = false;  // entrato con la password master: vede anche il Registro
+
+function aggiornaMaster() {
+  const link = document.querySelector('.nav a[data-view="registro"]');
+  if (link) link.hidden = !master;
+}
 
 function mostraAccesso() {
   document.body.classList.add("senza-accesso");
@@ -74,7 +83,9 @@ function mostraAccesso() {
       bottone.disabled = true;
       errore.textContent = "";
       try {
-        await api.accedi(input.value);
+        const esito = await api.accedi(input.value);
+        master = !!(esito && esito.master);
+        aggiornaMaster();
         box.remove();
         document.body.classList.remove("senza-accesso");
         aggiornaEsci();
@@ -105,6 +116,8 @@ function aggiornaEsci() {
     id: "esci", type: "button", class: "btn btn-ghost btn-small esci",
     onclick: async () => {
       try { await api.esci(); } catch { /* comunque si torna alla password */ }
+      master = false;
+      aggiornaMaster();
       mostraAccesso();
     },
   }, "Esci");
@@ -119,6 +132,8 @@ window.addEventListener("hashchange", () => { if (!document.getElementById("acce
   try {
     const s = await api.sessione();
     protetto = s.protetto;
+    master = !!s.master;
+    aggiornaMaster();
     if (s.protetto && !s.autenticato) { mostraAccesso(); return; }
   } catch { /* se il controllo fallisce si prova comunque: le API diranno se serve la password */ }
   aggiornaEsci();

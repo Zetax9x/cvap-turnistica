@@ -80,6 +80,36 @@ P_DOPPIO_FESTIVO = 300       # per ogni turno festivo oltre il primo nella setti
 P_DISPONIBILE_FESTIVO = -3_000  # sconto: turno festivo a chi vuole lavorarlo (sopra la rotazione, sotto i tre di fila)
 
 
+# Voci dell'obiettivo mostrate nella diagnostica: (etichetta, tipo, spiegazione).
+# "regola": vincolo con evidenza, ogni unità è una regola non rispettata; "equita": distribuzione nel tempo,
+# i punti sono un costo relativo (anche negativo: un turno a chi è in credito abbassa il punteggio).
+VOCI_OBIETTIVO: dict[str, tuple[str, str, str]] = {
+    "scoperti": ("Posti scoperti", "regola", "Turni che nessun dipendente disponibile poteva coprire."),
+    "tre_di_fila": ("Tre turni di fila", "regola",
+                    "Tre giorni (o tre notti) consecutivi nella stessa fascia: ammessi, ma da evitare."),
+    "terzo_ascoli": ("Terzo turno ad Ascoli", "regola", "Turni ad Ascoli oltre il secondo nella settimana."),
+    "ascoli_giorno_notte": ("Ascoli sbilanciato nella settimana", "regola",
+                            "Turni ad Ascoli della stessa fascia oltre uno in più rispetto all'altra."),
+    "sotto_minimo": ("Ore sotto il minimo", "regola", "Ore mancanti al minimo settimanale, sommate tra i dipendenti."),
+    "fuori_banda": ("Differenza di ore oltre il limite", "regola",
+                    "Ore oltre la differenza massima ammessa tra chi lavora di più e chi di meno."),
+    "doppio_weekend": ("Doppi weekend", "regola", "Turni di weekend oltre il primo alla stessa persona."),
+    "doppia_richiesta": ("Doppi Standby, Programmati o Extra", "regola",
+                         "Turni della stessa postazione a richiesta oltre il primo alla stessa persona."),
+    "doppio_festivo": ("Doppi festivi", "regola", "Turni festivi oltre il primo alla stessa persona."),
+    "ore": ("Ore vicine alla media", "equita",
+            "Distanza di ognuno dalla media delle ore, recuperando il saldo delle settimane passate."),
+    "giorni_notti": ("Giorni e notti", "equita", "Differenza tra ore di giorno e di notte, nella settimana e nel tempo."),
+    "weekend": ("Rotazione dei weekend", "equita", "Chi ha fatto più weekend del dovuto costa di più, chi meno costa meno."),
+    "rotazioni": ("Rotazione Ascoli e postazioni a richiesta", "equita",
+                  "Come i weekend, per Ascoli, Standby, Programmati ed Extra."),
+    "ascoli_gn_storico": ("Ascoli: giorni e notti nel tempo", "equita",
+                          "Differenza tra giorni e notti ad Ascoli, storico compreso."),
+    "festivita": ("Rotazione delle festività", "equita",
+                  "Costo di ogni festività in base a chi l'ha già lavorata e a chi vuole lavorarla."),
+}
+
+
 @dataclass(frozen=True)
 class Rotazione:
     """Una categoria di turni distribuita a rotazione nel tempo (vedi `_Modello._rotazioni`)."""
@@ -115,6 +145,7 @@ class Risultato:
     messaggio: str = ""
     durata_s: float = 0.0
     qualita: dict | None = None  # indicatori della ricerca; solo se esiste una soluzione
+    diagnostica: dict | None = None  # peso di ogni regola nella soluzione (vedi `_diagnostica`)
 
 
 def genera(
@@ -204,7 +235,9 @@ def genera(
             assegnazioni.append(Assegnazione(u.data, u.postazione, u.fascia, u.segmento, u.ruolo, chi[0], "generato"))
         else:
             scoperti.append(u)
+    prima_sedi = assegnazioni
     assegnazioni = riequilibra_sedi(assegnazioni, dipendenti, storico or {}, [a for a in fissi if not ore_extra(a)])
+    scambi_sedi = sum(1 for x, y in zip(prima_sedi, assegnazioni) if x.persona_id != y.persona_id) // 2
 
     ore = _ore_fisse(dipendenti, fissi)
     for a in assegnazioni:
@@ -242,6 +275,7 @@ def genera(
         messaggio=" ".join(note),
         durata_s=durata,
         qualita=_qualita(solver, conteggio, durata, tempo_max, workers, status),
+        diagnostica=_diagnostica(solver, m.obiettivo, scambi_sedi),
     )
 
 
@@ -339,6 +373,23 @@ def _qualita(solver, conteggio, durata, tempo_max, workers, status) -> dict:
     }
 
 
+def _diagnostica(solver, obiettivo, scambi_sedi: int) -> dict:
+    """Quanto pesa ogni voce dell'obiettivo nella soluzione trovata.
+
+    Per le regole, `quante` è il numero di volte in cui non sono rispettate (posti scoperti, ore oltre il
+    limite...); per l'equità conta solo `punti`, la parte del punteggio dovuta a quella voce."""
+    punti, quante = Counter(), Counter()
+    for coefficiente, variabile, voce in obiettivo:
+        valore = solver.Value(variabile)
+        punti[voce] += coefficiente * valore
+        quante[voce] += valore
+    voci = []
+    for voce, (etichetta, tipo, spiegazione) in VOCI_OBIETTIVO.items():
+        voci.append({"voce": voce, "etichetta": etichetta, "tipo": tipo, "spiegazione": spiegazione,
+                     "punti": punti[voce], "quante": quante[voce] if tipo == "regola" else None})
+    return {"voci": voci, "scambi_sedi": scambi_sedi}
+
+
 def _problemi_turni_fissi(giorni, postazioni, fissi, contesto, dipendenti, ferie, indisponibili,
                           scarto_ore_max) -> list[str]:
     """Violazioni già presenti nei turni che il generatore non può cambiare (fissati e settimane vicine)."""
@@ -393,7 +444,7 @@ class _Modello:
         # scala intera dei termini dell'obiettivo: le ore si misurano in unità di 1/scala
         # (= numero di dipendenti)
         self.scala = len(dipendenti)
-        self.obiettivo = []  # (coefficiente, espressione)
+        self.obiettivo = []  # (coefficiente, variabile, voce di VOCI_OBIETTIVO)
 
         # turni già noti di ogni dipendente: fissati in settimana + settimane vicine
         self.fissi_di: dict[int, list[Assegnazione]] = defaultdict(list)
@@ -428,8 +479,11 @@ class _Modello:
         self._rotazioni()
         self._festivita()
         if not copertura_rigida:
-            self.model.Minimize(sum(c * e for c, e in self.obiettivo))
+            self.model.Minimize(sum(c * e for c, e, _ in self.obiettivo))
             self._suggerimento_iniziale()
+
+    def _pesa(self, voce: str, coefficiente: int, variabile):
+        self.obiettivo.append((coefficiente, variabile, voce))
 
     def _suggerimento_iniziale(self):
         """Soluzione greedy valida usata come punto di partenza (hint): velocizza molto CP-SAT."""
@@ -508,7 +562,7 @@ class _Modello:
                 continue
             scoperto = self.model.NewBoolVar(f"scoperto_{ui}")
             self.model.Add(sum(per_unita[ui]) + scoperto == 1)
-            self.obiettivo.append((peso[_priorita(u)], scoperto))
+            self._pesa("scoperti", peso[_priorita(u)], scoperto)
 
     def _riposo(self):
         for p in self.dipendenti:
@@ -542,7 +596,7 @@ class _Modello:
                         if not isinstance(espr, int):
                             tre = self.model.NewBoolVar("")
                             self.model.Add(espr - 2 <= tre)
-                            self.obiettivo.append((P_TRE_DI_FILA * self.scala, tre))
+                            self._pesa("tre_di_fila", P_TRE_DI_FILA * self.scala, tre)
 
     def _ascoli(self):
         for p in self.dipendenti:
@@ -554,7 +608,7 @@ class _Modello:
             self.model.Add(sum(turni) + fissi <= max(MAX_TURNI_ASCOLI_EXTREMIS, fissi))
             extra = self.model.NewIntVar(0, len(turni) + fissi, "")
             self.model.Add(sum(turni) + fissi - MAX_TURNI_ASCOLI <= extra)
-            self.obiettivo.append((P_TERZO_ASCOLI * self.scala, extra))
+            self._pesa("terzo_ascoli", P_TERZO_ASCOLI * self.scala, extra)
             self._ascoli_giorno_notte(p)
         self._ascoli_di_fila()
 
@@ -574,14 +628,14 @@ class _Modello:
                 continue
             eccesso = self.model.NewIntVar(0, quanti, "")
             self.model.Add(espr <= eccesso)
-            self.obiettivo.append((P_ASCOLI_GIORNO_NOTTE * self.scala, eccesso))
+            self._pesa("ascoli_giorno_notte", P_ASCOLI_GIORNO_NOTTE * self.scala, eccesso)
         # nel tempo: tanti giorni quante notti ad Ascoli, storico compreso (dopo l'alternanza nella settimana)
         st = self.storico.get(p.id, StoricoPersona())
         espr = conta["giorno"] - conta["notte"] + (st.ascoli_giorno - st.ascoli_notte)
         if not isinstance(espr, int):
             scarto = self.model.NewIntVar(0, quanti + abs(st.ascoli_giorno - st.ascoli_notte), "")
             self.model.AddAbsEquality(scarto, espr)
-            self.obiettivo.append((P_ASCOLI_GN_STORICO * self.scala, scarto))
+            self._pesa("ascoli_gn_storico", P_ASCOLI_GN_STORICO * self.scala, scarto)
 
     def _ascoli_di_fila(self):
         settimana = set(self.giorni)
@@ -636,7 +690,7 @@ class _Modello:
             minimo = minimo_ore(p)
             sotto = self.model.NewIntVar(0, minimo, "")
             self.model.Add(self.ore[p.id] + self.crediti[p.id] + sotto >= minimo)
-            self.obiettivo.append((P_SOTTO_MINIMO * n, sotto))
+            self._pesa("sotto_minimo", P_SOTTO_MINIMO * n, sotto)
             # media = totale / n (ferie comprese), quindi
             # n * (ore + ferie - media) = n * (ore + ferie) - totale  (tutto intero);
             # con un tetto il riferimento è min(media, tetto): n * riferimento = min(totale, n * tetto)
@@ -653,8 +707,8 @@ class _Modello:
             dev = self.model.NewIntVar(0, limite, "")
             self.model.AddAbsEquality(dev, scarto + round(n * saldo))
             self.model.Add(dev <= massimo)
-            self.obiettivo.append((P_ORE, dev))
-        self.obiettivo.append((P_ORE_MAX, massimo))
+            self._pesa("ore", P_ORE, dev)
+        self._pesa("ore", P_ORE_MAX, massimo)
 
     def _differenza(self, banda):
         """Massimo - minimo delle ore contate (lavorate + ferie) di chi non ha un massimo ore: al più
@@ -670,7 +724,7 @@ class _Modello:
             self.model.Add(massime >= c)
             self.model.Add(minime <= c)
         self.model.Add(massime - minime <= banda + oltre)
-        self.obiettivo.append((P_FUORI_BANDA * self.scala, oltre))
+        self._pesa("fuori_banda", P_FUORI_BANDA * self.scala, oltre)
 
     def _giorni_notti(self):
         n = self.scala
@@ -687,8 +741,8 @@ class _Modello:
             self.model.AddAbsEquality(sett, ore_g - ore_n)
             cumul = self.model.NewIntVar(0, 100_000, "")
             self.model.AddAbsEquality(cumul, ore_g - ore_n + (st.ore_giorno - st.ore_notte))
-            self.obiettivo.append((P_GIORNO_NOTTE * n, sett))
-            self.obiettivo.append((P_GIORNO_NOTTE_STORICO * n, cumul))
+            self._pesa("giorni_notti", P_GIORNO_NOTTE * n, sett)
+            self._pesa("giorni_notti", P_GIORNO_NOTTE_STORICO * n, cumul)
 
     def _rotazioni(self):
         """Distribuisce nel tempo i turni di ogni categoria in ROTAZIONI con il meccanismo del debito."""
@@ -710,12 +764,12 @@ class _Modello:
                 debito = rot.contatore(st) + fissati - tasso * rot.esposizione(st)
                 costo = round(rot.peso * n * (2 * debito + 1))
                 for v in vars_di[p.id]:
-                    self.obiettivo.append((costo, v))
+                    self._pesa("rotazioni", costo, v)
                 if rot.doppia:
                     # penalità per ogni turno della categoria oltre il primo nella settimana
                     extra = self.model.NewIntVar(0, len(vars_di[p.id]) + fissati, "")
                     self.model.Add(sum(vars_di[p.id]) + fissati - 1 <= extra)
-                    self.obiettivo.append((rot.doppia * n, extra))
+                    self._pesa("doppia_richiesta", rot.doppia * n, extra)
 
     def _festivita(self):
         """Festività a rotazione, festività per festività, con il meccanismo del debito (tasso tra gli idonei
@@ -742,7 +796,7 @@ class _Modello:
                 for u, v in vars_di[pid]:
                     # chi vuole lavorare quel turno lo riceve prima; tra più disponibili decide la rotazione
                     sconto = P_DISPONIBILE_FESTIVO if pid in voglia.get((u.data, u.fascia), ()) else 0
-                    self.obiettivo.append((round((costo + sconto) * n), v))
+                    self._pesa("festivita", round((costo + sconto) * n), v)
         # al massimo un turno festivo a testa nella settimana (es. Natale e Santo Stefano)
         for p in self.dipendenti:
             vars_p = [v for u, v in self._vars_di(p.id, lambda u: (u.data, u.fascia) in turni)]
@@ -751,7 +805,7 @@ class _Modello:
             if len(vars_p) + fissi >= 2 and vars_p:
                 extra = self.model.NewIntVar(0, len(vars_p) + fissi, "")
                 self.model.Add(sum(vars_p) + fissi - 1 <= extra)
-                self.obiettivo.append((P_DOPPIO_FESTIVO * n, extra))
+                self._pesa("doppio_festivo", P_DOPPIO_FESTIVO * n, extra)
 
     def _weekend(self):
         n = self.scala
@@ -768,7 +822,7 @@ class _Modello:
                 # costo marginale di (storico + c)^2 con c binario: 2*storico + 1
                 costo = round(P_WEEKEND * n * (2 * debito + 1))
                 for u, v in self._vars_di(p.id, lambda u, cat=cat: categoria_weekend(u) == cat):
-                    self.obiettivo.append((costo, v))
+                    self._pesa("weekend", costo, v)
         # evita due turni di weekend alla stessa persona nella stessa settimana
         for p in self.dipendenti:
             turni = [v for u, v in self._vars_di(p.id, lambda u: categoria_weekend(u) is not None)]
@@ -776,4 +830,4 @@ class _Modello:
             if turni:
                 extra = self.model.NewIntVar(0, 4 + fissi, "")
                 self.model.Add(sum(turni) + fissi - 1 <= extra)
-                self.obiettivo.append((P_DOPPIO_WEEKEND * n, extra))
+                self._pesa("doppio_weekend", P_DOPPIO_WEEKEND * n, extra)

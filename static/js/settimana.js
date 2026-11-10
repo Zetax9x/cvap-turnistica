@@ -169,6 +169,8 @@ function render() {
   if (avvisoCoprire) frammento.append(avvisoCoprire);
   const report = s.report ? renderReport(s.report) : null;
   if (report) frammento.append(report);
+  const diagnostica = s.report ? renderDiagnostica(s.report) : null;
+  if (diagnostica) frammento.append(diagnostica);
   frammento.append(renderDisponibilita(s));
   if (stato.coperturaPreventiva) frammento.append(renderCoperturaPreventiva(stato.coperturaPreventiva));
   if ((s.postazioni_a_richiesta || []).length) frammento.append(renderRichieste(s));
@@ -472,6 +474,86 @@ function renderReport(r) {
     );
   }
   return riquadro;
+}
+
+// ---------------------------------------------------------------- diagnostica
+
+const numero = (n) => Number(n).toLocaleString("it-IT", { useGrouping: "always" });
+
+function rigaDato(nome, valore, nota) {
+  return el("div", { class: "diag-dato" },
+    el("dt", {}, nome), el("dd", {}, valore, nota ? el("span", { class: "muted" }, ` ${nota}`) : null));
+}
+
+function renderRicerca(r) {
+  const q = r.qualita;
+  const prec = r.qualita_precedente;
+  const stato = r.stato === "ottimo" ? "ottima (dimostrato)" : "buona, non dimostrata ottima";
+  const dati = [
+    rigaDato("Soluzione", stato),
+    rigaDato("Punteggio", numero(q.punteggio), "(più basso è meglio)"),
+    rigaDato("Limite inferiore", numero(q.limite_inferiore), "(nessuna soluzione può fare meglio di così)"),
+    rigaDato("Distanza dall'ottimo", `${String(q.gap_pct).replace(".", ",")}%`),
+    rigaDato("Miglioramenti trovati", numero(q.soluzioni)),
+    rigaDato("Migliore trovata dopo", `${String(q.tempo_migliore_s).replace(".", ",")} s`,
+      `su ${String(q.durata_s).replace(".", ",")} s (massimo ${q.tempo_max} s, ${q.workers} processi)`),
+  ];
+  if (prec) {
+    const delta = q.punteggio - prec.punteggio;
+    const confronto = delta === 0 ? "uguale" : delta < 0 ? `migliore di ${numero(-delta)}` : `peggiore di ${numero(delta)}`;
+    dati.push(rigaDato("Generazione precedente", numero(prec.punteggio), `(questa è ${confronto})`));
+  }
+  const consiglio = q.gap_pct > 5
+    ? el("p", { class: "diag-consiglio" },
+      "La distanza dall'ottimo è alta: rigenerando con più tempo a disposizione la soluzione può migliorare.")
+    : null;
+  return el("section", { class: "diag-sezione" }, el("h3", {}, "Ricerca"), el("dl", { class: "diag-dati" }, dati), consiglio);
+}
+
+function renderRegole(voci, scambiSedi) {
+  const regole = voci.filter((v) => v.tipo === "regola");
+  const violate = regole.filter((v) => v.quante > 0);
+  const corpo = el("tbody", {}, regole.map((v) => el("tr", { class: v.quante > 0 ? "diag-violata" : null },
+    el("th", { scope: "row", title: v.spiegazione }, v.etichetta),
+    el("td", { class: "num" }, numero(v.quante)),
+    el("td", { class: "num" }, numero(v.punti)))));
+  return el("section", { class: "diag-sezione" },
+    el("h3", {}, "Regole con evidenza"),
+    el("p", { class: "muted" }, violate.length
+      ? `${violate.length === 1 ? "Una regola non è stata rispettata" : `${violate.length} regole non sono state rispettate`}: `
+        + "il generatore le allenta solo quando non c'è altro modo di coprire i turni."
+      : "Tutte rispettate: il generatore non ha dovuto allentarne nessuna."),
+    el("table", { class: "tabella diag-tabella" },
+      el("thead", {}, el("tr", {}, el("th", {}, "Regola"), el("th", { class: "num" }, "Volte"), el("th", { class: "num" }, "Punti"))),
+      corpo),
+    el("p", { class: "muted" }, `Scambi tra Acquasanta e Venarotta per pareggiare le sedi: ${numero(scambiSedi)}.`));
+}
+
+function renderEquita(voci) {
+  const equita = voci.filter((v) => v.tipo === "equita");
+  const totale = equita.reduce((t, v) => t + Math.abs(v.punti), 0) || 1;
+  return el("section", { class: "diag-sezione" },
+    el("h3", {}, "Equità nel tempo"),
+    el("p", { class: "muted" }, "Peso di ogni criterio nel punteggio. I punti possono essere negativi: "
+      + "un turno dato a chi è in credito (ne ha fatti meno del dovuto) abbassa il punteggio."),
+    el("table", { class: "tabella diag-tabella" },
+      el("thead", {}, el("tr", {}, el("th", {}, "Criterio"), el("th", { class: "num" }, "Punti"), el("th", { class: "num" }, "Peso"))),
+      el("tbody", {}, equita.map((v) => el("tr", {},
+        el("th", { scope: "row" }, v.etichetta, el("div", { class: "diag-spiegazione muted" }, v.spiegazione)),
+        el("td", { class: "num" }, numero(v.punti)),
+        el("td", { class: "num" }, `${Math.round((Math.abs(v.punti) / totale) * 100)}%`))))));
+}
+
+/** Pannello ripiegato con i dettagli tecnici dell'ultima generazione: qualità della ricerca e peso delle regole. */
+function renderDiagnostica(r) {
+  if (!r.qualita) return null;
+  const voci = (r.diagnostica && r.diagnostica.voci) || [];
+  return el("details", { class: "card info info-ripiegabile diagnostica" },
+    el("summary", {}, "Diagnostica della generazione"),
+    renderRicerca(r),
+    voci.length ? renderRegole(voci, r.diagnostica.scambi_sedi || 0) : null,
+    voci.length ? renderEquita(voci)
+      : el("p", { class: "muted" }, "Il dettaglio delle regole è disponibile rigenerando la settimana."));
 }
 
 // ---------------------------------------------------------------- griglia

@@ -57,6 +57,12 @@ export const api = {
   sessione: () => richiesta("GET", "/sessione"),
   accedi: (password) => richiesta("POST", "/accesso", { password }),
   esci: () => richiesta("POST", "/uscita"),
+  registro: ({ accesso, prima_di, limite }) => {
+    const params = new URLSearchParams({ limite: String(limite) });
+    if (accesso) params.set("accesso", accesso);
+    if (prima_di) params.set("prima_di", String(prima_di));
+    return richiesta("GET", `/registro?${params}`);
+  },
 
   // Notifiche push del telefono
   pushStato: () => richiesta("GET", "/push"),

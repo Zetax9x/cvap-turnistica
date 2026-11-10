@@ -16,13 +16,14 @@ from email.utils import getaddresses
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, BeforeValidator, Field, StringConstraints, model_validator
 
 from . import (accesso, api_push, push, api_calendari, api_cambi_turno, api_equita, api_festivita, api_storico_festivi,
-               dati_festivi, db, db_festivita, email_turni)
+               dati_festivi, db, db_festivita, email_turni, registro)
 from .api_comune import DATA_MAX, DATA_MIN, DataValida, Id, IdPath, Nome, errore as _errore
 from .posta import PostinoBloccato, PostinoSmtp
 from .calendario import giorni_settimana, lunedi, postazioni_attive, tipo_settimana
@@ -663,11 +664,20 @@ def payload_calendario_copertura(conn: sqlite3.Connection, mese: date, cache: Ca
 
 # --- app ---------------------------------------------------------------------
 
-def create_app(db_path: str, password: str | None = None, postino=None) -> FastAPI:
+def create_app(db_path: str, password: str | None = None, postino=None,
+               password_master: str | None = None) -> FastAPI:
     """`password`: se c'è, le API chiedono l'accesso (vedi accesso.py). `postino`: chi spedisce le email
-    (predefinito: SMTP configurato dalle variabili d'ambiente)."""
+    (predefinito: SMTP configurato dalle variabili d'ambiente). `password_master`: seconda password, valida
+    solo insieme a `password` e diversa da essa, che in più apre il registro delle azioni (cvap/registro.py)."""
     db_path = str(db_path)
-    db.connetti(db_path).close()  # crea schema e seed
+    conn = db.connetti(db_path)  # crea schema e seed
+    try:
+        registro.crea_tabella(conn)
+    finally:
+        conn.close()
+    if password_master and (not password or password_master == password):
+        logging.getLogger("cvap").warning("APP_PASSWORD_MASTER ignorata: serve APP_PASSWORD, e diversa")
+        password_master = None
     postino = postino if postino is not None else PostinoSmtp.da_ambiente()
 
     # con la password la documentazione automatica dell'API non è pubblica
@@ -700,11 +710,29 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
             segreto = os.environ.get("SESSIONE_SEGRETO") or db.segreto_sessione(conn)
         finally:
             conn.close()
-        chiave = accesso.chiave(password, segreto)
+        # con la master nella chiave, cambiarla chiude tutte le sessioni; senza, la chiave resta quella di prima
+        chiave = accesso.chiave(password if not password_master else f"{password}\0master\0{password_master}",
+                                segreto)
     libere = {"/api/accesso", "/api/sessione", "/api/uscita"}
 
+    def ruolo(request: Request) -> str | None:
+        """normale o master; None senza un accesso valido. Senza password il sito è aperto: normale."""
+        if chiave is None:
+            return accesso.NORMALE
+        return accesso.ruolo_token(chiave, request.cookies.get(accesso.COOKIE))
+
     def autenticato(request: Request) -> bool:
-        return chiave is None or accesso.token_valido(chiave, request.cookies.get(accesso.COOKIE))
+        return ruolo(request) is not None
+
+    def scrivi_registro(chi: str, metodo: str, percorso: str, esito: int, descrizione: str | None = None):
+        try:
+            conn = db.apri(db_path)
+            try:
+                registro.registra(conn, chi, metodo, percorso, esito, descrizione)
+            finally:
+                conn.close()
+        except Exception:  # il registro non deve mai far fallire l'azione
+            logging.getLogger("cvap").exception("Azione non scritta nel registro")
 
     @app.middleware("http")
     async def richiedi_accesso(request: Request, chiama):
@@ -714,21 +742,52 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
             return JSONResponse({"detail": "Accesso richiesto: inserisci la password"}, status_code=401)
         return await chiama(request)
 
+    @app.middleware("http")
+    async def registra_azioni(request: Request, chiama):
+        metodo, percorso = request.method, request.url.path
+        if not registro.da_registrare(metodo, percorso):
+            return await chiama(request)
+        chi = ruolo(request) if chiave is not None else registro.APERTO
+        risposta = await chiama(request)
+        if risposta.status_code != 401:  # senza accesso non è successo niente
+            await run_in_threadpool(scrivi_registro, chi or registro.PUBBLICO, metodo, percorso,
+                                    risposta.status_code)
+        return risposta
+
     @app.get("/api/sessione")
     def sessione(request: Request):
-        return {"protetto": chiave is not None, "autenticato": autenticato(request)}
+        return {"protetto": chiave is not None, "autenticato": autenticato(request),
+                "master": ruolo(request) == accesso.MASTER and password_master is not None}
+
+    @app.get("/api/registro")
+    def leggi_registro(request: Request, limite: int = Query(200, ge=1, le=500),
+                       prima_di: int | None = None, accesso_: str | None = Query(None, alias="accesso")):
+        if not (password_master and ruolo(request) == accesso.MASTER):
+            raise HTTPException(403, "Il registro delle azioni si vede solo con la password master")
+        conn = db.apri(db_path)
+        try:
+            return registro.lista(conn, limite, prima_di, accesso_)
+        finally:
+            conn.close()
 
     @app.post("/api/accesso")
     async def entra(body: AccessoIn, request: Request, response: Response):
         if chiave is None:
-            return {"autenticato": True}
-        if not accesso.password_giusta(body.password, password):
+            return {"autenticato": True, "master": False}
+        if password_master and accesso.password_giusta(body.password, password_master):
+            chi = accesso.MASTER
+        elif accesso.password_giusta(body.password, password):
+            chi = accesso.NORMALE
+        else:
+            await run_in_threadpool(scrivi_registro, registro.ANONIMO, "POST", "/api/accesso", 401,
+                                    "Tentativo di accesso con password sbagliata")
             await asyncio.sleep(1)  # rallenta i tentativi a caso senza tenere occupato il server
             raise HTTPException(401, "Password errata")
+        await run_in_threadpool(scrivi_registro, chi, "POST", "/api/accesso", 200, "Accesso")
         https = request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
-        response.set_cookie(accesso.COOKIE, accesso.crea_token(chiave), max_age=accesso.DURATA_S,
+        response.set_cookie(accesso.COOKIE, accesso.crea_token(chiave, ruolo=chi), max_age=accesso.DURATA_S,
                             httponly=True, samesite="lax", secure=https, path="/")
-        return {"autenticato": True}
+        return {"autenticato": True, "master": chi == accesso.MASTER}
 
     @app.post("/api/uscita", status_code=204)
     def esci():
@@ -1063,6 +1122,7 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
                 "media_ore": ris.media_ore,
                 "durata_s": durata,
                 "qualita": ris.qualita,
+                "diagnostica": ris.diagnostica,
                 "qualita_precedente": qualita_precedente,
                 "festivi": riepilogo_generazione(festivi, [a for a in fissi if not ore_extra(a)] + ris.assegnazioni, [p.id for p in dipendenti],
                                                  {f["id"]: f["nome"] for f in db_festivita.lista_festivita(conn)}),
@@ -1534,6 +1594,7 @@ def create_app(db_path: str, password: str | None = None, postino=None) -> FastA
 
 def _app_predefinita() -> FastAPI:
     password = os.environ.get("APP_PASSWORD") or None  # senza: sito aperto (uso locale)
+    password_master = os.environ.get("APP_PASSWORD_MASTER") or None  # in più: il registro delle azioni
     turso = os.environ.get("TURSO_DATABASE_URL")
     postino = PostinoSmtp.da_ambiente()
     if turso and not password:
@@ -1541,10 +1602,10 @@ def _app_predefinita() -> FastAPI:
         logging.getLogger("cvap").warning("APP_PASSWORD non impostata: sito aperto e invio email disattivato")
         postino = PostinoBloccato("Invio email disattivato: prima imposta la password del sito (APP_PASSWORD)")
     if turso:  # su Vercel il filesystem è in sola lettura: si usa Turso
-        return create_app(turso, password=password, postino=postino)
+        return create_app(turso, password=password, postino=postino, password_master=password_master)
     percorso = Path(os.environ.get("CVAP_DB", "data/turni.db"))
     percorso.parent.mkdir(parents=True, exist_ok=True)
-    return create_app(str(percorso), password=password, postino=postino)
+    return create_app(str(percorso), password=password, postino=postino, password_master=password_master)
 
 
 app = _app_predefinita()

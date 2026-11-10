@@ -12,7 +12,7 @@ Frontend: HTML + JS vanilla (ES modules) in `static/`, servito da FastAPI. UI in
 | `slot.py` | `unita_da_coprire(giorni, postazioni, occupate) -> list[Unita]` |
 | `vincoli.py` | `Violazione(livello: "errore"\|"avviso", codice, messaggio, persona_id=None, data=None)`, `valida_settimana(giorni, postazioni, assegnazioni, persone: dict[int, Persona], contesto=()) -> list[Violazione]` |
 | `storico.py` | `StoricoPersona(settimane, saldo_ore, weekend: dict, ore_giorno, ore_notte)`, `SettimanaPassata(media_ore, dipendenti: list[int], assegnazioni)`, `calcola_storico(list[SettimanaPassata]) -> dict[int, StoricoPersona]` |
-| `solver.py` | `genera(giorni, postazioni, persone: list[Persona], fissi=(), contesto=(), storico=None, tempo_max=45.0, seed=0, workers=8, ferie=None, indisponibili=None, fabbisogno=(), scarto_ore_max=12, festivi=None) -> Risultato` con `Risultato(stato, assegnazioni: list[Assegnazione]` (solo nuove, origine `generato`)`, scoperti: list[Unita], media_ore: float, ore: dict[int,int], messaggio: str, durata_s: float, qualita: dict \| None)`; `stato` ∈ `ottimo \| ammissibile \| impossibile \| nessuna_soluzione` |
+| `solver.py` | `genera(giorni, postazioni, persone: list[Persona], fissi=(), contesto=(), storico=None, tempo_max=45.0, seed=0, workers=8, ferie=None, indisponibili=None, fabbisogno=(), scarto_ore_max=12, festivi=None) -> Risultato` con `Risultato(stato, assegnazioni: list[Assegnazione]` (solo nuove, origine `generato`)`, scoperti: list[Unita], media_ore: float, ore: dict[int,int], messaggio: str, durata_s: float, qualita: dict \| None, diagnostica: dict \| None)`; `stato` ∈ `ottimo \| ammissibile \| impossibile \| nessuna_soluzione` |
 | `festivita.py` | Calendario delle festività (puro): `pasqua`, `data_nell_anno`, `date_festive`, `turni_festivi`, `FESTIVITA_PREDEFINITE` (sezione "Festività a rotazione: calendario") |
 | `db_festivita.py`, `api_festivita.py`, `api_comune.py` | Repository e router del calendario (`/api/festivita`), chi vuole lavorare (`/api/festivita/disponibili`), ordine e storico per anno (`/api/festivita/prossime`, `/lavorate`); tipi condivisi delle API |
 | `storico_festivi.py`, `db_storico_festivi.py`, `api_storico_festivi.py` | Storico delle festività degli anni passati: lettura CSV, anteprima, limite della prima settimana generata, router `/api/storico-festivi` |
@@ -97,8 +97,9 @@ non di ferie (calcolata dalle assegnazioni reali, così le modifiche manuali con
 ## Endpoint REST (prefisso `/api`, JSON)
 
 Con `APP_PASSWORD` impostata (`create_app(..., password=...)`) tutte le API tranne accesso/sessione/uscita e i percorsi pubblici `/api/cambi-turno/*` rispondono
-401 senza il cookie `cvap_sessione` (HttpOnly, SameSite=Lax, 30 giorni, firmato HMAC: vedi `cvap/accesso.py`).
-- `GET /sessione` → `{protetto, autenticato}` · `POST /accesso` `{password}` → 200 e cookie · 401 se errata ·
+401 senza il cookie `cvap_sessione` (con `APP_PASSWORD_MASTER`, `create_app(..., password_master=...)`, il cookie
+porta anche il ruolo `normale` o `master` dentro la firma; HttpOnly, SameSite=Lax, 30 giorni, firmato HMAC: vedi `cvap/accesso.py`).
+- `GET /sessione` → `{protetto, autenticato, master}` · `POST /accesso` `{password}` → 200 `{autenticato, master}` e cookie · 401 se errata ·
   `POST /uscita` → 204 (cancella il cookie)
 
 - `GET /persone` → `[{id, nome, tipo, qualifica, attivo, autista_programmati, max_ore_settimana, email}]` (tutte, anche non attive)
@@ -188,7 +189,7 @@ Con `APP_PASSWORD` impostata (`create_app(..., password=...)`) tutte le API tran
   **Sostituzioni = ore extra**: valgono per copertura, riposo e turni di fila, ma non per ore massime/minime, differenza ore,
   conteggi di Ascoli, storico del generatore (saldo, weekend, sedi, festività…) e statistiche, che le mostrano a parte
   (`ore_sostituzioni` in `riepilogo` della settimana, in `/statistiche` e nel riepilogo per dipendente con `turni_sostituzioni`).
-- `POST /settimane/{data}/genera` `{tempo_max?: number}` → settimana aggiornata con `report = {stato, messaggio, scoperti: [{data, postazione, fascia, segmento, ruolo}], media_ore, durata_s, qualita, qualita_precedente, festivi}` (`festivi`: vedi "Festività nel generatore"). `qualita = {punteggio, limite_inferiore, gap_pct, soluzioni, tempo_migliore_s, durata_s, tempo_max, workers}` (punteggio = somma delle penalità, più basso è meglio; `gap_pct` = distanza dall'ottimo, 0 = ottimo dimostrato); `qualita_precedente` è la `qualita` della generazione precedente della stessa settimana (`null` se assente). I processi del risolutore (`workers`) li sceglie `app.worker_generatore()`: `CVAP_WORKER` (1–64) se impostata, altrimenti i core utilizzabili, al massimo 8.
+- `POST /settimane/{data}/genera` `{tempo_max?: number}` → settimana aggiornata con `report = {stato, messaggio, scoperti: [{data, postazione, fascia, segmento, ruolo}], media_ore, durata_s, qualita, qualita_precedente, diagnostica, festivi}` (`festivi`: vedi "Festività nel generatore"). `qualita = {punteggio, limite_inferiore, gap_pct, soluzioni, tempo_migliore_s, durata_s, tempo_max, workers}` (punteggio = somma delle penalità, più basso è meglio; `gap_pct` = distanza dall'ottimo, 0 = ottimo dimostrato); `qualita_precedente` è la `qualita` della generazione precedente della stessa settimana (`null` se assente). `diagnostica = {voci: [{voce, etichetta, tipo, spiegazione, punti, quante}], scambi_sedi}`: una voce per ogni elemento di `solver.VOCI_OBIETTIVO`; `tipo` è `regola` (vincolo con evidenza: `quante` = volte in cui non è rispettato) o `equita` (distribuzione nel tempo: `quante` è `null`, `punti` può essere negativo); la somma dei `punti` è il `punteggio`; `scambi_sedi` = scambi fatti da `riequilibra_sedi`. Nella pagina della settimana la mostra il pannello ripiegato "Diagnostica della generazione". I processi del risolutore (`workers`) li sceglie `app.worker_generatore()`: `CVAP_WORKER` (1–64) se impostata, altrimenti i core utilizzabili, al massimo 8.
   Calcola con `solver.genera` e, solo se riesce, sostituisce le assegnazioni `generato` della settimana con: dipendenti attivi, `fissi` = volontario+manuale,
   `contesto` = assegnazioni dei 3 giorni prima e dopo la settimana, `storico` = `calcola_storico` su tutte le settimane precedenti presenti in `settimane`.
   Salva le nuove assegnazioni, `stato='bozza'`, `dipendenti` = id dei dipendenti attivi. 400 se confermata.
@@ -717,3 +718,14 @@ Un solo dispositivo iscritto (nella tabella `impostazioni`: chiavi `push_vapid_p
 - `DELETE /api/push/iscrizione` → 204.
 - `POST /api/push/prova` → `{inviata: true}` · 400 se nessuno è iscritto, se l'iscrizione è scaduta (404/410 dal servizio: viene tolta) o se l'invio fallisce.
 - `POST /api/cambi-turno/conferme`: alla **prima** registrazione di un cambio avvisa il dispositivo iscritto (`{titolo, testo, url}`); la ripetizione con la stessa chiave non riavvisa; un errore di invio non cambia l'esito.
+
+## Registro delle azioni (`cvap/registro.py`)
+
+Ogni richiesta alle API che modifica dati (POST, PUT, PATCH, DELETE; non le anteprime) è scritta nella tabella
+`registro_azioni` con data e ora, accesso (`normale`, `master`, `pubblico` = pagina dei cambi turno dei dipendenti,
+`aperto` = sito senza password), metodo, percorso, codice di risposta e una descrizione in italiano. Gli accessi
+riusciti e i tentativi con password sbagliata (accesso `anonimo`) li scrive `POST /accesso`; le richieste rifiutate
+con 401 non si registrano. Si tengono le ultime 20.000 righe circa.
+
+- `GET /registro?limite=200&prima_di=<id>&accesso=<accesso>` → `[{id, quando, accesso, metodo, percorso, esito,
+  descrizione}]` dalla più recente; `prima_di` carica le precedenti. 403 se non si è entrati con la password master.

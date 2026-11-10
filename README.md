@@ -101,7 +101,8 @@ Variabili d'ambiente (su Vercel: *Settings → Environment Variables*):
 
 | Variabile | A cosa serve |
 |---|---|
-| `APP_PASSWORD` | Password unica del sito. Senza, il sito è aperto (va bene solo in locale). Cambiarla chiude tutte le sessioni. |
+| `APP_PASSWORD` | Password del sito. Senza, il sito è aperto (va bene solo in locale). Cambiarla chiude tutte le sessioni. |
+| `APP_PASSWORD_MASTER` | Seconda password, facoltativa: apre il sito come `APP_PASSWORD` e in più mostra la pagina **Registro** con tutte le modifiche fatte e la password usata. Vale solo con `APP_PASSWORD` impostata e diversa. Cambiarla chiude tutte le sessioni. |
 | `SESSIONE_SEGRETO` | Facoltativa: stringa casuale in più per firmare il cookie di accesso. |
 | `SMTP_HOST`, `SMTP_PORT` | Server di posta. Gmail: `smtp.gmail.com`, `587`. Brevo: `smtp-relay.brevo.com`, `587`. |
 | `SMTP_USER`, `SMTP_PASSWORD` | Utente e password SMTP (Gmail: indirizzo e *password per le app*; Brevo: login e chiave SMTP). |
