@@ -50,7 +50,7 @@ def test_il_registro_contiene_le_azioni_di_entrambe_le_password(app):
     assert azioni == [
         ("anonimo", "Tentativo di accesso con password sbagliata", 401),
         ("master", "Conferma della settimana del 19/10/2026", 200),
-        ("normale", "Persona aggiunta", 201),
+        ("normale", "Persona aggiunta: Mario", 201),
         ("master", "Accesso", 200),
         ("normale", "Accesso", 200),
     ]
@@ -89,15 +89,96 @@ def test_sito_aperto_registra_le_azioni_come_aperto(tmp_path):
     c = TestClient(create_app(percorso))
     c.post("/api/persone", json={"nome": "Mario", "tipo": "dipendente", "qualifica": "autista"})
     conn = db.apri(percorso)
-    assert [(r["accesso"], r["descrizione"]) for r in registro.lista(conn)] == [("aperto", "Persona aggiunta")]
+    assert [(r["accesso"], r["descrizione"]) for r in registro.lista(conn)] == [("aperto", "Persona aggiunta: Mario")]
     conn.close()
 
 
 def test_descrizioni():
     assert registro.descrivi("POST", "/api/settimane/2026-10-19/genera") == \
         "Generazione dei turni della settimana del 19/10/2026"
-    assert registro.descrivi("DELETE", "/api/assegnazioni/42") == "Turno 42 tolto"
+    assert registro.descrivi("DELETE", "/api/assegnazioni/42") == "Tolto il turno di n. 42"
     assert registro.descrivi("POST", "/api/qualcosa") == "POST /api/qualcosa"
     assert not registro.da_registrare("POST", "/api/calendario-copertura/ferie/anteprima")
     assert not registro.da_registrare("GET", "/api/persone")
     assert registro.da_registrare("POST", "/api/ferie")
+
+
+def _dettagli(riga):
+    return {e: v for e, v in riga["dettagli"]}
+
+
+def test_i_dettagli_hanno_i_nomi_le_date_e_mai_le_password(app):
+    normale, _ = _entra(app, NORMALE)
+    master, _ = _entra(app, MASTER)
+    pid = normale.post("/api/persone", json={"nome": "Marco Bianchi", "tipo": "dipendente",
+                                             "qualifica": "autista"}).json()["id"]
+    normale.post("/api/ferie", json={"persona_id": pid, "dal": "2026-11-18", "al": "2026-11-20"})
+    righe = master.get("/api/registro").json()
+    ferie = _dettagli(righe[0])
+    assert righe[0]["descrizione"] == "Ferie aggiunte"
+    assert ferie == {"Persona": "Marco Bianchi", "Dal": "18/11/2026", "Al": "20/11/2026"}
+    assert righe[1]["descrizione"] == "Persona aggiunta: Marco Bianchi"
+    assert _dettagli(righe[1]) == {"Tipo": "dipendente", "Qualifica": "autista"}
+    accesso_ = next(r for r in righe if r["descrizione"] == "Accesso")
+    assert all("password" not in e.lower() and NORMALE not in v and MASTER not in v
+               for e, v in accesso_["dettagli"])
+
+
+def test_turno_tolto_descritto_con_chi_quando_e_dove(app):
+    normale, _ = _entra(app, NORMALE)
+    master, _ = _entra(app, MASTER)
+    pid = normale.post("/api/persone", json={"nome": "Marco Bianchi", "tipo": "dipendente",
+                                             "qualifica": "autista"}).json()["id"]
+    s = normale.post("/api/settimane/2026-10-19/assegnazioni", json={
+        "data": "2026-10-21", "postazione": "Acquasanta", "fascia": "giorno", "segmento": "intero",
+        "ruolo": "autista", "persona_id": pid}).json()
+    aid = s["assegnazioni"][0]["id"]
+    assert normale.delete(f"/api/assegnazioni/{aid}").status_code == 204
+    riga = master.get("/api/registro").json()[0]
+    assert riga["descrizione"] == "Tolto il turno di Marco Bianchi del 21/10"
+    assert _dettagli(riga) == {"Turno": "Marco Bianchi, 21/10/2026, Acquasanta, giorno 8–20, autista"}
+
+
+def test_azione_non_riuscita_salva_il_motivo(app):
+    normale, _ = _entra(app, NORMALE)
+    master, _ = _entra(app, MASTER)
+    r = normale.delete("/api/ferie/999")
+    assert r.status_code >= 400
+    riga = master.get("/api/registro").json()[0]
+    assert riga["esito"] == r.status_code and _dettagli(riga)["Motivo"]
+
+
+def test_generazione_salva_turni_generati_e_posti_scoperti(app):
+    normale, _ = _entra(app, NORMALE)
+    master, _ = _entra(app, MASTER)
+    normale.post("/api/persone", json={"nome": "Solo", "tipo": "dipendente", "qualifica": "autista"})
+    assert normale.post("/api/settimane/2026-10-19/genera", json={"tempo_max": 2}).status_code == 200
+    d = _dettagli(master.get("/api/registro").json()[0])
+    assert d["Tempo massimo (secondi)"] == "2" and int(d["Turni generati"]) > 0 and d["Posti scoperti"] != "nessuno"
+
+
+def test_registro_vecchio_senza_colonna_dettagli(tmp_path):
+    from cvap import db
+    percorso = str(tmp_path / "t.db")
+    conn = db.connetti(percorso)
+    conn.executescript("""CREATE TABLE registro_azioni (id INTEGER PRIMARY KEY AUTOINCREMENT, quando TEXT NOT NULL,
+        accesso TEXT NOT NULL, metodo TEXT NOT NULL, percorso TEXT NOT NULL, esito INTEGER NOT NULL,
+        descrizione TEXT NOT NULL);
+        INSERT INTO registro_azioni(quando, accesso, metodo, percorso, esito, descrizione)
+        VALUES ('2026-11-10T10:00:00', 'normale', 'POST', '/api/ferie', 201, 'Ferie aggiunte');""")
+    conn.close()
+    master, _ = _entra(create_app(percorso, password=NORMALE, password_master=MASTER), MASTER)
+    righe = master.get("/api/registro").json()
+    assert righe[-1]["descrizione"] == "Ferie aggiunte" and righe[-1]["dettagli"] == []
+
+
+def test_divieto_vuoto_vuol_dire_qualsiasi_e_motivi_in_italiano(app):
+    normale, _ = _entra(app, NORMALE)
+    master, _ = _entra(app, MASTER)
+    pid = normale.post("/api/persone", json={"nome": "Anna", "tipo": "dipendente",
+                                             "qualifica": "autista"}).json()["id"]
+    normale.post("/api/divieti", json={"persona_id": pid, "postazione": None, "turno": "notte"})
+    normale.post("/api/ferie", json={"persona_id": pid})
+    ferie, divieto = master.get("/api/registro").json()[:2]
+    assert _dettagli(divieto)["Postazione"] == "qualsiasi"
+    assert _dettagli(ferie)["Motivo"] == "Dal: manca un dato obbligatorio; Al: manca un dato obbligatorio"

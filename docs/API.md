@@ -727,5 +727,10 @@ Ogni richiesta alle API che modifica dati (POST, PUT, PATCH, DELETE; non le ante
 riusciti e i tentativi con password sbagliata (accesso `anonimo`) li scrive `POST /accesso`; le richieste rifiutate
 con 401 non si registrano. Si tengono le ultime 20.000 righe circa.
 
+I `dettagli` (`registro.prepara`, letti prima di eseguire l'azione) sono l'oggetto indicato nel percorso (persona,
+turno con chi/giorno/postazione/orario, ferie, divieto...) e i dati inviati, in italiano e con i nomi al posto degli
+id; password, chiavi e dati dei dispositivi non si salvano mai. Dopo l'azione si aggiungono il motivo se non è
+riuscita e, per la generazione, turni generati, posti scoperti e qualità della soluzione (`registro.dettagli_esito`).
+
 - `GET /registro?limite=200&prima_di=<id>&accesso=<accesso>` → `[{id, quando, accesso, metodo, percorso, esito,
-  descrizione}]` dalla più recente; `prima_di` carica le precedenti. 403 se non si è entrati con la password master.
+  descrizione, dettagli: [[etichetta, valore]]}]` dalla più recente; `prima_di` carica le precedenti. 403 se non si è entrati con la password master.

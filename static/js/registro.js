@@ -24,12 +24,19 @@ function esito(codice) {
   return el("span", { class: "badge badge-avviso", title: `Codice ${codice}` }, "Non riuscito");
 }
 
+function dettagli(voci) {
+  if (!voci || !voci.length) return null;
+  return el("dl", { class: "registro-dettagli" }, voci.map(([etichetta, valore]) =>
+    el("div", { class: etichetta === "Motivo" ? "registro-motivo" : null }, el("dt", {}, etichetta), el("dd", {}, valore))));
+}
+
 function riga(r) {
   const a = ACCESSI[r.accesso] || { testo: r.accesso, classe: "badge-nuova" };
   return el("tr", {},
     el("td", { class: "registro-quando" }, quando(r.quando)),
     el("td", {}, el("span", { class: `badge ${a.classe}` }, a.testo)),
-    el("td", {}, r.descrizione, el("div", { class: "registro-percorso muted" }, `${r.metodo} ${r.percorso}`)),
+    el("td", {}, r.descrizione, dettagli(r.dettagli),
+      el("div", { class: "registro-percorso muted" }, `${r.metodo} ${r.percorso}`)),
     el("td", {}, esito(r.esito)));
 }
 
@@ -63,8 +70,9 @@ export async function mostra(root) {
   root.replaceChildren(
     el("header", { class: "view-header" },
       el("h1", {}, "Registro delle azioni"),
-      el("p", {}, "Tutte le modifiche fatte dal sito, dalla più recente, con la password usata: "
-        + "normale, master, o i dipendenti dalla pagina dei cambi turno. Le sole consultazioni non compaiono.")),
+      el("p", {}, "Tutte le modifiche fatte dal sito, dalla più recente, con la password usata "
+        + "(normale, master, o i dipendenti dalla pagina dei cambi turno) e il dettaglio di cosa è stato fatto. "
+        + "Le sole consultazioni non compaiono.")),
     el("div", { class: "registro-filtri" }, el("label", { for: "registro-accesso" }, "Accesso"), filtro),
     el("div", { class: "registro-tabella" },
       el("table", { class: "tabella" },

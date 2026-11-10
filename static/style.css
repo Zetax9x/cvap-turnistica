@@ -1704,6 +1704,12 @@ a.btn { text-decoration: none; }
 .registro-tabella { overflow-x: auto; margin-bottom: .75rem; }
 .registro-quando { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .registro-percorso { font-size: .8rem; word-break: break-all; }
+.registro-dettagli { margin: .3rem 0 .15rem; font-size: .88rem; display: grid; gap: .1rem; }
+.registro-dettagli > div { display: flex; flex-wrap: wrap; gap: 0 .4rem; }
+.registro-dettagli dt { color: var(--muted); }
+.registro-dettagli dt::after { content: ":"; }
+.registro-dettagli dd { margin: 0; overflow-wrap: anywhere; }
+.registro-motivo dd { color: var(--err); }
 @media (max-width: 640px) {
   /* su telefono ogni azione è una scheda: quando, accesso ed esito in alto, l'azione sotto */
   .registro-tabella thead { display: none; }
