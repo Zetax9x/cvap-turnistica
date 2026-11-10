@@ -1,5 +1,6 @@
 """API REST della turnistica (FastAPI). Contratto in docs/API.md."""
 import asyncio
+import json
 import dataclasses
 import logging
 import mimetypes
@@ -724,15 +725,32 @@ def create_app(db_path: str, password: str | None = None, postino=None,
     def autenticato(request: Request) -> bool:
         return ruolo(request) is not None
 
-    def scrivi_registro(chi: str, metodo: str, percorso: str, esito: int, descrizione: str | None = None):
+    def scrivi_registro(chi: str, metodo: str, percorso: str, esito: int, descrizione: str | None = None,
+                        dettagli=()):
         try:
             conn = db.apri(db_path)
             try:
-                registro.registra(conn, chi, metodo, percorso, esito, descrizione)
+                registro.registra(conn, chi, metodo, percorso, esito, descrizione, dettagli=dettagli)
             finally:
                 conn.close()
         except Exception:  # il registro non deve mai far fallire l'azione
             logging.getLogger("cvap").exception("Azione non scritta nel registro")
+
+    def prepara_registro(metodo: str, percorso: str, corpo: bytes):
+        """Descrizione e dettagli dell'azione, letti prima di eseguirla; None se non si riesce."""
+        try:
+            dati = json.loads(corpo) if corpo else None
+        except ValueError:
+            dati = None
+        try:
+            conn = db.apri(db_path)
+            try:
+                return registro.prepara(conn, metodo, percorso, dati)
+            finally:
+                conn.close()
+        except Exception:
+            logging.getLogger("cvap").exception("Dettagli dell'azione non letti per il registro")
+            return None
 
     @app.middleware("http")
     async def richiedi_accesso(request: Request, chiama):
@@ -748,11 +766,26 @@ def create_app(db_path: str, password: str | None = None, postino=None,
         if not registro.da_registrare(metodo, percorso):
             return await chiama(request)
         chi = ruolo(request) if chiave is not None else registro.APERTO
+        if chi is None and not percorso.startswith("/api/cambi-turno/"):
+            return await chiama(request)  # senza accesso: risponde 401 e non è successo niente
+        corpo = await request.body()  # Starlette lo ripassa all'endpoint
+        preparata = await run_in_threadpool(prepara_registro, metodo, percorso, corpo)
         risposta = await chiama(request)
-        if risposta.status_code != 401:  # senza accesso non è successo niente
-            await run_in_threadpool(scrivi_registro, chi or registro.PUBBLICO, metodo, percorso,
-                                    risposta.status_code)
-        return risposta
+        if risposta.status_code == 401:
+            return risposta
+        # si legge la risposta (JSON) per salvare l'esito, poi la si restituisce identica
+        contenuto = b"".join([parte async for parte in risposta.body_iterator])
+        nuova = Response(content=contenuto, status_code=risposta.status_code, background=risposta.background)
+        nuova.raw_headers = risposta.raw_headers
+        try:
+            dati = json.loads(contenuto) if contenuto and "json" in risposta.headers.get("content-type", "") else None
+        except ValueError:
+            dati = None
+        descrizione, dettagli = preparata or (None, [])
+        dettagli = list(dettagli) + registro.dettagli_esito(metodo, percorso, risposta.status_code, dati)
+        await run_in_threadpool(scrivi_registro, chi or registro.PUBBLICO, metodo, percorso,
+                                risposta.status_code, descrizione, dettagli)
+        return nuova
 
     @app.get("/api/sessione")
     def sessione(request: Request):
