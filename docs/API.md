@@ -746,3 +746,14 @@ server (`accesso.API_SEMPLICE`) consente solo: `GET /sessione`, `/persone`, `/fe
 `/settimane/{data}/fabbisogno`; `DELETE /ferie/{id}`, `/extra/{id}` e `DELETE /assegnazioni/{id}` solo per i turni dei volontari. Tutto il resto risponde 403.
 Nel riepilogo la procedura fa il controllo preventivo di copertura; genera con `tempo_max` 180 e conferma la settimana solo se non restano posti scoperti (altrimenti la lascia in bozza con «Correggi e rigenera» e «Conferma comunque»). L'app per telefono, in modalità semplice,
 rimanda al sito (`/#genera`).
+
+
+## Email dell'equità
+
+Tra i contenuti dei riepiloghi (`destinatari`) c'è `equita` (`email_turni.sezione_equita`): ogni rotazione del quadro
+dell'equità (`api_equita.quadro_equita`, lo stesso di `GET /statistiche/equita`) con differenza, tendenza, più avanti
+e più indietro e la tabella di ogni dipendente (fatti, la sua parte, scarto). Chi ha scelto `equita` la riceve anche
+in automatico quando si conferma una settimana con turni generati (`POST /settimane/{data}/conferma`, in un thread:
+la conferma non aspetta l'invio, gli errori vanno nel log): `email_turni.componi_equita` con l'esito della
+generazione (qualità, posti scoperti, regole allentate, peso dei criteri), l'equità, le statistiche dei turni e
+delle indisponibilità. Ogni nuova conferma (anche dopo una riapertura) manda l'email di nuovo.

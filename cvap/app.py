@@ -122,14 +122,14 @@ class ProvaEmailIn(BaseModel):
     indirizzo: Annotated[str, BeforeValidator(_email)]
 
 
-Contenuto = Literal["turni", "liberi", "indisponibilita", "statistiche", "statistiche_indisponibilita"]
+Contenuto = Literal["turni", "liberi", "indisponibilita", "statistiche", "statistiche_indisponibilita", "equita"]
 
 
 class DestinatarioIn(BaseModel):
     email: Annotated[str, BeforeValidator(_email)]
     nome: Annotated[str, StringConstraints(strip_whitespace=True, max_length=100,
                                            pattern=r"^[^\x00-\x1f\x7f]*$")] | None = None
-    contenuti: Annotated[list[Contenuto], Field(min_length=1, max_length=5)]
+    contenuti: Annotated[list[Contenuto], Field(min_length=1, max_length=6)]
     responsabile: bool = False  # riceve turni e liberi con "Invia i turni via email" della settimana
 
 
@@ -1194,12 +1194,40 @@ def create_app(db_path: str, password: str | None = None, postino=None,
                                  datetime.now().isoformat(timespec="seconds"), report)
             return payload_settimana(conn, inizio)
 
+    def invia_equita(inizio: date) -> None:
+        """Dopo la conferma di una settimana con turni generati: email dell'equità a chi l'ha scelta tra i
+        riepiloghi. In un thread, così la conferma non aspetta l'invio; gli errori finiscono nel log."""
+        def lavoro():
+            log = logging.getLogger("cvap")
+            try:
+                conn = db.apri(db_path)
+                try:
+                    elenco = [d for d in db.lista_destinatari(conn) if "equita" in d["contenuti"]]
+                    if not elenco:
+                        return
+                    s = payload_settimana(conn, inizio)
+                    quadro = api_equita.quadro_equita(conn, _settimana_passata)
+                    stat, stat_ind = statistiche(conn), statistiche_indisponibilita(conn)
+                    messaggi = [email_turni.componi_equita(s, d["email"], d["nome"], equita=quadro, statistiche=stat,
+                                                           statistiche_indisp=stat_ind) for d in elenco]
+                finally:
+                    conn.close()
+                for indirizzo, errore in postino.invia(messaggi).items():
+                    if errore:
+                        log.warning("Email dell'equità non inviata a %s: %s", indirizzo, errore)
+            except Exception:
+                log.exception("Email dell'equità non preparata")
+        threading.Thread(target=lavoro, daemon=True, name="email-equita").start()
+
     @app.post("/api/settimane/{data}/conferma")
     def conferma(data: str, conn: Conn):
         with scrittura():
             inizio = lunedi(_data(data))
             db.imposta_stato(conn, inizio, "confermata")
-            return payload_settimana(conn, inizio)
+            s = payload_settimana(conn, inizio)
+        if postino.configurato and any(a["origine"] == "generato" for a in s["assegnazioni"]):
+            invia_equita(inizio)
+        return s
 
     @app.post("/api/settimane/{data}/riapri")
     def riapri(data: str, conn: Conn):
@@ -1338,8 +1366,9 @@ def create_app(db_path: str, password: str | None = None, postino=None,
         serve = {c for d in elenco for c in d["contenuti"]}
         stat = statistiche(conn) if "statistiche" in serve else None
         stat_ind = statistiche_indisponibilita(conn) if "statistiche_indisponibilita" in serve else None
-        messaggi = [email_turni.componi_riepilogo(s, d["contenuti"], d["email"], d["nome"],
-                                                  statistiche=stat, statistiche_indisp=stat_ind) for d in elenco]
+        quadro = api_equita.quadro_equita(conn, _settimana_passata) if "equita" in serve else None
+        messaggi = [email_turni.componi_riepilogo(s, d["contenuti"], d["email"], d["nome"], statistiche=stat,
+                                                  statistiche_indisp=stat_ind, equita=quadro) for d in elenco]
         esito = postino.invia(messaggi)
         inviate, errori = [], []
         for d in elenco:

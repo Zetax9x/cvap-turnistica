@@ -377,13 +377,14 @@ def componi(s: dict, persona: dict, indirizzo: str | None = None, *, aggiornamen
 
 # --- riepiloghi per gli indirizzi di Impostazioni ----------------------------------------------
 
-CONTENUTI = ("turni", "liberi", "indisponibilita", "statistiche", "statistiche_indisponibilita")
+CONTENUTI = ("turni", "liberi", "indisponibilita", "statistiche", "statistiche_indisponibilita", "equita")
 TITOLI = {
     "turni": "Turni della settimana",
     "liberi": "Dipendenti liberi",
     "indisponibilita": "Indisponibilità della settimana",
     "statistiche": "Statistiche dei turni",
     "statistiche_indisponibilita": "Statistiche delle indisponibilità",
+    "equita": "Equità dei turni",
 }
 PARTI = {"mattina": "mattina", "pomeriggio": "pomeriggio", "notte": "notte"}
 AVVISI = {"smonto_notte": "smonto notte", "notte": "notte"}
@@ -528,7 +529,7 @@ def _sezione_statistiche_indisp(righe: list[dict]) -> tuple[str, str]:
 
 def componi_riepilogo(s: dict, contenuti: list[str], indirizzo: str, nome: str | None = None, *,
                       statistiche: list[dict] | None = None, statistiche_indisp: list[dict] | None = None,
-                      aggiornamento: bool = False) -> EmailMessage:
+                      equita: dict | None = None, aggiornamento: bool = False) -> EmailMessage:
     """Email con le sole sezioni scelte (`contenuti`, nell'ordine di CONTENUTI)."""
     periodo = f"dal {_dm(s['inizio'])} al {_dmy(s['fine'])}"
     bozza = s.get("stato") != "confermata"
@@ -545,6 +546,8 @@ def componi_riepilogo(s: dict, contenuti: list[str], indirizzo: str, nome: str |
             h, t = _sezione_indisponibilita(s)
         elif c == "statistiche":
             h, t = _sezione_statistiche(statistiche or [])
+        elif c == "equita":
+            h, t = sezione_equita(equita or {})
         else:
             h, t = _sezione_statistiche_indisp(statistiche_indisp or [])
         sezioni_html.append(f'<h2 style="font-size:18px;margin:22px 0 6px;">{TITOLI[c]}</h2>{h}')
@@ -569,5 +572,129 @@ def componi_riepilogo(s: dict, contenuti: list[str], indirizzo: str, nome: str |
     m["To"] = indirizzo
     m["Subject"] = oggetto
     m.set_content(f"Riepilogo {periodo}\n" + (f"{nota}\n" if nota else "") + "\n" + "\n\n".join(sezioni_txt) + "\n")
+    m.add_alternative(corpo, subtype="html")
+    return m
+
+
+# --- equità (contenuto "equita" e email automatica a ogni settimana confermata) --------------------------------
+_TENDENZA = {"si_riduce": "la differenza si sta riducendo", "aumenta": "la differenza sta aumentando",
+             "stabile": "la differenza è stabile"}
+
+
+def _num(x) -> str:
+    if x is None:
+        return "—"
+    testo = f"{x:.1f}".rstrip("0").rstrip(".") if isinstance(x, float) else str(x)
+    return testo.replace(".", ",")
+
+
+def _scarto(x) -> str:
+    if x is None:
+        return "—"
+    return ("+" if x > 0 else "") + _num(x)
+
+
+def sezione_equita(quadro: dict) -> tuple[str, str]:
+    """Ogni rotazione dell'equità (come in Statistiche → Equità) con il dettaglio di ogni dipendente:
+    fatti, la sua parte, scarto, più avanti e più indietro, differenza e tendenza."""
+    rotazioni = [r for r in quadro.get("rotazioni", []) if r.get("con_dati", True)]
+    settimane = quadro.get("settimane", [])
+    if not rotazioni:
+        return "<p>Nessuna settimana confermata con turni generati.</p>", "Nessuna settimana confermata con turni generati."
+    blocchi = [f'<p style="font-size:12px;color:#4d5868;margin:0 0 8px;">Calcolata su {len(settimane)} '
+               f'{"settimana" if len(settimane) == 1 else "settimane"} confermate con turni generati'
+               + (f", dal {_dmy(settimane[0])}" if settimane else "") + ". Scarto positivo: "
+               "ha fatto più della sua parte; negativo: meno. È lo stesso calcolo che usa il generatore.</p>"]
+    txt = []
+    for rot in rotazioni:
+        unita = rot.get("unita", "turni")
+        avanti, indietro = rot.get("piu_avanti"), rot.get("piu_indietro")
+        if rot.get("differenza") == 1 and unita == "turni":
+            unita = "turno"
+        riassunto = [f"Differenza tra chi è più avanti e chi è più indietro: <b>{_num(rot.get('differenza'))} {unita}</b>"]
+        if rot.get("tendenza"):
+            riassunto.append(_TENDENZA.get(rot["tendenza"], rot["tendenza"]))
+        estremi = []
+        if avanti:
+            estremi.append(f"più avanti {_e(avanti['nome'])} ({_scarto(avanti['scarto'])})")
+        if indietro:
+            estremi.append(f"più indietro {_e(indietro['nome'])} ({_scarto(indietro['scarto'])})")
+        righe = []
+        txt.append(f"  {rot['nome']}: differenza {_num(rot.get('differenza'))} {unita}"
+                   + (f", {_TENDENZA.get(rot['tendenza'], '')}" if rot.get("tendenza") else ""))
+        for d in rot.get("dipendenti", []):
+            colore = ("#b51d2b" if (d["scarto"] or 0) > 0 else "#1f6d45" if (d["scarto"] or 0) < 0 else "#1b2330")
+            nota = "" if d["partecipa"] else (d.get("motivo") or "non partecipa")
+            nome = _e(d["nome"]) + ("" if d.get("attivo", True) else " <i>(non attivo)</i>")
+            righe.append(f'<tr><td style="{_TC}"><b>{nome}</b></td>'
+                         f'<td style="{_TC}text-align:right;">{_num(d["fatti"])}</td>'
+                         f'<td style="{_TC}text-align:right;">{_num(d["quota"])}</td>'
+                         f'<td style="{_TC}text-align:right;color:{colore};font-weight:bold;">{_scarto(d["scarto"])}</td>'
+                         f'<td style="{_TC}color:#4d5868;">{_e(nota)}</td></tr>')
+            txt.append(f"    {d['nome']}: {_num(d['fatti'])} / {_num(d['quota'])} ({_scarto(d['scarto'])}){' · ' + nota if nota else ''}")
+        blocchi.append(
+            f'<h3 style="font-size:15px;margin:16px 0 4px;">{_e(rot["nome"])}</h3>'
+            f'<p style="font-size:13px;margin:0 0 4px;">{" · ".join(riassunto)}'
+            + (f'<br>{"; ".join(estremi)}' if estremi else "") + "</p>"
+            f'<table cellspacing="0" style="border-collapse:collapse;width:100%;"><tr>'
+            f'<th style="{_TH}">Dipendente</th><th style="{_TH}">{_e(rot.get("fatti", "Fatti"))}</th>'
+            f'<th style="{_TH}">{_e(rot.get("quota", "La sua parte"))}</th><th style="{_TH}">Scarto</th>'
+            f'<th style="{_TH}">Note</th></tr>{"".join(righe)}</table>'
+            f'<p style="font-size:11px;color:#4d5868;margin:2px 0 0;">Scarto positivo: {_e(rot.get("sopra", ""))}; '
+            f'negativo: {_e(rot.get("sotto", ""))}.</p>')
+    return "".join(blocchi), "\n".join(txt)
+
+
+def _sezione_generazione(s: dict) -> tuple[str, str]:
+    """Esito della generazione della settimana: posti scoperti, regole allentate, peso dei criteri di equità."""
+    report = s.get("report") or {}
+    q = report.get("qualita") or {}
+    scoperti = report.get("scoperti") or []
+    voci = (report.get("diagnostica") or {}).get("voci") or []
+    righe = [f"Soluzione: <b>{'ottima' if report.get('stato') == 'ottimo' else 'buona, non dimostrata ottima'}</b>"]
+    if q:
+        righe.append(f"distanza dall'ottimo {_num(q.get('gap_pct'))}%, durata {_num(q.get('durata_s'))} s")
+    righe.append(f"posti scoperti: <b>{len(scoperti) or 'nessuno'}</b>")
+    html_ = [f'<p style="font-size:13px;margin:0 0 6px;">{" · ".join(righe)}</p>']
+    txt = [" · ".join(x.replace("<b>", "").replace("</b>", "") for x in righe)]
+    if scoperti:
+        html_.append("<ul style=\"margin:0 0 6px;font-size:13px;\">" + "".join(
+            f"<li>{_dm(u['data'])} · {_e(u['postazione'])} · {_e(u['fascia'])} · {_e(u['ruolo'])}</li>" for u in scoperti) + "</ul>")
+    regole = [v for v in voci if v["tipo"] == "regola" and v.get("quante")]
+    if voci:
+        html_.append("<p style=\"font-size:13px;margin:6px 0 2px;\"><b>Regole allentate:</b> " + (
+            "; ".join(f"{_e(v['etichetta'])} ({v['quante']})" for v in regole) if regole else "nessuna") + "</p>")
+        txt.append("Regole allentate: " + ("; ".join(f"{v['etichetta']} ({v['quante']})" for v in regole) if regole else "nessuna"))
+        equita = [v for v in voci if v["tipo"] == "equita"]
+        totale = sum(abs(v["punti"]) for v in equita) or 1
+        html_.append("<p style=\"font-size:13px;margin:2px 0;\"><b>Peso dei criteri di equità in questa settimana:</b> "
+                     + "; ".join(f"{_e(v['etichetta'])} {round(abs(v['punti']) / totale * 100)}%" for v in equita) + "</p>")
+    return "".join(html_), "\n".join(txt)
+
+
+def componi_equita(s: dict, indirizzo: str, nome: str | None, *, equita: dict, statistiche: list[dict],
+                   statistiche_indisp: list[dict]) -> EmailMessage:
+    """Email automatica dopo la conferma di una settimana generata: esito della generazione, equità di ogni
+    rotazione con il dettaglio per dipendente, statistiche dei turni e delle indisponibilità."""
+    periodo = f"dal {_dm(s['inizio'])} al {_dmy(s['fine'])}"
+    sezioni = [("Generazione della settimana", _sezione_generazione(s)), ("Equità dei turni", sezione_equita(equita)),
+               ("Statistiche dei turni", _sezione_statistiche(statistiche)),
+               ("Statistiche delle indisponibilità", _sezione_statistiche_indisp(statistiche_indisp))]
+    saluto = f"Ciao <b>{_e(nome)}</b>, la" if nome else "La"
+    corpo = f"""<!doctype html><html lang="it"><body style="margin:0;padding:0;background:#eef1f5;">
+<div style="max-width:960px;margin:0 auto;padding:16px;font-family:Arial,Helvetica,sans-serif;color:#1b2330;">
+<div style="background:#ffffff;border-top:6px solid {VERDE};padding:16px 18px;">
+<p style="margin:0;color:{VERDE};font-weight:bold;font-size:14px;">Croce Verde Ascoli Piceno · Turnistica</p>
+<h1 style="font-size:22px;margin:6px 0 4px;">Equità dei turni dopo la settimana {_e(periodo)}</h1>
+<p style="font-size:15px;margin:12px 0;">{saluto} settimana è stata confermata: ecco come sono distribuiti i turni, tenendo conto di tutto lo storico.</p>
+{"".join(f'<h2 style="font-size:18px;margin:22px 0 6px;">{t}</h2>{h}' for t, (h, _) in sezioni)}
+<p style="margin:20px 0 0;font-size:12px;color:#4d5868;">Email inviata in automatico dal programma dei turni a ogni settimana confermata.
+Si disattiva togliendo «Equità dei turni» dal destinatario in Impostazioni → Riepiloghi via email.</p>
+</div></div></body></html>"""
+    m = EmailMessage()
+    m["To"] = indirizzo
+    m["Subject"] = f"Equità dei turni dopo la settimana {periodo}"
+    m.set_content(f"Equità dei turni dopo la settimana {periodo}\n\n"
+                  + "\n\n".join(f"{t.upper()}\n{x}" for t, (_, x) in sezioni) + "\n")
     m.add_alternative(corpo, subtype="html")
     return m

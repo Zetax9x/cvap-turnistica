@@ -6,6 +6,7 @@ import { testata, gruppo, riga, avviso, caricamento, mostra, mostraErrore, fogli
 const CONTENUTI = [
   ["turni", "Turni della settimana"], ["liberi", "Liberi"], ["indisponibilita", "Indisponibilità"],
   ["statistiche", "Statistiche dei turni"], ["statistiche_indisponibilita", "Statistiche indisponibilità"],
+  ["equita", "Equità dei turni (anche in automatico a ogni settimana confermata)"],
 ];
 
 export default async function impostazioni(root) {
