@@ -7,10 +7,9 @@ una versione in testo semplice. L'impronta dei turni personali serve a reinviare
 import hashlib
 import html
 import json
-from datetime import date
+from datetime import date, timedelta
 from email.message import EmailMessage
 
-from .vincoli import ORE_FERIE_GIORNO
 from .modello import EXTRA, META, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, orario, parti_turno, segmento_intero
 
 GIORNI = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
@@ -594,25 +593,25 @@ def _scarto(x) -> str:
     return ("+" if x > 0 else "") + _num(x)
 
 
-def _assenze_storico(statistiche: list[dict] | None) -> dict[int, str]:
-    """Per dipendente, i giorni di ferie e di malattia su tutto lo storico (6 ore a giorno), per le note."""
-    out = {}
-    for r in statistiche or []:
-        parti = []
-        for chiave, nome in (("ore_ferie", "ferie"), ("ore_malattia", "malattia")):
-            giorni = round((r.get(chiave) or 0) / ORE_FERIE_GIORNO)
-            if giorni:
-                parti.append(f"{nome} {giorni} {'giorno' if giorni == 1 else 'giorni'}")
-        if parti:
-            out[r["persona_id"]] = ", ".join(parti)
-    return out
+def note_assenze(ferie: list[dict], dal: date, al: date) -> dict[int, str]:
+    """Per dipendente, i giorni di ferie e di malattia inseriti tra `dal` e `al`: «ferie 2 giorni, malattia 8 giorni».
+    Si leggono dalle assenze inserite, non dallo storico dell'equità, che non conta le settimane di assenza intera."""
+    giorni: dict[int, dict[str, set]] = {}
+    for f in ferie:
+        inizio, fine = max(date.fromisoformat(f["dal"]), dal), min(date.fromisoformat(f["al"]), al)
+        motivo = "malattia" if f.get("motivo") == "malattia" else "ferie"
+        while inizio <= fine:
+            giorni.setdefault(f["persona_id"], {}).setdefault(motivo, set()).add(inizio)
+            inizio += timedelta(days=1)
+    return {pid: ", ".join(f"{m} {len(g[m])} {'giorno' if len(g[m]) == 1 else 'giorni'}" for m in ("ferie", "malattia") if m in g)
+            for pid, g in giorni.items()}
 
 
-def sezione_equita(quadro: dict, statistiche: list[dict] | None = None) -> tuple[str, str]:
+def sezione_equita(quadro: dict, assenze: dict[int, str] | None = None) -> tuple[str, str]:
     """Ogni rotazione dell'equità (come in Statistiche → Equità, festività escluse) con il dettaglio di ogni
     dipendente: fatti, la sua parte, scarto, più avanti e più indietro, differenza e tendenza. Nelle note ferie e
-    malattia di tutto lo storico (da `statistiche`)."""
-    assenze = _assenze_storico(statistiche)
+    malattia del periodo (`assenze`, da note_assenze)."""
+    assenze = assenze or {}
     rotazioni = [r for r in quadro.get("rotazioni", []) if r.get("con_dati", True) and not r.get("festivita")]
     settimane = quadro.get("settimane", [])
     if not rotazioni:
@@ -621,7 +620,9 @@ def sezione_equita(quadro: dict, statistiche: list[dict] | None = None) -> tuple
                f'{"settimana" if len(settimane) == 1 else "settimane"} confermate con turni generati'
                + (f", dal {_dmy(settimane[0])}" if settimane else "") + ". Scarto positivo: "
                "ha fatto più della sua parte; negativo: meno. È lo stesso calcolo che usa il generatore. "
-               "Nelle note i giorni di ferie e di malattia su tutto lo storico: ognuno conta 6 ore lavorate. "
+               "Nelle note i giorni di ferie e di malattia inseriti nel periodo. Ogni giorno di assenza conta 6 ore lavorate; "
+               "le settimane di assenza intera non entrano nel conto (né le ore né la parte che spetterebbe), "
+               "così chi è stato assente non risulta indietro. "
                "Andamento: lo scarto di oggi rispetto a quello di 4 settimane generate fa.</p>"]
     txt = []
     for rot in rotazioni:
@@ -740,11 +741,12 @@ def _sezione_generazione(s: dict) -> tuple[str, str]:
 
 
 def componi_equita(s: dict, indirizzo: str, nome: str | None, *, equita: dict, statistiche: list[dict],
-                   statistiche_indisp: list[dict], confronti: dict | None = None) -> EmailMessage:
+                   statistiche_indisp: list[dict], confronti: dict | None = None,
+                   assenze: dict[int, str] | None = None) -> EmailMessage:
     """Email automatica dopo la conferma di una settimana generata: esito della generazione, equità di ogni
     rotazione con il dettaglio per dipendente, statistiche dei turni e delle indisponibilità."""
     periodo = f"dal {_dm(s['inizio'])} al {_dmy(s['fine'])}"
-    sezioni = [("Generazione della settimana", _sezione_generazione(s)), ("Equità dei turni", sezione_equita(equita, statistiche)),
+    sezioni = [("Generazione della settimana", _sezione_generazione(s)), ("Equità dei turni", sezione_equita(equita, assenze)),
                ("Altri confronti", sezione_confronti(confronti or {})),
                ("Statistiche dei turni", _sezione_statistiche(statistiche)),
                ("Statistiche delle indisponibilità", _sezione_statistiche_indisp(statistiche_indisp))]

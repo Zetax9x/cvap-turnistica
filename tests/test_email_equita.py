@@ -101,3 +101,18 @@ def test_niente_festivita_e_ferie_o_malattia_nelle_note(client, postino):
     assert "ferie 2 giorni, malattia 1 giorno" in testo
     sezione = testo.split("Equità dei turni", 2)[2].split("Statistiche dei turni")[0]
     assert "Natale" not in sezione
+
+
+def test_settimana_intera_di_malattia_nelle_note(client, postino):
+    """Malattia dalla domenica a tutta la settimana dopo: le note dicono tutti i giorni, anche quelli della
+    settimana intera che l'equità non conta (era «malattia 1 giorno»)."""
+    client.put("/api/email-equita", json={"email": "io@example.org"})
+    pid = client.get("/api/persone").json()[0]["id"]
+    assert client.post("/api/ferie", json={"persona_id": pid, "dal": "2026-10-25", "al": "2026-11-01",
+                                           "motivo": "malattia"}).status_code == 201
+    genera_e_conferma(client)
+    aspetta(postino, 1)
+    postino.inviati.clear()
+    genera_e_conferma(client, "2026-10-26")
+    testo = contenuto(aspetta(postino, 1)[0])
+    assert "malattia 8 giorni" in testo
