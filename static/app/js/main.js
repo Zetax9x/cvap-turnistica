@@ -102,6 +102,8 @@ async function avvia() {
   try {
     const s = await api.sessione();
     if (s.protetto && !s.autenticato) { mostraAccesso(); return; }
+    // password normale con la master configurata: solo la procedura guidata, che sta nel sito
+    if (s.semplice) { location.replace("/#genera"); return; }
   } catch (e) {
     document.getElementById("avvio").hidden = true;
     document.body.append(el("div", { class: "contenuto", style: "padding:24px" }, avviso(e.message, "errore")));

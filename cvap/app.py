@@ -760,6 +760,32 @@ def create_app(db_path: str, password: str | None = None, postino=None,
             return JSONResponse({"detail": "Accesso richiesto: inserisci la password"}, status_code=401)
         return await chiama(request)
 
+    def semplice(request: Request) -> bool:
+        """Entrato con la password normale mentre esiste la master: solo la procedura guidata."""
+        return password_master is not None and ruolo(request) == accesso.NORMALE
+
+    def turno_di_volontario(percorso: str) -> bool:
+        conn = db.apri(db_path)
+        try:
+            r = conn.execute("SELECT p.tipo FROM assegnazioni a JOIN persone p ON p.id = a.persona_id WHERE a.id = ?",
+                             (int(percorso.rsplit("/", 1)[1]),)).fetchone()
+        finally:
+            conn.close()
+        return r is None or r["tipo"] == "volontario"  # se non c'è, l'endpoint risponde 404
+
+    @app.middleware("http")
+    async def modalita_semplice(request: Request, chiama):
+        metodo, percorso = request.method, request.url.path
+        if percorso.startswith("/api/") and semplice(request):
+            consentita = accesso.consentita_in_semplice(metodo, percorso)
+            # dalla procedura guidata si tolgono solo i turni dei volontari, non quelli generati
+            if consentita and metodo == "DELETE" and percorso.startswith("/api/assegnazioni/"):
+                consentita = await run_in_threadpool(turno_di_volontario, percorso)
+            if not consentita:
+                return JSONResponse({"detail": "Questa funzione è disponibile solo con l'accesso completo"},
+                                    status_code=403)
+        return await chiama(request)
+
     @app.middleware("http")
     async def registra_azioni(request: Request, chiama):
         metodo, percorso = request.method, request.url.path
@@ -790,7 +816,8 @@ def create_app(db_path: str, password: str | None = None, postino=None,
     @app.get("/api/sessione")
     def sessione(request: Request):
         return {"protetto": chiave is not None, "autenticato": autenticato(request),
-                "master": ruolo(request) == accesso.MASTER and password_master is not None}
+                "master": ruolo(request) == accesso.MASTER and password_master is not None,
+                "semplice": semplice(request)}
 
     @app.get("/api/registro")
     def leggi_registro(request: Request, limite: int = Query(200, ge=1, le=500),
@@ -806,7 +833,7 @@ def create_app(db_path: str, password: str | None = None, postino=None,
     @app.post("/api/accesso")
     async def entra(body: AccessoIn, request: Request, response: Response):
         if chiave is None:
-            return {"autenticato": True, "master": False}
+            return {"autenticato": True, "master": False, "semplice": False}
         if password_master and accesso.password_giusta(body.password, password_master):
             chi = accesso.MASTER
         elif accesso.password_giusta(body.password, password):
@@ -820,7 +847,8 @@ def create_app(db_path: str, password: str | None = None, postino=None,
         https = request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
         response.set_cookie(accesso.COOKIE, accesso.crea_token(chiave, ruolo=chi), max_age=accesso.DURATA_S,
                             httponly=True, samesite="lax", secure=https, path="/")
-        return {"autenticato": True, "master": chi == accesso.MASTER}
+        return {"autenticato": True, "master": chi == accesso.MASTER,
+                "semplice": chi == accesso.NORMALE and password_master is not None}
 
     @app.post("/api/uscita", status_code=204)
     def esci():

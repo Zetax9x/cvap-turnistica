@@ -138,9 +138,9 @@ export function partiTurno(fascia, segmento) {
 
 // Scelte del menu di un giorno: il valore è l'elenco delle parti indisponibili ("" = disponibile)
 export const SCELTE_INDISPONIBILITA = [
-  ["", "Disponibile"], ["mattina", "Mattina"], ["pomeriggio", "Pomeriggio"],
-  ["mattina+pomeriggio", "Giorno intero"], ["notte", "Notte"],
-  ["mattina+pomeriggio+notte", "Tutto il giorno"],
+  ["", "Disponibile"], ["mattina", "Mattina (8–14)"], ["pomeriggio", "Pomeriggio (14–20)"],
+  ["mattina+pomeriggio", "Giorno (8–20)"], ["notte", "Notte (20–8)"],
+  ["mattina+pomeriggio+notte", "Giorno e notte (24 ore)"],
 ];
 // combinazioni salvate che il menu non offre di base (es. mattina e notte)
 const ALTRE_SCELTE = { "mattina+notte": "Mattina e notte", "pomeriggio+notte": "Pomeriggio e notte" };

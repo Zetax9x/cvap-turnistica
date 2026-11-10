@@ -8,6 +8,7 @@ import * as statistiche from "./js/statistiche.js";
 import * as impostazioni from "./js/impostazioni.js";
 import * as cambiTurno from "./js/cambi-turno-responsabile.js";
 import * as registro from "./js/registro.js";
+import * as genera from "./js/genera.js";
 import { api } from "./js/api.js";
 import { el } from "./js/util.js";
 import { osservaScorrimento } from "./js/scorrimento.js";
@@ -21,21 +22,23 @@ const VISTE = {
   impostazioni: { modulo: impostazioni, titolo: "Impostazioni" },
   cambi: { modulo: cambiTurno, titolo: "Cambi turno" },
   registro: { modulo: registro, titolo: "Registro", soloMaster: true },
+  genera: { modulo: genera, titolo: "Turni della settimana" },
 };
 const PREDEFINITA = "settimana";
 
 function leggiHash() {
   const [nome, ...resto] = location.hash.replace(/^#\/?/, "").split("/");
-  const valido = !!VISTE[nome] && (master || !VISTE[nome].soloMaster);
-  return { nome: valido ? nome : PREDEFINITA, parametro: resto.join("/") || null, valido };
+  // in modalità semplice (password normale con la master configurata) esiste solo la procedura guidata
+  const valido = !!VISTE[nome] && (master || !VISTE[nome].soloMaster) && (!semplice || nome === "genera");
+  return { nome: valido ? nome : predefinita(), parametro: valido ? resto.join("/") || null : null, valido };
 }
 
 let vistaCorrente = null;
 
 function instrada() {
   const { nome, parametro, valido } = leggiHash();
-  if (!valido && location.hash && location.hash !== "#") {
-    history.replaceState(null, "", `#${PREDEFINITA}`);
+  if (!valido && (semplice || (location.hash && location.hash !== "#"))) {
+    history.replaceState(null, "", `#${predefinita()}`);
   }
   for (const [chiave] of Object.entries(VISTE)) {
     const sezione = document.getElementById(`view-${chiave}`);
@@ -61,10 +64,16 @@ function instrada() {
 
 let protetto = false;
 let master = false;  // entrato con la password master: vede anche il Registro
+let semplice = false;  // entrato con la password normale mentre esiste la master: solo la procedura guidata
+
+function predefinita() {
+  return semplice ? "genera" : PREDEFINITA;
+}
 
 function aggiornaMaster() {
   const link = document.querySelector('.nav a[data-view="registro"]');
   if (link) link.hidden = !master;
+  document.body.classList.toggle("modalita-semplice", semplice);
 }
 
 function mostraAccesso() {
@@ -85,6 +94,7 @@ function mostraAccesso() {
       try {
         const esito = await api.accedi(input.value);
         master = !!(esito && esito.master);
+        semplice = !!(esito && esito.semplice);
         aggiornaMaster();
         box.remove();
         document.body.classList.remove("senza-accesso");
@@ -117,6 +127,7 @@ function aggiornaEsci() {
     onclick: async () => {
       try { await api.esci(); } catch { /* comunque si torna alla password */ }
       master = false;
+      semplice = false;
       aggiornaMaster();
       mostraAccesso();
     },
@@ -133,6 +144,7 @@ window.addEventListener("hashchange", () => { if (!document.getElementById("acce
     const s = await api.sessione();
     protetto = s.protetto;
     master = !!s.master;
+    semplice = !!s.semplice;
     aggiornaMaster();
     if (s.protetto && !s.autenticato) { mostraAccesso(); return; }
   } catch { /* se il controllo fallisce si prova comunque: le API diranno se serve la password */ }

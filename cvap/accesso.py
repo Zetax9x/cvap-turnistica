@@ -10,6 +10,7 @@ Le sessioni non sono salvate sul server, quindi funziona anche su Vercel.
 """
 import hashlib
 import hmac
+import re
 import time
 
 COOKIE = "cvap_sessione"
@@ -60,3 +61,22 @@ def token_valido(k: bytes, token: str | None, adesso: float | None = None) -> bo
 
 def password_giusta(inserita: str, password: str) -> bool:
     return hmac.compare_digest(inserita.encode(), password.encode())
+
+
+# --- modalità semplice ------------------------------------------------------------------------
+# Con la password master configurata, chi entra con quella normale usa solo la procedura guidata
+# (pagina "Turni della settimana"): queste sono le sole API che le servono.
+_D = r"\d{4}-\d{2}-\d{2}"
+API_SEMPLICE = [(metodo, re.compile(percorso + "$")) for metodo, percorso in (
+    ("GET", r"/api/(sessione|persone|ferie)"),
+    ("GET", rf"/api/settimane/{_D}"),
+    ("GET", rf"/api/settimane/{_D}/pdf-(tabellone|liberi)"),
+    ("POST", r"/api/(accesso|uscita|ferie)"),
+    ("POST", rf"/api/settimane/{_D}/(assegnazioni|genera|conferma)"),
+    ("PUT", rf"/api/settimane/{_D}/indisponibilita"),
+    ("DELETE", r"/api/(assegnazioni|ferie)/\d+"),
+)]
+
+
+def consentita_in_semplice(metodo: str, percorso: str) -> bool:
+    return any(m == metodo and r.match(percorso) for m, r in API_SEMPLICE)

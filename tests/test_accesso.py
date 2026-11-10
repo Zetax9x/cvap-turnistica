@@ -15,14 +15,14 @@ def protetto(tmp_path):
 def test_senza_password_il_sito_resta_aperto(tmp_path):
     c = TestClient(create_app(str(tmp_path / "t.db")))
     assert c.get("/api/persone").status_code == 200
-    assert c.get("/api/sessione").json() == {"protetto": False, "autenticato": True, "master": False}
+    assert c.get("/api/sessione").json() == {"protetto": False, "autenticato": True, "master": False, "semplice": False}
 
 
 def test_con_password_le_api_chiedono_l_accesso(protetto):
     r = protetto.get("/api/persone")
     assert r.status_code == 401
     assert protetto.post("/api/persone", json={"nome": "X", "tipo": "dipendente", "qualifica": "autista"}).status_code == 401
-    assert protetto.get("/api/sessione").json() == {"protetto": True, "autenticato": False, "master": False}
+    assert protetto.get("/api/sessione").json() == {"protetto": True, "autenticato": False, "master": False, "semplice": False}
 
 
 def test_la_pagina_e_i_file_statici_restano_raggiungibili(protetto):
@@ -43,7 +43,7 @@ def test_accesso_e_uscita(protetto):
     cookie = r.headers["set-cookie"].lower()
     assert "httponly" in cookie and "samesite=lax" in cookie
     assert protetto.get("/api/persone").status_code == 200
-    assert protetto.get("/api/sessione").json() == {"protetto": True, "autenticato": True, "master": False}
+    assert protetto.get("/api/sessione").json() == {"protetto": True, "autenticato": True, "master": False, "semplice": False}
     assert protetto.post("/api/uscita").status_code == 204
     assert protetto.get("/api/persone").status_code == 401
 

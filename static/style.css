@@ -1723,3 +1723,44 @@ a.btn { text-decoration: none; }
   .registro-tabella td:nth-child(3) { grid-column: 1 / -1; grid-row: 2; }
   .registro-tabella td:nth-child(4) { grid-column: 3; grid-row: 1; }
 }
+
+/* Procedura guidata "Turni della settimana" (static/js/genera.js) */
+body.modalita-semplice .nav { display: none; }
+@media (max-width: 640px) { body.modalita-semplice { padding-bottom: 0; } }
+.guida-testa h1 { margin-bottom: .2rem; }
+.guida-periodo { font-size: 1.05rem; font-weight: 650; color: var(--text) !important; }
+.guida-settimane { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-top: .75rem; }
+.guida-vai { display: flex; align-items: center; gap: .4rem; color: var(--muted); }
+.guida-vuota { max-width: 640px; }
+.guida-vuota h2 { margin-bottom: .4rem; }
+.guida-vuota .btn { margin-top: .75rem; }
+.guida-stato { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: .75rem; }
+.guida-pdf { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; }
+.guida-tabella { overflow-x: auto; margin-bottom: 1rem; }
+.guida-tabella td, .guida-tabella th { vertical-align: top; }
+.guida-vuoto { color: var(--muted); }
+.guida-passi { list-style: none; display: flex; flex-wrap: wrap; gap: .4rem 1rem; padding: 0; margin: 0 0 1.25rem; }
+.guida-passi li { display: flex; align-items: center; gap: .4rem; color: var(--muted); }
+.guida-numero {
+  display: inline-grid; place-items: center; width: 1.7rem; height: 1.7rem; border-radius: 50%;
+  border: 2px solid var(--border); font-weight: 700; font-size: .9rem;
+}
+.guida-passi li.attivo { color: var(--text); font-weight: 700; }
+.guida-passi li.attivo .guida-numero { border-color: var(--accent); background: var(--accent); color: var(--surface); }
+.guida-passi li.fatto .guida-numero { border-color: var(--accent); color: var(--accent); }
+.guida-form { display: flex; flex-wrap: wrap; gap: .75rem; align-items: flex-end; max-width: none; }
+.guida-campo { display: grid; gap: .25rem; font-weight: 600; font-size: .92rem; }
+.guida-campo input, .guida-campo select { min-height: var(--tap); }
+.guida-nessuno { margin: .5rem 0 1rem; }
+.guida-azioni { display: flex; justify-content: space-between; gap: .5rem; margin-top: 1rem; }
+.guida-riepilogo { margin-bottom: 1rem; }
+.guida-riepilogo-testa { display: flex; align-items: center; gap: .75rem; }
+.guida-riepilogo-testa h3 { margin: 0; font-size: 1rem; }
+.guida-barra { width: 100%; max-width: 640px; height: 1.1rem; accent-color: var(--accent); }
+.guida-resto { font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) {
+  .guida-nome { display: none; }
+  .guida-passi li.attivo .guida-nome { display: inline; }
+  .guida-form { display: grid; }
+  .guida-form .btn { width: 100%; }
+}
