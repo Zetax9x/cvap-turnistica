@@ -141,9 +141,10 @@ def stato_giorno(s: dict, pid: int, giorno: dict) -> str:
              if x["persona_id"] == pid and x["data"] == giorno["data"]}
     if not parti:
         return "Riposo"
-    etichetta = ("tutto il giorno" if len(parti) == 3 else "giorno intero"
+    orari = {"mattina": "mattina (8–14)", "pomeriggio": "pomeriggio (14–20)", "notte": "notte (20–8)"}
+    etichetta = ("tutto il giorno (8–8)" if len(parti) == 3 else "giorno intero (8–20)"
                  if parti == {"mattina", "pomeriggio"} else
-                 " e ".join(p for p in ("mattina", "pomeriggio", "notte") if p in parti))
+                 " e ".join(orari[p] for p in ("mattina", "pomeriggio", "notte") if p in parti))
     return f"Indisponibile: {etichetta}"
 
 
