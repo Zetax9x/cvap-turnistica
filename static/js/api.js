@@ -175,4 +175,10 @@ export const api = {
     if (al) q.set("al", al);
     return richiesta("GET", `/statistiche/equita${q.size ? `?${q}` : ""}`);
   },
+  statisticheConfronti: (dal, al, versione = "effettivi") => {
+    const q = new URLSearchParams({ versione });
+    if (dal) q.set("dal", dal);
+    if (al) q.set("al", al);
+    return richiesta("GET", `/statistiche/confronti?${q}`);
+  },
 };

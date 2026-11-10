@@ -1201,7 +1201,8 @@ def create_app(db_path: str, password: str | None = None, postino=None,
     def email_equita(conn, inizio: date, indirizzo: str):
         s = payload_settimana(conn, inizio)
         return email_turni.componi_equita(s, indirizzo, None, equita=api_equita.quadro_equita(conn, _settimana_passata),
-                                          statistiche=statistiche(conn), statistiche_indisp=statistiche_indisponibilita(conn))
+                                          statistiche=statistiche(conn), statistiche_indisp=statistiche_indisponibilita(conn),
+                                          confronti=api_equita.confronti_equita(conn, _settimana_passata))
 
     def invia_equita(inizio: date) -> None:
         """Dopo la conferma di una settimana con turni generati: email dell'equità al solo indirizzo impostato

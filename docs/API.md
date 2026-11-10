@@ -760,3 +760,17 @@ Separata dai riepiloghi: un solo indirizzo, salvato in `impostazioni` (`email_eq
   indietro, tabella di ogni dipendente con fatti, la sua parte, scarto e nelle note ferie e malattia di tutto lo storico), le statistiche dei turni e delle
   indisponibilità. Ogni nuova conferma (anche dopo una riapertura) la manda di nuovo. In modalità semplice queste API
   non sono consentite.
+
+
+## Altri confronti di equità (`cvap/confronti.py`)
+
+`GET /statistiche/confronti?dal&al&versione` → `{settimane, weekend_liberi: {differenza, media, dipendenti:
+[{persona_id, nome, attivo, settimane, liberi, quota, scarto}]}, sequenze: [{persona_id, nome, attivo, notti_di_fila,
+tre_di_fila, giorni_di_fila_max}], colleghi: [{persona_id, nome, attivo, turni, colleghi_diversi, frequenti:
+[{persona_id, nome, turni, percentuale}]}]}`, sulle stesse settimane del quadro dell'equità. Weekend libero: nessun
+turno né sabato né domenica (le settimane tutte in ferie non contano; la parte è la media del gruppo per le settimane
+di ognuno). Notti di fila: coppie di notti in giorni consecutivi; tre di fila: terne di giorni consecutivi nella stessa
+fascia; giorni di fila: il massimo di giorni consecutivi con un turno. Colleghi: stesso giorno, postazione e fascia,
+volontari compresi. Nel quadro dell'equità ogni dipendente ha anche `scarto_prima` (4 settimane generate fa) e
+`andamento` (`si_avvicina` | `si_allontana` | `stabile`). Tutto compare nella pagina Statistiche → Equità e
+nell'email dell'equità.

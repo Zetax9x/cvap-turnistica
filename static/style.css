@@ -1785,3 +1785,17 @@ body.modalita-semplice .nav { display: none; }
 .guida-elenco li { margin: .3rem 0; }
 .guida-elenco .guida-errore { color: var(--err); }
 .guida-tabella td.guida-scoperto { background: var(--err-bg); color: var(--err); font-weight: 700; }
+
+/* Pagina Equità: altri confronti */
+.eq-confronti-titolo { margin: 1.75rem 0 .3rem; font-size: 1.1rem; }
+.eq-confronti { margin-bottom: .5rem; }
+
+/* Con il Registro (accesso master) il menu ha una voce in più: sugli schermi medi solo le icone, più il nome della
+   pagina aperta, così «Esci» resta nello schermo (i nomi restano per i lettori di schermo; al passaggio c'è il title) */
+@media (min-width: 641px) and (max-width: 1440px) {
+  .nav:has(a[data-view="registro"]:not([hidden])) { gap: 0; }
+  .nav:has(a[data-view="registro"]:not([hidden])) a { padding: 0 .55rem; }
+  .nav:has(a[data-view="registro"]:not([hidden])) a:not([aria-current="page"]) > span {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+}

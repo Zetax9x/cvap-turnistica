@@ -10,6 +10,7 @@ from . import db, db_festivita
 from .api_comune import DATA_MAX, DATA_MIN, DataValida, errore
 from .calendario import lunedi
 from .dati_festivi import riferimento_statistiche, conti_festivita
+from .confronti import confronti
 from .equita import Rotazione, equita, rotazione_festivita
 from .storico import SettimanaPassata, solo_generate
 
@@ -39,19 +40,31 @@ def rotazioni_festivita(conn, al: date | None, versione: str = "effettivi") -> l
     return [rotazione_festivita(f, conti.get(f["id"], {})) for f in festivita]
 
 
-def quadro_equita(conn, settimana_passata: Callable[..., SettimanaPassata], dal: date | None = None,
-                  al: date | None = None, versione: str = "effettivi") -> dict:
-    """Il quadro dell'equità come in Statistiche → Equità: {settimane: [lunedì], rotazioni: [...]}.
-
-    Contano le settimane confermate con turni generati che si sovrappongono al periodo (senza date: tutte)."""
-    al_richiesto = al  # None senza data: la fine dei festivi è quella delle statistiche
+def _settimane(conn, settimana_passata: Callable[..., SettimanaPassata], dal: date | None, al: date | None,
+               versione: str) -> list[tuple[date, SettimanaPassata]]:
+    """Le settimane confermate con turni generati che si sovrappongono al periodo (senza date: tutte)."""
     dal, al = dal or DATA_MIN, al or DATA_MAX
     if dal > al:
         raise errore("La data di inizio è dopo quella di fine")
     righe = [r for r in db.lista_settimane(conn)
              if r["stato"] == "confermata" and lunedi(dal) <= date.fromisoformat(r["inizio"]) <= al]
     settimane = [(date.fromisoformat(r["inizio"]), settimana_passata(conn, r, versione=versione)) for r in righe]
-    settimane = [(inizio, s) for inizio, s in settimane if solo_generate([s])]
+    return [(inizio, s) for inizio, s in settimane if solo_generate([s])]
+
+
+def confronti_equita(conn, settimana_passata: Callable[..., SettimanaPassata], dal: date | None = None,
+                     al: date | None = None, versione: str = "effettivi") -> dict:
+    """Weekend interi liberi, sequenze pesanti e con chi si lavora (cvap/confronti.py), sulle stesse settimane."""
+    return confronti(_settimane(conn, settimana_passata, dal, al, versione), db.lista_persone(conn))
+
+
+def quadro_equita(conn, settimana_passata: Callable[..., SettimanaPassata], dal: date | None = None,
+                  al: date | None = None, versione: str = "effettivi") -> dict:
+    """Il quadro dell'equità come in Statistiche → Equità: {settimane: [lunedì], rotazioni: [...]}.
+
+    Contano le settimane confermate con turni generati che si sovrappongono al periodo (senza date: tutte)."""
+    al_richiesto = al  # None senza data: la fine dei festivi è quella delle statistiche
+    settimane = _settimane(conn, settimana_passata, dal, al, versione)
     quadro = equita(settimane, db.lista_persone(conn), postazioni_vietate(conn),
                     extra=rotazioni_festivita(conn, al_richiesto, versione=versione))
     return {"settimane": [inizio.isoformat() for inizio, _ in settimane],
@@ -68,5 +81,10 @@ def crea_router(connessione: Callable, settimana_passata: Callable[..., Settiman
     def leggi_quadro_equita(conn: Conn, dal: DataValida | None = None, al: DataValida | None = None,
                       versione: Literal["generati", "effettivi"] = "effettivi"):
         return quadro_equita(conn, settimana_passata, dal, al, versione)
+
+    @router.get("/api/statistiche/confronti")
+    def leggi_confronti(conn: Conn, dal: DataValida | None = None, al: DataValida | None = None,
+                        versione: Literal["generati", "effettivi"] = "effettivi"):
+        return confronti_equita(conn, settimana_passata, dal, al, versione)
 
     return router

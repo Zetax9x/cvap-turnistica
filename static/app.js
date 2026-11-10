@@ -73,6 +73,9 @@ function predefinita() {
 function aggiornaMaster() {
   const link = document.querySelector('.nav a[data-view="registro"]');
   if (link) link.hidden = !master;
+  for (const a of document.querySelectorAll(".nav a")) {
+    if (!a.title) a.title = a.getAttribute("aria-label") || a.textContent.trim();
+  }
   document.body.classList.toggle("modalita-semplice", semplice);
 }
 
