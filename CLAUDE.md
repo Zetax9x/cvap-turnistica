@@ -14,5 +14,8 @@ Rispondi in italiano. Stato del lavoro e cose aperte: `data/NOTE.md` (leggilo a 
 - Python FastAPI + SQLite/Turso + OR-Tools CP-SAT; frontend JavaScript semplice in `static/`.
 - Test: `.venv/Scripts/python.exe -m pytest -n 4`; durante il lavoro solo i test pertinenti, suite completa prima del merge.
 - `data/` contiene dati veri ed è fuori da git: non committarlo mai.
+- Dati veri aggiornati: backup giornalieri del database su Google Drive dell'utente, cartella `CVAP-Turnistica-backup`
+  (file `turni-AAAA-MM-GG.db`, fatti alle 3:30). Si leggono con il connettore Google Drive quando serve un controllo
+  su dati veri; scaricali solo nella scratchpad, mai in git, nei test o in artifact (nomi e malattie sono dati sensibili).
 - Script e test devono impostare `CVAP_DB` prima di importare `cvap.app` (altrimenti tocca `data/turni.db`).
 - Push e PR solo se l'utente lo chiede; l'utente apre le PR da sé.

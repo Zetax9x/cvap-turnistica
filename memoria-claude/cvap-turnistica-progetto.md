@@ -48,3 +48,4 @@ Stack: Python FastAPI + SQLite + OR-Tools CP-SAT, frontend vanilla JS in static/
 - Dal 2026-11-01 si lavora sul PC Windows (4 CPU, Chrome disponibile per chrome-devtools; `.venv/Scripts/python.exe`). Test in parallelo con pytest-xdist: `pytest -n 4` (richiesta dell'utente; 382 test pertinenti in ~3 min, stabili). Il Codespace di prima aveva 2 CPU.
 
 **How to apply:** rispondere in italiano; per nuove regole aggiungerle al modello CP-SAT e al validatore `cvap/vincoli.py`, con test.
+- Dal 2026-11-11: i backup giornalieri del database sono su Google Drive (cartella CVAP-Turnistica-backup, file turni-AAAA-MM-GG.db) e l'utente ha detto che posso accedervi con il connettore Google Drive per controlli su dati veri. Solo nella scratchpad, mai in git.
