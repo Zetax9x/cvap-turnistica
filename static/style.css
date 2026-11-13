@@ -1453,6 +1453,7 @@ a.btn { text-decoration: none; }
 .eq-tend-su { background: #ffedd5; color: #9a3412; }
 .eq-tend-pari { background: #e0f2fe; color: #075985; }
 .eq-grafico { display: block; overflow: visible; }
+.eq-spiegazione { margin: 0 0 .6rem; max-width: 75ch; color: var(--muted); }
 .eq-grafico-btn {
   display: block; padding: 4px; border: 1px solid transparent; border-radius: 8px; background: none; cursor: pointer;
 }

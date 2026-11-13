@@ -448,3 +448,37 @@ def test_api_equita_senza_festivita_attive(ambiente):
     dati = client.get("/api/statistiche/equita").json()
     assert not [r for r in dati["rotazioni"] if r["chiave"].startswith("festivita_")]
     assert all(r["festivita"] is False for r in dati["rotazioni"])
+
+
+def test_rotazioni_a_meta_mostrano_anche_l_altro_valore():
+    out = equita(settimane_note(), PERSONE)
+    gn = out["ascoli_giorno_notte"]
+    assert (gn["fatti"], gn["quota"], gn["altro"]) == ("Giorni ad Ascoli", "Metà dei turni", "Notti ad Ascoli")
+    d = per_id(gn)
+    # Carla: 0 giorni, metà 0,5, 1 notte
+    assert (d[3]["fatti"], d[3]["quota"], d[3]["altro"]) == (0, 0.5, 1)
+    assert d[1]["altro"] is None  # non partecipa
+    assert out["sedi"]["altro"] == "Turni a Venarotta"
+    assert out["giorno_notte"]["altro"] == "Ore di notte"
+    # le rotazioni a quota non hanno un secondo valore
+    assert out["standby"]["altro"] is None and per_id(out["standby"])[1]["altro"] is None
+
+
+def test_ogni_rotazione_spiega_come_si_legge():
+    out = equita(settimane_note(), PERSONE)
+    assert all(r["spiegazione"] for r in out.values())
+    assert "settimane A" in out["standby"]["spiegazione"]
+    assert "settimane con Ascoli" in out["ascoli"]["spiegazione"]
+
+
+def test_turni_attesi_con_le_settimane_e_il_calcolo():
+    out = equita(settimane_note(), PERSONE)
+    standby = out["standby"]
+    assert (standby["fatti"], standby["base"], standby["quota"]) == ("Turni fatti", "Settimane A lavorate", "Turni attesi")
+    assert per_id(standby)[1]["base"] == 1  # una sola settimana A (la seconda ha Ascoli)
+    # 4 turni su 4 settimane A: 1 a settimana
+    assert standby["calcolo"] == "In media 1 turno per settimana A: chi ha 1 settimana A ne ha attesi 1."
+    assert out["ascoli"]["base"] == "Settimane con Ascoli"
+    assert out["sab_giorno"]["base"] == "Settimane lavorate" and out["sab_giorno"]["calcolo"] is None  # nessun turno
+    assert out["sedi"]["base"] is None and out["sedi"]["calcolo"] is None
+    assert "sua parte" not in standby["sopra"] + standby["sotto"] + standby["spiegazione"]
