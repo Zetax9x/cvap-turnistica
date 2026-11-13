@@ -1453,6 +1453,21 @@ a.btn { text-decoration: none; }
 .eq-tend-su { background: #ffedd5; color: #9a3412; }
 .eq-tend-pari { background: #e0f2fe; color: #075985; }
 .eq-grafico { display: block; overflow: visible; }
+.eq-grafico-btn {
+  display: block; padding: 4px; border: 1px solid transparent; border-radius: 8px; background: none; cursor: pointer;
+}
+.eq-grafico-btn:hover { border-color: var(--border); background: var(--surface-2); }
+.dialog-grafico { width: min(760px, calc(100vw - 1.5rem)); }
+.eq-grafico-contenitore { margin-top: .5rem; }
+.eq-grafico-grande { display: block; width: 100%; height: auto; overflow: visible; }
+.eq-grafico-grande .eq-asse { stroke: var(--border-strong); stroke-width: 1; }
+.eq-grafico-grande .eq-griglia { stroke: var(--border); stroke-width: 1; stroke-dasharray: 3 4; }
+.eq-grafico-grande .eq-asse-testo { fill: var(--muted); font-size: 12px; }
+.eq-grafico-grande .eq-asse-titolo { fill: var(--text); font-size: 12px; font-weight: 600; }
+.eq-grafico-grande .eq-linea { fill: none; stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }
+.eq-grafico-grande .eq-punto-grande { stroke: var(--surface); stroke-width: 2; cursor: pointer; }
+.eq-grafico-grande .eq-punto-grande.scelto, .eq-grafico-grande .eq-punto-grande:focus { r: 8; outline: none; }
+.eq-grafico-valore { margin: .5rem 0 0; font-weight: 600; min-height: 1.5em; }
 .eq-grafico .eq-base { stroke: #cbd5e1; stroke-width: 1; }
 .eq-grafico .eq-linea { fill: none; stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; }
 .eq-linea-giu .eq-linea { stroke: var(--tendenza-giu); }  .eq-linea-giu .eq-punto { fill: var(--tendenza-giu); }
