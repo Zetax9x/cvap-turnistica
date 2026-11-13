@@ -66,7 +66,8 @@ def quadro_equita(conn, settimana_passata: Callable[..., SettimanaPassata], dal:
     al_richiesto = al  # None senza data: la fine dei festivi è quella delle statistiche
     settimane = _settimane(conn, settimana_passata, dal, al, versione)
     quadro = equita(settimane, db.lista_persone(conn), postazioni_vietate(conn),
-                    extra=rotazioni_festivita(conn, al_richiesto, versione=versione))
+                    extra=rotazioni_festivita(conn, al_richiesto, versione=versione),
+                    divieti=db.divieti_per_persona(conn))
     return {"settimane": [inizio.isoformat() for inizio, _ in settimane],
             "rotazioni": [{"chiave": k, **v} for k, v in quadro.items()]}
 

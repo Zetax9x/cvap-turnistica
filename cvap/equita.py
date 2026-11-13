@@ -18,7 +18,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 
-from .modello import EXTRA, PROGRAMMATI, STANDBY, Persona
+from .modello import EXTRA, PROGRAMMATI, STANDBY, Divieto, Persona
 from .rotazione_festivi import ANNI_FESTIVI, ContoFestivita, debiti
 from .storico import SEDI_ALTERNATE, SettimanaPassata, StoricoPersona, calcola_storico, solo_generate
 from .vincoli import ASCOLI
@@ -46,6 +46,8 @@ class Rotazione:
     fatti: str = "Turni fatti"                 # intestazioni del dettaglio
     quota: str = "La sua parte"
     postazioni: tuple[str, ...] = ()           # un divieto per una di queste esclude dalla rotazione
+    # True (rotazioni giorno/notte): esclude anche chi non può fare una fascia intera (`Persona.vieta_fascia`)
+    fasce: bool = False
     # True: rotazione di una festività. Partecipano i dipendenti attivi, come nel generatore (anche senza settimane
     # nel periodo: StoricoPersona o None); niente andamento settimanale
     festivita: bool = False
@@ -70,12 +72,12 @@ def a_quota(chiave: str, nome: str, contatore: Callable[[StoricoPersona], int],
 
 def a_meta(chiave: str, nome: str, unita: str, primo: Callable[[StoricoPersona], int],
            secondo: Callable[[StoricoPersona], int], sopra: str, sotto: str, fatti: str, quota: str,
-           postazioni: tuple[str, ...] = ()) -> Rotazione:
+           postazioni: tuple[str, ...] = (), fasce: bool = False) -> Rotazione:
     """Rotazione "tanti dell'uno quanti dell'altro" (giorni/notti, sedi): la parte attesa è metà del totale."""
     def calcola(gruppo: dict[int, StoricoPersona]) -> dict[int, tuple[float, float]]:
         return {pid: (primo(st), (primo(st) + secondo(st)) / 2) for pid, st in gruppo.items()}
     return Rotazione(chiave, nome, unita, calcola, partecipa=lambda st: primo(st) + secondo(st) > 0,
-                     sopra=sopra, sotto=sotto, fatti=fatti, quota=quota, postazioni=postazioni)
+                     sopra=sopra, sotto=sotto, fatti=fatti, quota=quota, postazioni=postazioni, fasce=fasce)
 
 
 def _ore(gruppo: dict[int, StoricoPersona]) -> dict[int, tuple[float, float]]:
@@ -89,10 +91,10 @@ def _weekend(chiave: str, nome: str) -> Rotazione:
     return a_quota(chiave, nome, contatore=lambda st: st.weekend[chiave], esposizione=lambda st: st.settimane)
 
 
-def _richiesta(chiave: str, postazione: str) -> Rotazione:
-    # `solver.ROTAZIONI` (_rotazione_postazione): esposizione = settimane lavorate
+def _richiesta(chiave: str, postazione: str, esposizione: Callable[[StoricoPersona], int]) -> Rotazione:
+    # `solver.ROTAZIONI` (_rotazione_postazione): settimane A per Standby e Programmati, tutte per Extra
     return a_quota(chiave, postazione, contatore=lambda st: st.richieste[postazione],
-                   esposizione=lambda st: st.settimane, postazioni=(postazione,))
+                   esposizione=esposizione, postazioni=(postazione,))
 
 
 ACQUASANTA, VENAROTTA = SEDI_ALTERNATE
@@ -109,16 +111,21 @@ ROTAZIONI: tuple[Rotazione, ...] = (
     _weekend("sab_notte", "Sabato notte"),
     _weekend("dom_giorno", "Domenica giorno"),
     _weekend("dom_notte", "Domenica notte"),
-    _richiesta("standby", STANDBY),
-    _richiesta("programmati", PROGRAMMATI),
-    _richiesta("assistenze", EXTRA),
+    _richiesta("standby", STANDBY, lambda st: st.settimane_a),
+    # `solver._standby_giorno_notte`
+    a_meta("standby_giorno_notte", "Standby: giorni e notti", "turni",
+           lambda st: st.standby_giorno, lambda st: st.standby_notte,
+           sopra="in Standby ha fatto più giorni che notti", sotto="in Standby ha fatto più notti che giorni",
+           fatti="Giorni di Standby", quota="Metà dei turni", postazioni=(STANDBY,), fasce=True),
+    _richiesta("programmati", PROGRAMMATI, lambda st: st.settimane_a),
+    _richiesta("assistenze", EXTRA, lambda st: st.settimane),
     # `solver.ROTAZIONI`: esposizione = settimane con Ascoli
     a_quota("ascoli", "Ascoli", contatore=lambda st: st.ascoli, esposizione=lambda st: st.settimane_ascoli,
             postazioni=(ASCOLI,)),
     a_meta("ascoli_giorno_notte", "Ascoli: giorni e notti", "turni",
            lambda st: st.ascoli_giorno, lambda st: st.ascoli_notte,
            sopra="ad Ascoli ha fatto più giorni che notti", sotto="ad Ascoli ha fatto più notti che giorni",
-           fatti="Giorni ad Ascoli", quota="Metà dei turni", postazioni=(ASCOLI,)),
+           fatti="Giorni ad Ascoli", quota="Metà dei turni", postazioni=(ASCOLI,), fasce=True),
     a_meta("sedi", "Acquasanta e Venarotta", "turni",
            lambda st: st.sedi[ACQUASANTA], lambda st: st.sedi[VENAROTTA],
            sopra="ha fatto più turni ad Acquasanta", sotto="ha fatto più turni a Venarotta",
@@ -169,17 +176,19 @@ def _valori(rot: Rotazione, storico: dict[int, StoricoPersona], ids: Iterable[in
 
 
 def _esclusi(rot: Rotazione, persone: Sequence[dict], vietate: dict[int, set[str]],
-             ruoli: dict[str, set[str]]) -> set[int]:
+             ruoli: dict[str, set[str]], divieti: Mapping[int, Sequence[Divieto]]) -> set[int]:
     """Chi non potrebbe fare i turni della rotazione, come gli "idonei" di `solver._Modello._rotazioni`:
     divieto per l'intera postazione, oppure nessuno dei ruoli usati in quella postazione nel periodo
     (es. Standby solo con autisti: i soccorritori non entrano nel conto). Senza turni nel periodo il ruolo
-    non filtra. I divieti sono quelli di oggi."""
+    non filtra. Per le rotazioni giorno/notte (`fasce`) anche chi non può fare una fascia intera, come
+    `solver._Modello._giorni_notti_nel_tempo`. I divieti sono quelli di oggi."""
     out = set()
     for p in persone:
-        persona = Persona(p["id"], p["nome"], p["tipo"], p["qualifica"], bool(p.get("autista_programmati")))
+        persona = Persona(p["id"], p["nome"], p["tipo"], p["qualifica"], bool(p.get("autista_programmati")),
+                          divieti=tuple(divieti.get(p["id"], ())))
         for postazione in rot.postazioni:
             usati = ruoli.get(postazione, set())
-            if postazione in vietate.get(p["id"], set()) or (
+            if postazione in vietate.get(p["id"], set()) or (rot.fasce and persona.vieta_fascia(postazione)) or (
                     usati and not any(persona.puo_ricoprire(r, postazione) for r in usati)):
                 out.add(p["id"])
     return out
@@ -264,7 +273,8 @@ def _dettaglio(rot: Rotazione, persone: list[dict], valori: dict[int, tuple[floa
 
 
 def equita(settimane: Sequence[tuple[date, SettimanaPassata]], persone: Sequence[dict],
-           vietate: dict[int, set[str]] | None = None, extra: Sequence[Rotazione] = ()) -> dict[str, dict]:
+           vietate: dict[int, set[str]] | None = None, extra: Sequence[Rotazione] = (),
+           divieti: Mapping[int, Sequence[Divieto]] | None = None) -> dict[str, dict]:
     """Quadro dell'equità sulle settimane date (coppie lunedì, settimana), come le vede il generatore.
 
     Lo storico usa tutte le settimane dalla prima generata in poi (anche quelle fatte solo a mano in mezzo, come
@@ -273,12 +283,14 @@ def equita(settimane: Sequence[tuple[date, SettimanaPassata]], persone: Sequence
     `persone`: dict con id, nome, tipo, qualifica, autista_programmati, attivo (i volontari si scartano).
     `vietate`: per id, le postazioni vietate per intero (divieto senza tipo di turno). `extra`: rotazioni in più
     (le festività, vedi il commento del modulo: senza andamento, calcolate anche senza settimane generate).
+    `divieti`: per id, tutti i divieti (anche di fascia), per le rotazioni giorno/notte.
     Restituisce `{chiave: {nome, unita, sopra, sotto, fatti, quota, festivita, con_dati, piu_avanti, piu_indietro,
     differenza, tendenza, andamento: [{settimana, differenza}], dipendenti: [{persona_id, nome, attivo, partecipa,
     motivo, fatti, quota, scarto, scarto_prima, andamento}]}}` nell'ordine del registro (`scarto_prima`: lo scarto
     SETTIMANE_TENDENZA settimane generate fa; `andamento`: si_avvicina | si_allontana | stabile | None). `con_dati`: False per una festività senza turni né
     quota per nessuno (la pagina la nasconde); sempre True per le altre rotazioni."""
     vietate = vietate or {}
+    divieti = divieti or {}
     ordinate = sorted(settimane, key=lambda x: x[0])
     generate = [i for i, (_, s) in enumerate(ordinate) if solo_generate([s])]
     # dalla prima all'ultima generata: le settimane solo a mano dopo l'ultima non contano ancora
@@ -301,7 +313,7 @@ def equita(settimane: Sequence[tuple[date, SettimanaPassata]], persone: Sequence
     out = {}
     for rot in (*ROTAZIONI, *extra):
         mostrati = _mostrati(rot, scelti, persone)
-        esclusi = _esclusi(rot, scelti, vietate, ruoli)
+        esclusi = _esclusi(rot, scelti, vietate, ruoli, divieti)
         if rot.festivita:  # come il generatore: solo i dipendenti attivi
             esclusi |= {p["id"] for p in mostrati if not p["attivo"]}
         andamento = [] if rot.festivita else [
