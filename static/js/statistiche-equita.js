@@ -3,7 +3,7 @@
 // mano) e, cliccando la riga, il dettaglio per dipendente. Dati: GET /api/statistiche/equita (cvap/equita.py).
 
 import { api } from "./api.js";
-import { el, clear, dataLunga, formatOre, formatSaldo } from "./util.js";
+import { el, clear, dataLunga, ddmm, formatOre, formatSaldo } from "./util.js";
 import { bottoneStampa, focusTitolo, nuovoCaricamento, renderSchede, superato, titoloVersione, versioneStatistiche } from "./statistiche.js";
 
 // dal/al: periodo applicato; bozza: date scritte nel modulo e non ancora applicate (restano tra un ridisegno e l'altro)
@@ -224,6 +224,45 @@ function svg(tag, attrs = {}, ...figli) {
   return nodo;
 }
 
+/** Curva liscia che passa per i punti senza oscillare oltre i valori (interpolazione monotona di
+ * Fritsch-Carlson): con valori >= 0 la curva non scende mai sotto lo zero. */
+function curva(punti) {
+  const n = punti.length;
+  if (n < 2) return "";
+  const f = ([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`;
+  if (n === 2) return `M${f(punti[0])}L${f(punti[1])}`;
+  const dx = [], pend = [];
+  for (let i = 0; i < n - 1; i++) {
+    dx.push(punti[i + 1][0] - punti[i][0]);
+    pend.push((punti[i + 1][1] - punti[i][1]) / dx[i]);
+  }
+  const t = [pend[0]];
+  for (let i = 1; i < n - 1; i++) {
+    if (pend[i - 1] * pend[i] <= 0) t.push(0);
+    else {
+      const w1 = 2 * dx[i] + dx[i - 1], w2 = dx[i] + 2 * dx[i - 1];
+      t.push((w1 + w2) / (w1 / pend[i - 1] + w2 / pend[i]));
+    }
+  }
+  t.push(pend[n - 2]);
+  let d = `M${f(punti[0])}`;
+  for (let i = 0; i < n - 1; i++) {
+    const [x0, y0] = punti[i], [x1, y1] = punti[i + 1], h = dx[i] / 3;
+    d += `C${f([x0 + h, y0 + h * t[i]])} ${f([x1 - h, y1 - h * t[i + 1]])} ${f([x1, y1])}`;
+  }
+  return d;
+}
+
+function descriviAndamento(r) {
+  const valori = r.andamento.map((p) => p.differenza);
+  const ultimoValore = valori[valori.length - 1];
+  return valori.length === 1
+    ? `Distanza nella settimana del ${dataLunga(r.andamento[0].settimana)}: ${formatOre(ultimoValore)} ${r.unita}`
+    : `Distanza settimana per settimana: da ${formatOre(valori[0])} a ${formatOre(ultimoValore)} ${r.unita}, `
+      + `massimo ${formatOre(Math.max(...valori))}`;
+}
+
+/** Il grafico piccolo nella riga: premendolo si apre quello grande. */
 function grafico(r) {
   const valori = r.andamento.map((p) => p.differenza);
   if (!valori.length) return el("span", { class: "muted" }, "—");
@@ -234,21 +273,113 @@ function grafico(r) {
     ALTO - MARGINE - (v / massimo) * (ALTO - 2 * MARGINE),
   ]);
   const ultimo = punti[punti.length - 1];
-  const primoValore = valori[0];
-  const ultimoValore = valori[valori.length - 1];
-  const descrizione = valori.length === 1
-    ? `Distanza nella settimana del ${dataLunga(r.andamento[0].settimana)}: ${formatOre(ultimoValore)} ${r.unita}`
-    : `Distanza settimana per settimana: da ${formatOre(primoValore)} a ${formatOre(ultimoValore)} ${r.unita}, `
-      + `massimo ${formatOre(Math.max(...valori))}`;
   const colore = (TENDENZE[r.tendenza] || TENDENZE.stabile).linea;
-  return svg("svg", {
-    class: `eq-grafico ${colore}`, viewBox: `0 0 ${LARGO} ${ALTO}`, width: LARGO, height: ALTO,
-    role: "img", "aria-label": descrizione,
+  const disegno = svg("svg", {
+    class: `eq-grafico ${colore}`, viewBox: `0 0 ${LARGO} ${ALTO}`, width: LARGO, height: ALTO, "aria-hidden": "true",
   },
-  svg("title", {}, descrizione),
   svg("line", { class: "eq-base", x1: MARGINE, x2: LARGO - MARGINE, y1: ALTO - MARGINE, y2: ALTO - MARGINE }),
-  punti.length > 1 ? svg("polyline", { class: "eq-linea", points: punti.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ") }) : null,
+  punti.length > 1 ? svg("path", { class: "eq-linea", d: curva(punti) }) : null,
   svg("circle", { class: "eq-punto", cx: ultimo[0].toFixed(1), cy: ultimo[1].toFixed(1), r: 3 }));
+  return el("button", {
+    type: "button", class: "eq-grafico-btn", title: "Apri il grafico dell'andamento",
+    "aria-label": `${r.nome}: ${descriviAndamento(r)}. Apri il grafico`, onclick: () => apriGrafico(r),
+  }, disegno);
+}
+
+// ---------- grafico grande nel popup ----------
+
+// sul telefono un disegno più stretto: scalato alla larghezza dello schermo, il testo resta leggibile
+const G_TELEFONO = 600;  // px di finestra sotto cui si usa la versione stretta
+const G_MARGINE = { sinistra: 48, destra: 16, sopra: 16, sotto: 40 };
+
+/** Un massimo "tondo" per l'asse verticale e il passo delle tacche (1, 2, 5 x 10^n). */
+function scalaAsse(massimo) {
+  if (massimo <= 0) return { alto: 1, passo: 0.25 };
+  const grezzo = massimo / 4;
+  const base = 10 ** Math.floor(Math.log10(grezzo));
+  const passo = [1, 2, 5, 10].map((m) => m * base).find((p) => p >= grezzo);
+  return { alto: Math.ceil(massimo / passo) * passo, passo };
+}
+
+function graficoGrande(r, mostraValore) {
+  const stretto = window.innerWidth < G_TELEFONO;
+  const G_LARGO = stretto ? 360 : 640, G_ALTO = stretto ? 260 : 300, maxDate = stretto ? 4 : 8;
+  const dati = r.andamento;
+  const valori = dati.map((p) => p.differenza);
+  const { alto, passo } = scalaAsse(Math.max(...valori, 0));
+  const x0 = G_MARGINE.sinistra, x1 = G_LARGO - G_MARGINE.destra;
+  const y0 = G_ALTO - G_MARGINE.sotto, y1 = G_MARGINE.sopra;
+  const x = (i) => (dati.length > 1 ? x0 + (i * (x1 - x0)) / (dati.length - 1) : (x0 + x1) / 2);
+  const y = (v) => y0 - (v / alto) * (y0 - y1);
+  const punti = valori.map((v, i) => [x(i), y(v)]);
+  const colore = (TENDENZE[r.tendenza] || TENDENZE.stabile).linea;
+
+  const tacche = [];
+  for (let v = 0; v <= alto + passo / 2; v += passo) {
+    tacche.push(svg("line", { class: "eq-griglia", x1: x0, x2: x1, y1: y(v), y2: y(v) }),
+      svg("text", { class: "eq-asse-testo", x: x0 - 8, y: y(v) + 4, "text-anchor": "end" }, formatOre(Math.round(v * 100) / 100)));
+  }
+  // poche date sull'asse orizzontale, sempre la prima e l'ultima
+  const ogni = Math.max(1, Math.ceil(dati.length / maxDate));
+  const date = dati.map((p, i) => ((i % ogni === 0 || i === dati.length - 1)
+    && !(i !== dati.length - 1 && dati.length - 1 - i < ogni / 2)
+    ? svg("text", { class: "eq-asse-testo", x: x(i), y: y0 + 18, "text-anchor": "middle" }, ddmm(p.settimana)) : null));
+
+  const cerchi = dati.map((p, i) => {
+    const testo = `Settimana del ${dataLunga(p.settimana)}: ${formatOre(p.differenza)} ${nomeUnita(r, p.differenza)}`;
+    const c = svg("circle", {
+      class: "eq-punto eq-punto-grande", cx: punti[i][0].toFixed(1), cy: punti[i][1].toFixed(1), r: 5,
+      tabindex: "0", role: "img", "aria-label": testo,
+    }, svg("title", {}, testo));
+    const scegli = () => mostraValore(testo, c);
+    c.addEventListener("click", scegli);
+    c.addEventListener("focus", scegli);
+    c.addEventListener("mouseenter", scegli);
+    return c;
+  });
+
+  return svg("svg", {
+    class: `eq-grafico-grande ${colore}`, viewBox: `0 0 ${G_LARGO} ${G_ALTO}`, role: "group",
+    "aria-label": descriviAndamento(r),
+  },
+  tacche,
+  svg("line", { class: "eq-asse", x1: x0, x2: x1, y1: y0, y2: y0 }),
+  svg("line", { class: "eq-asse", x1: x0, x2: x0, y1: y0, y2: y1 }),
+  date,
+  svg("text", { class: "eq-asse-titolo", x: (x0 + x1) / 2, y: G_ALTO - 4, "text-anchor": "middle" }, "Settimana (lunedì)"),
+  svg("text", {
+    class: "eq-asse-titolo", x: 12, y: (y0 + y1) / 2, "text-anchor": "middle",
+    transform: `rotate(-90 12 ${(y0 + y1) / 2})`,
+  }, `Distanza (${r.unita})`),
+  punti.length > 1 ? svg("path", { class: "eq-linea", d: curva(punti) }) : null,
+  cerchi);
+}
+
+function apriGrafico(r) {
+  const d = el("dialog", { class: "dialog dialog-grafico", "aria-labelledby": "eq-grafico-titolo" });
+  const valore = el("p", { class: "eq-grafico-valore", "aria-live": "polite" },
+    "Tocca o passa sopra un punto per vedere il valore di quella settimana.");
+  let scelto = null;
+  const mostraValore = (testo, cerchio) => {
+    valore.textContent = testo;
+    if (scelto) scelto.classList.remove("scelto");
+    scelto = cerchio;
+    cerchio.classList.add("scelto");
+  };
+  d.append(
+    el("div", { class: "dialog-head" },
+      el("h2", { id: "eq-grafico-titolo", class: "dialog-title" }, `Andamento – ${r.nome}`),
+      el("p", { class: "muted" }, "Distanza tra chi ha fatto più e chi meno della sua parte, alla fine di ogni settimana "
+        + "generata. Più è bassa, più la rotazione è equa."),
+      el("button", { type: "button", class: "dialog-x", "aria-label": "Chiudi", onclick: () => d.close() }, "×")),
+    el("div", { class: "eq-grafico-contenitore" }, graficoGrande(r, mostraValore)),
+    valore,
+    el("p", {}, renderTendenza(r.tendenza)));
+  d.addEventListener("close", () => d.remove());
+  // un clic sullo sfondo chiude
+  d.addEventListener("click", (e) => { if (e.target === d) d.close(); });
+  document.body.append(d);
+  d.showModal();
 }
 
 // ---------- dettaglio per dipendente ----------
