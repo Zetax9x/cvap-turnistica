@@ -60,7 +60,7 @@ def per_id(rotazione):
 def test_registro_comprende_le_rotazioni_esistenti():
     chiavi = [r.chiave for r in ROTAZIONI]
     assert chiavi == ["ore", "giorno_notte", "sab_giorno", "sab_notte", "dom_giorno", "dom_notte",
-                      "standby", "programmati", "assistenze", "ascoli", "ascoli_giorno_notte", "sedi"]
+                      "standby", "standby_giorno_notte", "programmati", "assistenze", "ascoli", "ascoli_giorno_notte", "sedi"]
     out = equita(settimane_note(), PERSONE)
     assert list(out) == chiavi
 
@@ -174,7 +174,10 @@ def test_settimana_solo_a_mano_in_mezzo_conta_come_per_il_generatore():
 
 
 def test_con_dal_a_meta_il_conteggio_riparte_dalla_prima_settimana_del_periodo():
-    out = equita(settimane_note()[1:], PERSONE)
+    # senza il turno ad Ascoli: Standby esiste solo nelle settimane A, la sua parte si conta su quelle
+    w2, s2 = settimane_note()[1]
+    s2.assegnazioni = [a for a in s2.assegnazioni if a.postazione != ASCOLI]
+    out = equita([(w2, s2)], PERSONE)
     d = per_id(out["standby"])
     assert d[1]["fatti"] == 1 and d[2]["fatti"] == 0
     assert [p["settimana"] for p in out["standby"]["andamento"]] == ["2026-10-26"]

@@ -87,6 +87,18 @@ e hanno la precedenza.
   settimana|`, con peso `P_ASCOLI_GN_STORICO = 100` per ogni turno di differenza. Anche mezzo turno conta 1.
   Resta sotto l'alternanza settimanale (`P_ASCOLI_GIORNO_NOTTE = 2000`): prima si alterna nella settimana, poi si
   recupera lo squilibrio accumulato.
+- Chi ad Ascoli non può fare una fascia intera (divieto di giorno o di notte, `Persona.vieta_fascia`) non entra in
+  questo termine: altrimenti ogni suo turno conterebbe come squilibrio e resterebbe fuori da Ascoli.
+
+### Standby: giorni e notti e settimane A
+
+- Standby e Programmati esistono solo nelle settimane A: la quota si calcola sulle **settimane A** in cui il
+  dipendente era presente (`StoricoPersona.settimane_a`, settimane senza turni ad Ascoli), non su tutte.
+- Come per Ascoli, nel tempo si minimizza `|(standby_giorno − standby_notte) dello storico + (giorni − notti) di
+  Standby della settimana|` (anche mezzo turno conta 1), con peso `P_STANDBY_GN_STORICO = 25`: sotto la rotazione
+  dei totali (la differenza tra chi è in equilibrio e chi riceve la fascia che gli manca, 2 × 25, è meno di un turno
+  di differenza nei totali, 2 × `P_RICHIESTE` = 60). Esclusi i dipendenti con un divieto di fascia in Standby.
+- Equità: riga "Standby: giorni e notti"; Statistiche: colonna Standby con giorni / notti (`standby_gn`).
 
 ### Dove si vede
 

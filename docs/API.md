@@ -218,7 +218,7 @@ porta anche il ruolo `normale` o `master` dentro la firma; HttpOnly, SameSite=La
   `DELETE /ferie/{id}` → 204 · 404 ·
   `GET /ferie/{id}/turni` → `[{id, data, postazione, fascia, segmento, ruolo, settimana, ore}]`: turni della persona che iniziano
   nei giorni dell'assenza (`settimana` = lunedì), da far coprire · 404
-- `GET /statistiche` → `[{persona_id, nome, tipo, qualifica, settimane, ore_totali, ore_lavorate, ore_ferie, ore_malattia, saldo_ore, ore_giorno, ore_notte, weekend: {sab_giorno, sab_notte, dom_giorno, dom_notte}, standby, programmati, assistenze, sedi: {Acquasanta, Venarotta}, ascoli: {turni, giorno, notte}, festivi: {turni, per_festivita: [{festivita, turni, ultimo_anno}]}}]` (`festivi`: vedi "Festività nel generatore") (`ore_totali` = ore contate: lavorate + 6 h per giorno di ferie/malattia, nelle settimane non interamente di assenza; sedi = turni, anche mezzi, in ciascuna delle due sedi; il generatore le pareggia per ogni dipendente)
+- `GET /statistiche` → `[{persona_id, nome, tipo, qualifica, settimane, ore_totali, ore_lavorate, ore_ferie, ore_malattia, saldo_ore, ore_giorno, ore_notte, weekend: {sab_giorno, sab_notte, dom_giorno, dom_notte}, standby, standby_gn: {giorno, notte}, programmati, assistenze, sedi: {Acquasanta, Venarotta}, ascoli: {turni, giorno, notte}, festivi: {turni, per_festivita: [{festivita, turni, ultimo_anno}]}}]` (`festivi`: vedi "Festività nel generatore") (`ore_totali` = ore contate: lavorate + 6 h per giorno di ferie/malattia, nelle settimane non interamente di assenza; sedi = turni, anche mezzi, in ciascuna delle due sedi; il generatore le pareggia per ogni dipendente)
   solo sulle settimane generate e confermate (`stato = confermata`, poi `storico.solo_generate`; volontari: solo totali, saldo 0). Le bozze e le settimane compilate solo a mano sono escluse anche da ore e saldo. Riaprendo una settimana, i suoi dati escono dalle statistiche fino alla nuova conferma. La settimana confermata resta inclusa anche dopo la rimozione di tutti i turni, grazie a `generata_il`.
   Il generatore invece usa come storico tutte le settimane dalla prima generata in poi.
 - `GET /statistiche/indisponibilita?dal&al` (date facoltative, estremi inclusi; `dal > al` → 400, data non valida → 422) →
@@ -640,20 +640,23 @@ non è valida). Logica in `cvap/equita.py` (`equita`, registro `ROTAZIONI`), rou
   i volontari no.
 - Per ogni rotazione e dipendente: `fatti`, `quota` (la sua parte) e `scarto = fatti − quota` (positivo = più della
   sua parte). Stesso "debito" del generatore: `quota = tasso del gruppo × esposizione`, con tasso = turni di tutti ÷
-  esposizione di tutti (weekend, Standby, Programmati, Assistenze: settimane lavorate; Ascoli: settimane con Ascoli).
+  esposizione di tutti (weekend e Assistenze: settimane lavorate; Standby e Programmati: settimane A, cioè senza
+  Ascoli; Ascoli: settimane con Ascoli).
   Ore: `scarto = saldo ore − saldo medio del gruppo`, `fatti` = ore contate (con ferie e malattia). Giorni e notti,
-  Ascoli giorni e notti, Acquasanta e Venarotta: `quota` = metà del totale (in ore per giorni/notti, in turni per gli altri).
+  Standby giorni e notti, Ascoli giorni e notti, Acquasanta e Venarotta: `quota` = metà del totale (in ore per giorni/notti, in turni per gli altri).
 - Non partecipa (`partecipa: false`, valori `null`), come gli "idonei" del generatore: chi non ha esposizione (nessuna
   settimana, nessuna settimana con Ascoli, nessun turno nelle due sedi…), chi ha un divieto per l'intera postazione
   (Standby, Programmati, Assistenze ed Extra, Ascoli, Acquasanta/Venarotta) e chi non può ricoprire nessuno dei ruoli
   usati in quella postazione nel periodo (es. Standby fatto solo da autisti: i soccorritori non entrano; senza turni
-  nella postazione il ruolo non filtra). I divieti sono quelli di oggi, non quelli in vigore nelle settimane passate.
+  nella postazione il ruolo non filtra). Dalle righe giorni/notti di Standby e di Ascoli resta fuori anche chi in
+  quella postazione non può fare una fascia intera (divieto di giorno o di notte). I divieti sono quelli di oggi, non quelli in vigore nelle settimane passate.
   Il gruppo del tasso è fatto solo di chi partecipa.
 - Calcolo: lo storico si ricalcola da capo per ogni punto dell'andamento, quindi i punti sono al massimo
   `ANDAMENTO_PUNTI_MAX = 26` (settimane generate distribuite in modo uniforme nel periodo, sempre con l'ultima).
 
 Risposta: `{settimane: ["AAAA-MM-GG"], rotazioni: [...]}`; ogni rotazione, nell'ordine `ore, giorno_notte,
-sab_giorno, sab_notte, dom_giorno, dom_notte, standby, programmati, assistenze, ascoli, ascoli_giorno_notte, sedi`,
+sab_giorno, sab_notte, dom_giorno, dom_notte, standby, standby_giorno_notte, programmati, assistenze, ascoli, ascoli_giorno_notte,
+sedi`,
 poi `festivita_<id>` per ogni festività attiva (in ordine di id):
 `{chiave, nome, unita ("ore"|"turni"), sopra, sotto (frasi per scarto positivo/negativo), fatti, quota (intestazioni),
 festivita (true per le festività), piu_avanti: {persona_id, nome, scarto}|null, piu_indietro: {...}|null,

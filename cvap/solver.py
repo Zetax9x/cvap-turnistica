@@ -42,8 +42,8 @@ from itertools import combinations
 
 from ortools.sat.python import cp_model
 
-from .modello import (EXTRA, PROGRAMMATI, STANDBY, Assegnazione, Fabbisogno, Persona, Unita, in_conflitto,
-                      ore_extra, parti_turno)
+from .modello import (EXTRA, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, STANDBY, Assegnazione, Fabbisogno, Persona,
+                      Unita, in_conflitto, ore_extra, parti_turno)
 from .rotazione_festivi import ContoFestivita, FestiviSettimana, costo_festivita, debiti
 from .slot import unita_da_coprire
 from .storico import CATEGORIE_RICHIESTA, CATEGORIE_WEEKEND, SEDI_ALTERNATE, StoricoPersona, categoria_weekend
@@ -73,6 +73,10 @@ P_RICHIESTE = 30
 P_DOPPIA_RICHIESTA = 300
 P_ASCOLI_STORICO = 30        # rotazione nel tempo del numero di turni ad Ascoli
 P_ASCOLI_GN_STORICO = 100    # per ogni turno di differenza tra giorni e notti ad Ascoli, storico compreso
+# per ogni turno di differenza tra giorni e notti di Standby, storico compreso. Sotto la rotazione dei totali:
+# lo scarto tra chi è in equilibrio e chi riceve la fascia che gli manca (2 x 25 = 50) è meno di un turno di
+# differenza nei totali (2 x P_RICHIESTE = 60), così decide la fascia solo tra chi ha totali vicini
+P_STANDBY_GN_STORICO = 25
 # festività (docs/PIANO-rotazioni.md, 3.3): tutte molto sotto copertura, ore e regole di Ascoli
 # P_FESTIVITA (60 x peso, sul debito) e P_STESSA_FESTIVITA (500 x peso, l'anno prima; metà due anni prima) sono in
 # cvap/rotazione_festivi.py, con il costo (`costo_festivita`) usato anche dall'ordine di rotazione in anticipo
@@ -105,6 +109,8 @@ VOCI_OBIETTIVO: dict[str, tuple[str, str, str]] = {
                   "Come i weekend, per Ascoli, Standby, Programmati ed Extra."),
     "ascoli_gn_storico": ("Ascoli: giorni e notti nel tempo", "equita",
                           "Differenza tra giorni e notti ad Ascoli, storico compreso."),
+    "standby_gn_storico": ("Standby: giorni e notti nel tempo", "equita",
+                           "Differenza tra giorni e notti di Standby, storico compreso."),
     "festivita": ("Rotazione delle festività", "equita",
                   "Costo di ogni festività in base a chi l'ha già lavorata e a chi vuole lavorarla."),
 }
@@ -122,8 +128,10 @@ class Rotazione:
 
 
 def _rotazione_postazione(postazione: str) -> Rotazione:
+    # Standby e Programmati esistono solo nelle settimane A: la quota si calcola su quelle; Extra su tutte
+    esposizione = (lambda st: st.settimane_a) if postazione in POSTAZIONI_A_RICHIESTA else (lambda st: st.settimane)
     return Rotazione(nome=postazione, conta=lambda u: u.postazione == postazione,
-                     contatore=lambda st: st.richieste[postazione], esposizione=lambda st: st.settimane,
+                     contatore=lambda st: st.richieste[postazione], esposizione=esposizione,
                      peso=P_RICHIESTE, doppia=P_DOPPIA_RICHIESTA)
 
 
@@ -477,6 +485,7 @@ class _Modello:
         self._giorni_notti()
         self._weekend()
         self._rotazioni()
+        self._standby_giorno_notte()
         self._festivita()
         if not copertura_rigida:
             self.model.Minimize(sum(c * e for c, e, _ in self.obiettivo))
@@ -631,11 +640,34 @@ class _Modello:
             self._pesa("ascoli_giorno_notte", P_ASCOLI_GIORNO_NOTTE * self.scala, eccesso)
         # nel tempo: tanti giorni quante notti ad Ascoli, storico compreso (dopo l'alternanza nella settimana)
         st = self.storico.get(p.id, StoricoPersona())
-        espr = conta["giorno"] - conta["notte"] + (st.ascoli_giorno - st.ascoli_notte)
+        self._giorni_notti_nel_tempo(p, ASCOLI, conta, quanti, st.ascoli_giorno - st.ascoli_notte,
+                                     "ascoli_gn_storico", P_ASCOLI_GN_STORICO)
+
+    def _giorni_notti_nel_tempo(self, p, postazione, conta, quanti, storico, voce, peso):
+        """Paga |giorni - notti| nella postazione, storico compreso. Chi non può fare una delle due fasce
+        (divieto di giorno o di notte) è escluso: i suoi turni sarebbero sempre "squilibrati"."""
+        if p.vieta_fascia(postazione):
+            return
+        espr = conta["giorno"] - conta["notte"] + storico
         if not isinstance(espr, int):
-            scarto = self.model.NewIntVar(0, quanti + abs(st.ascoli_giorno - st.ascoli_notte), "")
+            scarto = self.model.NewIntVar(0, quanti + abs(storico), "")
             self.model.AddAbsEquality(scarto, espr)
-            self._pesa("ascoli_gn_storico", P_ASCOLI_GN_STORICO * self.scala, scarto)
+            self._pesa(voce, peso * self.scala, scarto)
+
+    def _standby_giorno_notte(self):
+        """Standby: nel tempo tanti giorni quante notti, storico compreso (anche mezzo turno conta 1)."""
+        for p in self.dipendenti:
+            conta, quanti = {}, 0
+            for fascia in ("giorno", "notte"):
+                fissi = sum(1 for a in self.fissi_settimana
+                            if a.persona_id == p.id and a.postazione == STANDBY and a.fascia == fascia)
+                turni = [v for u, v in self._vars_di(p.id, lambda u, f=fascia: u.postazione == STANDBY
+                                                     and u.fascia == f)]
+                conta[fascia] = sum(turni) + fissi
+                quanti += len(turni) + fissi
+            st = self.storico.get(p.id, StoricoPersona())
+            self._giorni_notti_nel_tempo(p, STANDBY, conta, quanti, st.standby_giorno - st.standby_notte,
+                                         "standby_gn_storico", P_STANDBY_GN_STORICO)
 
     def _ascoli_di_fila(self):
         settimana = set(self.giorni)

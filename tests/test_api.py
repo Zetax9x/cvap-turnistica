@@ -274,6 +274,7 @@ def test_statistiche(generata):
     assert abs(sum(x["saldo_ore"] for x in dip)) < 1e-6
     assert set(dip[0]["weekend"]) == {"sab_giorno", "sab_notte", "dom_giorno", "dom_notte"}
     assert all(x["standby"] == 0 and x["programmati"] == 0 for x in stats)
+    assert all(x["standby_gn"] == {"giorno": 0, "notte": 0} for x in stats)
     # settimana A: niente Ascoli
     assert all(x["ascoli"] == {"turni": 0, "giorno": 0, "notte": 0} for x in stats)
     assert all(x["assistenze"] == 0 for x in stats)

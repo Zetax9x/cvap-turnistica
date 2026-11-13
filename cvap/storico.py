@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 
 from datetime import date
 
-from .modello import EXTRA, PARTI_TURNO, POSTAZIONI_A_RICHIESTA, Assegnazione, ore_extra
+from .modello import EXTRA, PARTI_TURNO, POSTAZIONI_A_RICHIESTA, STANDBY, Assegnazione, ore_extra
 from .vincoli import ASCOLI, ORE_FERIE_GIORNO
 
 CATEGORIE_WEEKEND = ("sab_giorno", "sab_notte", "dom_giorno", "dom_notte")
@@ -32,6 +32,10 @@ class StoricoPersona:
     ascoli_giorno: int = 0     # di cui di giorno
     ascoli_notte: int = 0      # di cui di notte
     settimane_ascoli: int = 0  # settimane con Ascoli in cui era presente: la base della quota attesa
+    # settimane senza Ascoli (A) in cui era presente: la base della quota di Standby e Programmati
+    settimane_a: int = 0
+    standby_giorno: int = 0    # turni di Standby di giorno (anche mezzo turno conta 1)
+    standby_notte: int = 0     # e di notte
     ore_sostituzioni: int = 0  # ore extra delle sostituzioni: fuori da tutti gli altri conteggi
 
     @property
@@ -123,6 +127,8 @@ def calcola_storico(settimane: list[SettimanaPassata], *, saldo_assenze_parziali
             st.settimane += 1
             if con_ascoli:
                 st.settimane_ascoli += 1
+            else:
+                st.settimane_a += 1
             malattia = s.giorni_malattia.get(pid, 0)
             st.ore_malattia += ORE_FERIE_GIORNO * malattia
             st.ore_ferie += ORE_FERIE_GIORNO * (s.giorni_ferie.get(pid, 0) - malattia)
@@ -140,6 +146,11 @@ def calcola_storico(settimane: list[SettimanaPassata], *, saldo_assenze_parziali
                 st.weekend[cat] += 1
             if a.postazione in st.richieste:
                 st.richieste[a.postazione] += 1
+            if a.postazione == STANDBY:
+                if a.fascia == "giorno":
+                    st.standby_giorno += 1
+                else:
+                    st.standby_notte += 1
             if a.postazione in st.sedi:
                 st.sedi[a.postazione] += 1
             if a.postazione == ASCOLI:

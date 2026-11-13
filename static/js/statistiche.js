@@ -32,7 +32,7 @@ const COLONNE = [
   { campo: "dom_giorno", titolo: "Dom G", valore: (r) => wk(r, "dom_giorno") },
   { campo: "dom_notte", titolo: "Dom N", valore: (r) => wk(r, "dom_notte") },
   { campo: "weekend_tot", titolo: "Tot. weekend", valore: (r) => totWeekend(r) },
-  { campo: "standby", titolo: "Standby", valore: (r) => r.standby || 0 },
+  { campo: "standby", titolo: "Standby (G / N)", valore: (r) => r.standby || 0 },
   { campo: "programmati", titolo: "Programmati", valore: (r) => r.programmati || 0 },
   { campo: "ascoli", titolo: "Ascoli (G / N)", valore: (r) => asc(r, "turni") },
   { campo: "assistenze", titolo: "Assistenze", valore: (r) => r.assistenze || 0 },
@@ -50,6 +50,7 @@ function dettaglioOre(r) {
 function sede(r, k) { return (r.sedi && r.sedi[k]) || 0; }
 function totSedi(r) { return sede(r, "Acquasanta") + sede(r, "Venarotta"); }
 function asc(r, k) { return (r.ascoli && r.ascoli[k]) || 0; }
+function sgn(r, k) { return (r.standby_gn && r.standby_gn[k]) || 0; }
 function wk(r, k) { return (r.weekend && r.weekend[k]) || 0; }
 function totWeekend(r) { return ["sab_giorno", "sab_notte", "dom_giorno", "dom_notte"].reduce((s, k) => s + wk(r, k), 0); }
 
@@ -210,7 +211,7 @@ function render() {
       el("td", { class: "num" }, `${sede(r, "Acquasanta")} / ${sede(r, "Venarotta")}`),
       ["sab_giorno", "sab_notte", "dom_giorno", "dom_notte"].map((k) => el("td", { class: "num" }, String(wk(r, k)))),
       el("td", { class: "num" }, String(totWeekend(r))),
-      el("td", { class: "num" }, String(r.standby || 0)),
+      el("td", { class: "num" }, `${r.standby || 0} (${sgn(r, "giorno")} / ${sgn(r, "notte")})`),
       el("td", { class: "num" }, String(r.programmati || 0)),
       el("td", { class: "num" }, `${asc(r, "turni")} (${asc(r, "giorno")} / ${asc(r, "notte")})`),
       el("td", { class: "num" }, String(r.assistenze || 0)),
@@ -237,7 +238,8 @@ function renderLegendaColonne() {
       voce("Acquasanta / Venarotta", "turni svolti in ciascuna delle due sedi (anche i mezzi turni); il generatore cerca " +
         "di farne fare a ogni dipendente tanti nell'una quanti nell'altra."),
       voce("Standby, Programmati e Assistenze", "turni svolti in quelle postazioni (ogni Assistenza conta 1, qualunque " +
-        "sia la durata); il generatore li distribuisce in modo equo come i weekend."),
+        "sia la durata); il generatore li distribuisce in modo equo come i weekend. Per lo Standby, tra parentesi " +
+        "quanti di giorno (G) e di notte (N): il generatore cerca di far fare a ognuno tanti giorni quante notti."),
       voce("Ascoli", "turni svolti ad Ascoli, tra parentesi quanti di giorno (G) e di notte (N); il generatore li " +
         "distribuisce in proporzione alle settimane con Ascoli e cerca di far fare a ognuno tanti giorni quante notti.")));
 }

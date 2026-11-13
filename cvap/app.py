@@ -1614,6 +1614,7 @@ def create_app(db_path: str, password: str | None = None, postino=None,
                 "saldo_ore": st.saldo_ore, "ore_giorno": st.ore_giorno, "ore_notte": st.ore_notte,
                 "weekend": dict(st.weekend),
                 "standby": st.richieste[STANDBY], "programmati": st.richieste[PROGRAMMATI],
+                "standby_gn": {"giorno": st.standby_giorno, "notte": st.standby_notte},
                 "assistenze": st.richieste[EXTRA],
                 "sedi": dict(st.sedi),
                 "ascoli": {"turni": st.ascoli, "giorno": st.ascoli_giorno, "notte": st.ascoli_notte},
@@ -1633,6 +1634,7 @@ def create_app(db_path: str, password: str | None = None, postino=None,
                     "ore_sostituzioni": 0,
                     "saldo_ore": 0, "ore_giorno": 0, "ore_notte": 0,
                     "weekend": {k: 0 for k in CATEGORIE_WEEKEND}, "standby": 0, "programmati": 0, "assistenze": 0,
+                    "standby_gn": {"giorno": 0, "notte": 0},
                     "sedi": {k: 0 for k in SEDI_ALTERNATE},
                     "ascoli": {"turni": 0, "giorno": 0, "notte": 0},
                     "festivi": {"turni": 0, "per_festivita": []},  # la rotazione riguarda i dipendenti
@@ -1649,6 +1651,8 @@ def create_app(db_path: str, password: str | None = None, postino=None,
                 chiave = {STANDBY: "standby", PROGRAMMATI: "programmati", EXTRA: "assistenze"}.get(a.postazione)
                 if chiave:
                     v[chiave] += 1
+                if a.postazione == STANDBY:
+                    v["standby_gn"][a.fascia] += 1
                 if a.postazione in v["sedi"]:
                     v["sedi"][a.postazione] += 1
                 if a.postazione == ASCOLI:

@@ -181,6 +181,12 @@ class Persona:
         return any((d.postazione is None or d.postazione == postazione) and (d.turno is None or d.turno in tipi)
                    for d in self.divieti)
 
+    def vieta_fascia(self, postazione: str) -> bool:
+        """True se un divieto toglie in quella postazione tutti i giorni o tutte le notti: la persona non entra
+        nell'equilibrio giorno/notte di quella postazione (un divieto di mezzo turno non basta)."""
+        return any((d.postazione is None or d.postazione == postazione) and d.turno in ("giorno", "notte")
+                   for d in self.divieti)
+
     @property
     def dipendente(self) -> bool:
         return self.tipo == "dipendente"

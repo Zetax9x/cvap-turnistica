@@ -474,6 +474,12 @@ def _ascoli(r: dict) -> str:
     return f"{a.get('turni', 0)} ({a.get('giorno', 0)} / {a.get('notte', 0)})"
 
 
+def _standby(r: dict) -> str:
+    """Turni di Standby con giorni e notti: "3 (2 / 1)"."""
+    g = r.get("standby_gn") or {}
+    return f"{r.get('standby', 0)} ({g.get('giorno', 0)} / {g.get('notte', 0)})"
+
+
 def festivi_testo(r: dict) -> str:
     """Turni festivi degli ultimi 5 anni, solo le festività lavorate: "Natale 2 (2025), Pasqua 1 (2023)"."""
     voci = [f"{f['festivita']}{'' if f.get('attiva', True) else ' (non più nel calendario)'} {f['turni']} "
@@ -484,7 +490,7 @@ def festivi_testo(r: dict) -> str:
 
 def _sezione_statistiche(righe: list[dict]) -> tuple[str, str]:
     colonne = ["Persona", "Tipo", "Settimane", "Ore totali", "Saldo ore", "Ore giorno / notte",
-               "Acquasanta / Venarotta", "Turni weekend", "Standby", "Programmati", "Ascoli (giorni / notti)",
+               "Acquasanta / Venarotta", "Turni weekend", "Standby (giorni / notti)", "Programmati", "Ascoli (giorni / notti)",
                "Festivi (ultimo anno)", "Assistenze"]
     corpo, txt = [], []
     for r in righe:
@@ -494,7 +500,7 @@ def _sezione_statistiche(righe: list[dict]) -> tuple[str, str]:
         valori = [r["nome"], "Dipendente" if r["tipo"] == "dipendente" else "Volontario", r["settimane"],
                   _ore_totali(r), saldo_t, f"{r['ore_giorno']} / {r['ore_notte']}",
                   f"{sedi.get('Acquasanta', 0)} / {sedi.get('Venarotta', 0)}", sum(r["weekend"].values()),
-                  r["standby"], r["programmati"], _ascoli(r), festivi_testo(r), r.get("assistenze", 0)]
+                  _standby(r), r["programmati"], _ascoli(r), festivi_testo(r), r.get("assistenze", 0)]
         corpo.append("<tr>" + "".join(f'<td style="{_TC}{"text-align:right;" if i >= 2 else ""}">'
                                       f'{"<b>" if i == 0 else ""}{_e(v)}{"</b>" if i == 0 else ""}</td>'
                                       for i, v in enumerate(valori)) + "</tr>")

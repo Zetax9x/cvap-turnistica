@@ -164,9 +164,9 @@ def _statistiche(righe: list[dict]) -> list:
         dati.append([Markup(f"<b>{escape(r['nome'])}</b>"), r["settimane"], et._ore_totali(r),
                      f"{saldo:+.1f}".replace(".", ","),
                      f"{r['ore_giorno']} / {r['ore_notte']}", f"{sedi.get('Acquasanta', 0)} / {sedi.get('Venarotta', 0)}",
-                     sum(r["weekend"].values()), r["standby"], r["programmati"], et._ascoli(r), r.get("assistenze", 0)])
+                     sum(r["weekend"].values()), et._standby(r), r["programmati"], et._ascoli(r), r.get("assistenze", 0)])
     return out + [_tabella(["Dipendente", "Settimane", "Ore totali", "Saldo ore", "Ore giorno / notte",
-                            "Acquasanta / Venarotta", "Weekend", "Standby", "Programmati", "Ascoli (g / n)", "Assistenze"],
+                            "Acquasanta / Venarotta", "Weekend", "Standby (g / n)", "Programmati", "Ascoli (g / n)", "Assistenze"],
                            dati, [14, 7, 13, 7, 9, 9, 6, 6, 7, 8, 7], set(range(1, 11))),
                   _p("Solo i dipendenti e le settimane con turni generati. Ore totali: ore lavorate più 6 h per ogni giorno di ferie o "
                      "malattia. Saldo ore: differenza rispetto alla media dei dipendenti; le settimane con ferie o malattia "
