@@ -10,7 +10,7 @@ import json
 from datetime import date, timedelta
 from email.message import EmailMessage
 
-from .modello import EXTRA, META, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, orario, parti_turno, segmento_intero
+from .modello import EXTRA, POSTAZIONI_A_RICHIESTA, meta_di, PROGRAMMATI, orario, parti_turno, segmento_intero
 
 GIORNI = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
 GIORNI_BREVI = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"]
@@ -66,7 +66,7 @@ def fascia_orario(fascia: str, segmento: str) -> str:
 def orario_turno(fascia: str, segmento: str) -> str:
     """Etichetta del turno come sul sito (`orarioTurno`): "Giorno 8–20", "Mattina 7–14", "Notte 19–7"..."""
     parti = parti_turno(fascia, segmento)
-    nome = ("Notte" if fascia == "notte" else "Mattina" if parti == {"mattina"}
+    nome = ("Sera" if segmento == "standby_sera" else "Notte" if fascia == "notte" else "Mattina" if parti == {"mattina"}
             else "Pomeriggio" if parti == {"pomeriggio"} else "Giorno")
     return f"{nome} {fascia_orario(fascia, segmento).split(' ', 1)[1]}"
 
@@ -202,8 +202,8 @@ def _cella(s: dict, postazione: str, g: str, fascia: str, segmento: str, ruolo: 
         segmenti = {a["segmento"] for a in lista}
         if not segmenti:
             avvisi.append("scoperto")
-        elif fascia == "giorno" and segmento not in segmenti:
-            avvisi += [f"{_ore('giorno', meta)} scoperto" for meta in META[segmento] if meta not in segmenti]
+        elif segmento not in segmenti:
+            avvisi += [f"{_ore(fascia, meta)} scoperto" for meta in meta_di(fascia, segmento) if meta not in segmenti]
     if eccesso:
         avvisi.append(f"{eccesso} oltre il richiesto" if richiesti else "non richiesto")
     return persone, avvisi

@@ -294,7 +294,7 @@ Turni (`turni_ammessi(postazione)` → coppie `(fascia, segmento)`):
 | Postazione | fascia/segmento | Orario | Note |
 |---|---|---|---|
 | Standby | giorno/`standby` | 7–19 | spezzabile dai volontari in `standby_mattina` 7–14 / `standby_pomeriggio` 14–19 |
-| Standby | notte/`standby` | 19–7 | non si spezza |
+| Standby | notte/`standby` | 19–7 | spezzabile dai volontari in `standby_sera` 19–23 / `standby_notte` 23–7 |
 | Programmati | giorno/`prog_mattina` | 7–14 | più persone per turno |
 | Programmati | giorno/`prog_pomeriggio` | 14–20 | più persone per turno |
 | normali | giorno/`intero` (8–20, spezzabile `mattina`/`pomeriggio`), notte/`intero` (20–8) | | |

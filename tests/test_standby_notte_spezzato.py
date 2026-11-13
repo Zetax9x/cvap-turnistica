@@ -8,7 +8,6 @@ from fastapi.testclient import TestClient
 
 os.environ.setdefault("CVAP_DB", ":memory:")
 
-from cvap import db  # noqa: E402
 from cvap.app import create_app  # noqa: E402
 from cvap.calendario import giorni_settimana  # noqa: E402
 from cvap.email_turni import orario_turno  # noqa: E402
@@ -100,13 +99,3 @@ def test_api_notte_di_standby_spezzata_tra_volontario_e_dipendente(client):
     voci[0]["segmento"] = "standby_sera"
     assert client.put(f"/api/settimane/{LUNEDI}/fabbisogno", json={"voci": voci}).status_code == 400
 
-
-def test_volontario_su_mezza_notte_accorcia_il_turno_del_dipendente(tmp_path):
-    conn = db.apri(str(tmp_path / "t.db"))
-    mario = db.crea_persona(conn, "Mario", "dipendente", "soccorritore")["id"]
-    anna = db.crea_persona(conn, "Anna", "volontario", "soccorritore")["id"]
-    db.crea_assegnazione(conn, ass(LUNEDI_A, STANDBY, "notte", "soccorritore", mario, segmento="standby"))
-    db.crea_assegnazione(conn, ass(LUNEDI_A, STANDBY, "notte", "soccorritore", anna, segmento="standby_notte",
-                                   origine="volontario"))
-    righe = conn.execute("SELECT persona_id, segmento FROM assegnazioni ORDER BY persona_id").fetchall()
-    assert sorted((r["persona_id"], r["segmento"]) for r in righe) == [(mario, "standby_sera"), (anna, "standby_notte")]

@@ -170,11 +170,13 @@ export const ETICHETTE = {
   segmento: {
     intero: "Intero", mattina: "8–14", pomeriggio: "14–20",
     standby: "Intero", standby_mattina: "7–14", standby_pomeriggio: "14–19",
+    standby_sera: "19–23", standby_notte: "23–7",
     prog_mattina: "7–14", prog_pomeriggio: "14–20",
   },
   segmentoLungo: {
     intero: "Turno intero", mattina: "Mattina 8–14", pomeriggio: "Pomeriggio 14–20",
     standby: "Turno intero", standby_mattina: "Mattina 7–14", standby_pomeriggio: "Pomeriggio 14–19",
+    standby_sera: "Sera 19–23", standby_notte: "Notte 23–7",
     prog_mattina: "Mattina 7–14", prog_pomeriggio: "Pomeriggio 14–20",
   },
   origine: { volontario: "Volontario", manuale: "Fissato", generato: "Generato", sostituzione: "Sostituzione (extra)" },
@@ -211,6 +213,8 @@ const ORARI = {
   "giorno|standby_mattina": ["Mattina", 7, 14],
   "giorno|standby_pomeriggio": ["Pomeriggio", 14, 19],
   "notte|standby": ["Notte", 19, 31],
+  "notte|standby_sera": ["Sera", 19, 23],
+  "notte|standby_notte": ["Notte", 23, 31],
   "giorno|prog_mattina": ["Mattina", 7, 14],
   "giorno|prog_pomeriggio": ["Pomeriggio", 14, 20],
 };

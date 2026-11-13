@@ -10,7 +10,7 @@ TIPI = ("dipendente", "volontario")
 QUALIFICHE = ("autista", "soccorritore")
 FASCE = ("giorno", "notte")
 SEGMENTI = ("intero", "mattina", "pomeriggio", "standby", "standby_mattina", "standby_pomeriggio",
-            "prog_mattina", "prog_pomeriggio")
+            "standby_sera", "standby_notte", "prog_mattina", "prog_pomeriggio")
 RUOLI = ("autista", "soccorritore")
 # "sostituzione": turno preso dopo la generazione al posto di chi è assente (malattia, ferie…). Le sue ore sono
 # extra: non contano nei limiti di ore della settimana, nello storico né nelle statistiche (che le mostrano a parte)
@@ -77,20 +77,33 @@ _ORARI = {
     ("giorno", "standby_mattina"): (7, 14),
     ("giorno", "standby_pomeriggio"): (14, 19),
     ("notte", "standby"): (19, 31),  # 19:00 -> 07:00
+    ("notte", "standby_sera"): (19, 23),
+    ("notte", "standby_notte"): (23, 31),  # 23:00 -> 07:00
     ("giorno", "prog_mattina"): (7, 14),
     ("giorno", "prog_pomeriggio"): (14, 20),
 }
 
-# Turno intero di giorno -> le due metà in cui un volontario può spezzarlo (la notte non si spezza)
+# (fascia, turno intero) -> le due metà in cui un volontario può spezzarlo. La notte delle sedi non si spezza;
+# lo Standby sì, di giorno (7-14 / 14-19) e di notte (19-23 / 23-7). I dipendenti fanno il turno intero, o la
+# metà che nessun volontario copre.
 META = {
-    "intero": ("mattina", "pomeriggio"),
-    "standby": ("standby_mattina", "standby_pomeriggio"),
+    ("giorno", "intero"): ("mattina", "pomeriggio"),
+    ("giorno", "standby"): ("standby_mattina", "standby_pomeriggio"),
+    ("notte", "standby"): ("standby_sera", "standby_notte"),
 }
-INTERO_DI = {meta: intero for intero, coppia in META.items() for meta in coppia}
+# metà -> turno intero (i nomi delle metà sono unici: basta il segmento)
+INTERO_DI = {meta: intero for (_, intero), coppia in META.items() for meta in coppia}
+PRIME_META = {coppia[0] for coppia in META.values()}    # la prima metà di ogni turno (mattina, sera)
+SECONDE_META = {coppia[1] for coppia in META.values()}  # la seconda (pomeriggio, notte)
+
+
+def meta_di(fascia: str, segmento: str) -> tuple[str, ...]:
+    """Le due metà del turno intero (fascia, segmento); () se non si spezza."""
+    return META.get((fascia, segmento), ())
 
 _TURNI_AMMESSI = {
     STANDBY: {("giorno", "standby"), ("giorno", "standby_mattina"), ("giorno", "standby_pomeriggio"),
-              ("notte", "standby")},
+              ("notte", "standby"), ("notte", "standby_sera"), ("notte", "standby_notte")},
     PROGRAMMATI: {("giorno", "prog_mattina"), ("giorno", "prog_pomeriggio")},
 }
 _TURNI_NORMALI = {("giorno", "intero"), ("giorno", "mattina"), ("giorno", "pomeriggio"), ("notte", "intero")}
