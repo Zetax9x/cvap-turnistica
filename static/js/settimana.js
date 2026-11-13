@@ -573,8 +573,10 @@ function segmentoIntero(postazione) {
   return postazione === STANDBY ? "standby" : "intero";
 }
 
-/** Le due metà in cui si spezza il turno di giorno. */
-function metaGiorno(postazione) {
+/** Le due metà in cui un volontario può spezzare il turno ([] se non si spezza): il giorno di sedi e Standby,
+ * la notte solo dello Standby (19–23 / 23–7). */
+function metaTurno(postazione, fascia) {
+  if (fascia === "notte") return postazione === STANDBY ? ["standby_sera", "standby_notte"] : [];
   return postazione === STANDBY ? ["standby_mattina", "standby_pomeriggio"] : ["mattina", "pomeriggio"];
 }
 
@@ -625,9 +627,9 @@ function richiestiCella(s, c) {
  */
 function segmentiMancanti(c, lista) {
   if (!lista.length) return [segmentoIntero(c.postazione)];
-  if (c.fascia !== "giorno") return [];
+  const meta = metaTurno(c.postazione, c.fascia);
+  if (!meta.length) return [];
   const intero = segmentoIntero(c.postazione);
-  const meta = metaGiorno(c.postazione);
   const coperti = new Set();
   for (const a of lista) {
     if (a.segmento === intero) meta.forEach((m) => coperti.add(m));
@@ -893,7 +895,7 @@ function renderCella(s, cella, scopertiReport, violazioni, confermata, tag = "td
 function ordineSegmento(seg) {
   return {
     intero: 0, mattina: 1, pomeriggio: 2,
-    standby: 0, standby_mattina: 1, standby_pomeriggio: 2,
+    standby: 0, standby_mattina: 1, standby_pomeriggio: 2, standby_sera: 1, standby_notte: 2,
     prog_mattina: 1, prog_pomeriggio: 2,
   }[seg] ?? 3;
 }
@@ -1773,14 +1775,14 @@ function renderFormAggiunta(c, mancanti) {
       ` ${etichetta("tipo", v)}`)));
 
   const campi = [interruttore, campoVol, campoDip];
-  // Segmento: il turno di giorno (normali e Standby) si può spezzare; notte e Programmati no.
+  // Segmento: si spezzano il giorno (sedi e Standby) e la notte dello Standby; la notte delle sedi e i Programmati no.
   let segSelect = null;
-  if (c.fascia === "giorno" && !perSegmento(c.postazione)) {
+  if (metaTurno(c.postazione, c.fascia).length && !perSegmento(c.postazione)) {
     const intero = segmentoIntero(c.postazione);
     const predefinito = mancanti.length === 1 ? mancanti[0] : intero;
     segSelect = el("select", { id: "cella-segmento", name: "segmento" },
-      [intero, ...metaGiorno(c.postazione)].map((seg) => el("option", { value: seg, selected: seg === predefinito },
-        seg === intero ? `Intero ${orarioTurno("giorno", seg).replace(/^\S+ /, "")}` : orarioTurno("giorno", seg))));
+      [intero, ...metaTurno(c.postazione, c.fascia)].map((seg) => el("option", { value: seg, selected: seg === predefinito },
+        seg === intero ? `Intero ${orarioTurno(c.fascia, seg).replace(/^\S+ /, "")}` : orarioTurno(c.fascia, seg))));
     campi.push(el("div", { class: "campo" }, el("label", { for: "cella-segmento" }, "Segmento"), segSelect));
   }
 

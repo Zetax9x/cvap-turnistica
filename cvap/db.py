@@ -12,7 +12,7 @@ from datetime import date, timedelta
 from . import db_festivi_disponibili
 from .calendario import lunedi
 from .festivita import FESTIVITA_PREDEFINITE
-from .modello import (EXTRA, META, Assegnazione, Divieto, Fabbisogno, Persona, Postazione, fascia_extra,
+from .modello import (EXTRA, Assegnazione, Divieto, Fabbisogno, Persona, Postazione, fascia_extra, meta_di,
                       segmento_extra, si_sovrappongono)
 from .vincoli import ORE_MAX_SETTIMANA
 
@@ -624,13 +624,13 @@ def _inserisci(conn: sqlite3.Connection, a: Assegnazione) -> int:
             continue
         if get_assegnazione(conn, r["id"]) is not None:
             continue
-        if a.segmento in META.get(segmento, ()):
-            restante = next(s for s in META[segmento] if s != a.segmento)
+        if a.segmento in meta_di(a.fascia, segmento):
+            restante = next(s for s in meta_di(a.fascia, segmento) if s != a.segmento)
             conn.execute("UPDATE assegnazioni SET segmento = ? WHERE id = ?", (restante, r["id"]))
         else:
             conn.execute("DELETE FROM assegnazioni WHERE id = ?", (r["id"],))
         coperti.add(segmento)
-        if segmento == a.segmento or a.segmento in META.get(segmento, ()):
+        if segmento == a.segmento or a.segmento in meta_di(a.fascia, segmento):
             break
     cur = conn.execute(
         "INSERT INTO assegnazioni(data, postazione, fascia, segmento, ruolo, persona_id, origine) "

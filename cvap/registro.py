@@ -107,6 +107,7 @@ _ETICHETTE = {
 _ORARI = {("giorno", "intero"): "8–20", ("giorno", "mattina"): "8–14", ("giorno", "pomeriggio"): "14–20",
           ("notte", "intero"): "20–8", ("giorno", "standby"): "7–19", ("giorno", "standby_mattina"): "7–14",
           ("giorno", "standby_pomeriggio"): "14–19", ("notte", "standby"): "19–7",
+          ("notte", "standby_sera"): "19–23", ("notte", "standby_notte"): "23–7",
           ("giorno", "prog_mattina"): "7–14", ("giorno", "prog_pomeriggio"): "14–20"}
 _DATA_ISO = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 

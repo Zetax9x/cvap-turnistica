@@ -11,7 +11,8 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from itertools import combinations
 
-from .modello import (ORE_RIPOSO_MIN, PARTI_TURNO, Assegnazione, Fabbisogno, Persona, orario, ore_extra,
+from .modello import (INTERO_DI, ORE_RIPOSO_MIN, PARTI_TURNO, PRIME_META, SECONDE_META, Assegnazione, Fabbisogno,
+                      Persona, orario, ore_extra,
                       parti_turno, per_segmento, si_sovrappongono, turno_ammesso)
 from .slot import unita_da_coprire
 
@@ -154,10 +155,10 @@ def _eccessi(giorni, assegnazioni, postazioni, fabbisogno):
 
 def _posti_occupati(gruppo: list[Assegnazione]) -> int:
     """Quanti posti singoli servono per ospitare i turni (le due metà di un turno ne occupano uno)."""
-    interi = sum(1 for a in gruppo if a.segmento in ("intero", "standby"))
-    mattine = sum(1 for a in gruppo if a.segmento.endswith("mattina"))
-    pomeriggi = sum(1 for a in gruppo if a.segmento.endswith("pomeriggio"))
-    return interi + max(mattine, pomeriggi)
+    interi = sum(1 for a in gruppo if a.segmento not in INTERO_DI)
+    prime = sum(1 for a in gruppo if a.segmento in PRIME_META)
+    seconde = sum(1 for a in gruppo if a.segmento in SECONDE_META)
+    return interi + max(prime, seconde)
 
 
 def _qualifiche(assegnazioni, persone):

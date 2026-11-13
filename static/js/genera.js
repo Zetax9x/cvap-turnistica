@@ -28,7 +28,8 @@ const TURNI_VOLONTARI = [
 // in Standby (se richiesto in settimana) orari diversi; i Programmati non si offrono ai volontari
 const TURNI_VOLONTARI_RICHIESTA = {
   [STANDBY]: [["giorno", "standby", "Giorno 7–19"], ["giorno", "standby_mattina", "Mattina 7–14"],
-    ["giorno", "standby_pomeriggio", "Pomeriggio 14–19"], ["notte", "standby", "Notte 19–7"]],
+    ["giorno", "standby_pomeriggio", "Pomeriggio 14–19"], ["notte", "standby", "Notte 19–7"],
+    ["notte", "standby_sera", "Sera 19–23"], ["notte", "standby_notte", "Notte 23–7"]],
 };
 
 // servizi: null = non ancora chiesto se servono Standby, Programmati o Assistenze; true/false = risposta

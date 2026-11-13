@@ -12,7 +12,8 @@ const PLURALE = { autista: "Autisti", soccorritore: "Soccorritori" };
 // turni prenotabili: [fascia, segmento]
 const TURNI = {
   normale: [["giorno", "intero"], ["giorno", "mattina"], ["giorno", "pomeriggio"], ["notte", "intero"]],
-  [STANDBY]: [["giorno", "standby"], ["giorno", "standby_mattina"], ["giorno", "standby_pomeriggio"], ["notte", "standby"]],
+  [STANDBY]: [["giorno", "standby"], ["giorno", "standby_mattina"], ["giorno", "standby_pomeriggio"], ["notte", "standby"],
+    ["notte", "standby_sera"], ["notte", "standby_notte"]],
   [PROGRAMMATI]: [["giorno", "prog_mattina"], ["giorno", "prog_pomeriggio"]],
 };
 const turniDi = (postazione) => TURNI[postazione] || TURNI.normale;
