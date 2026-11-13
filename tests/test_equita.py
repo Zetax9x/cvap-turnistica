@@ -448,3 +448,24 @@ def test_api_equita_senza_festivita_attive(ambiente):
     dati = client.get("/api/statistiche/equita").json()
     assert not [r for r in dati["rotazioni"] if r["chiave"].startswith("festivita_")]
     assert all(r["festivita"] is False for r in dati["rotazioni"])
+
+
+def test_rotazioni_a_meta_mostrano_anche_l_altro_valore():
+    out = equita(settimane_note(), PERSONE)
+    gn = out["ascoli_giorno_notte"]
+    assert (gn["fatti"], gn["quota"], gn["altro"]) == ("Giorni ad Ascoli", "Metà dei turni", "Notti ad Ascoli")
+    d = per_id(gn)
+    # Carla: 0 giorni, metà 0,5, 1 notte
+    assert (d[3]["fatti"], d[3]["quota"], d[3]["altro"]) == (0, 0.5, 1)
+    assert d[1]["altro"] is None  # non partecipa
+    assert out["sedi"]["altro"] == "Turni a Venarotta"
+    assert out["giorno_notte"]["altro"] == "Ore di notte"
+    # le rotazioni a quota non hanno un secondo valore
+    assert out["standby"]["altro"] is None and per_id(out["standby"])[1]["altro"] is None
+
+
+def test_ogni_rotazione_spiega_come_si_legge():
+    out = equita(settimane_note(), PERSONE)
+    assert all(r["spiegazione"] for r in out.values())
+    assert "settimane A" in out["standby"]["spiegazione"]
+    assert "settimane con Ascoli" in out["ascoli"]["spiegazione"]

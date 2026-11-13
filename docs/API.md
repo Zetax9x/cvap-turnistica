@@ -658,10 +658,11 @@ Risposta: `{settimane: ["AAAA-MM-GG"], rotazioni: [...]}`; ogni rotazione, nell'
 sab_giorno, sab_notte, dom_giorno, dom_notte, standby, standby_giorno_notte, programmati, assistenze, ascoli, ascoli_giorno_notte,
 sedi`,
 poi `festivita_<id>` per ogni festività attiva (in ordine di id):
-`{chiave, nome, unita ("ore"|"turni"), sopra, sotto (frasi per scarto positivo/negativo), fatti, quota (intestazioni),
+`{chiave, nome, unita ("ore"|"turni"), sopra, sotto (frasi per scarto positivo/negativo), fatti, quota, altro (intestazioni; `altro`: solo per le rotazioni
+a metà, l'altro valore del confronto, es. "Turni a Venarotta", altrimenti `null`), spiegazione (come si legge),
 festivita (true per le festività), piu_avanti: {persona_id, nome, scarto}|null, piu_indietro: {...}|null,
 differenza (scarto massimo − minimo), tendenza: "si_riduce"|"aumenta"|"stabile"|null, andamento: [{settimana, differenza}], dipendenti: [{persona_id, nome,
-attivo, partecipa, motivo, fatti, quota, scarto}], con_dati}`. `motivo`: per le festività, perché non entra nel conto
+attivo, partecipa, motivo, fatti, quota, altro, scarto}], con_dati}`. `motivo`: per le festività, perché non entra nel conto
 ("non lavora più, N turni nello storico"), altrimenti `null`. `con_dati`: `false` per una festività che nessun
 dipendente attivo ha lavorato negli ultimi 5 anni (la pagina la nasconde e scrive "N festività senza dati nel
 periodo"); sempre `true` per le altre rotazioni.

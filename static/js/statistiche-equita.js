@@ -401,6 +401,7 @@ function renderDettaglio(r) {
   const esclusi = r.dipendenti.filter((d) => !d.partecipa);
   const scala = Math.max(...validi.map((d) => Math.abs(d.scarto)), 0) || 1;
   const contenuto = [];
+  if (r.spiegazione) contenuto.push(el("p", { class: "eq-spiegazione" }, r.spiegazione));
   if (validi.length) {
     contenuto.push(el("table", { class: "tabella tabella-equita-dettaglio" },
       el("caption", {}, `${r.nome}: dettaglio per dipendente`),
@@ -408,7 +409,8 @@ function renderDettaglio(r) {
         el("th", { scope: "col" }, "Dipendente"),
         el("th", { scope: "col", class: "num" }, r.fatti),
         el("th", { scope: "col", class: "num" }, r.quota),
-        el("th", { scope: "col", class: "num" }, "Differenza"),
+        r.altro ? el("th", { scope: "col", class: "num" }, r.altro) : null,
+        el("th", { scope: "col", class: "num" }, "Scarto"),
         el("th", { scope: "col" }, "Rispetto alla sua parte"),
         conAndamento ? el("th", { scope: "col", class: "num" }, "4 settimane fa") : null,
         conAndamento ? el("th", { scope: "col" }, "Andamento") : null)),
@@ -416,6 +418,7 @@ function renderDettaglio(r) {
         el("th", { scope: "row" }, d.nome, d.attivo ? null : el("span", { class: "muted" }, " (non attivo)")),
         el("td", { class: "num" }, formatOre(d.fatti)),
         el("td", { class: "num" }, formatOre(d.quota)),
+        r.altro ? el("td", { class: "num" }, d.altro === null ? "—" : formatOre(d.altro)) : null,
         el("td", { class: `num ${d.scarto > 0 ? "eq-sopra" : d.scarto < 0 ? "eq-sotto" : ""}` }, unita(r, d.scarto)),
         el("td", {}, barra(r, d, scala)),
         conAndamento ? el("td", { class: "num muted" }, d.scarto_prima === null ? "—" : unita(r, d.scarto_prima)) : null,

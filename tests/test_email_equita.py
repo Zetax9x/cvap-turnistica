@@ -140,3 +140,13 @@ def test_nel_pdf_le_statistiche_non_hanno_i_volontari(client, postino):
     genera_e_conferma(client)
     statistiche = leggi_pdf(aspetta(postino, 1)[0]).split("Statistiche dei turni")[1].split("Statistiche delle indisponibilità")[0]
     assert "Autista 1" in statistiche and "Dario Tosi" not in statistiche and "Volontario" not in statistiche
+
+
+def test_nel_riassunto_ogni_estremo_ha_la_frase_della_sua_riga():
+    from cvap.email_turni import _riassunto_equita
+    sedi = {"chiave": "sedi", "nome": "Acquasanta e Venarotta", "unita": "turni", "differenza": 4,
+            "sopra": "ha fatto più turni ad Acquasanta", "sotto": "ha fatto più turni a Venarotta",
+            "piu_avanti": {"nome": "Anna", "scarto": 2}, "piu_indietro": {"nome": "Bruno", "scarto": -2}}
+    righe = _riassunto_equita({"report": {"scoperti": []}}, {"rotazioni": [sedi]})
+    assert righe[1] == ("Acquasanta e Venarotta: distanza 4 turni. Anna +2: ha fatto più turni ad Acquasanta; "
+                        "Bruno -2: ha fatto più turni a Venarotta.")

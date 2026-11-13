@@ -93,31 +93,38 @@ def _equita(quadro: dict, assenze: dict[int, str]) -> list:
         return out + [_p("Nessuna settimana confermata con turni generati.", _TESTO)]
     out.append(_p(
         f"Calcolata su {len(settimane)} {'settimana' if len(settimane) == 1 else 'settimane'} confermate con turni generati"
-        + (f", dal {et._dmy(settimane[0])}" if settimane else "") + ". Scarto positivo: ha fatto più della sua parte; "
-        "negativo: meno. È lo stesso calcolo che usa il generatore. Nelle note i giorni di ferie e di malattia inseriti nel "
+        + (f", dal {et._dmy(settimane[0])}" if settimane else "") + ". Per ogni dipendente lo scarto è quanto ha fatto in "
+        "più (positivo) o in meno (negativo) della sua parte; la distanza è lo scarto di chi ha fatto di più meno quello "
+        "di chi ha fatto di meno. Sotto ogni titolo, come si legge. È lo stesso calcolo che usa il generatore. Nelle note i giorni di ferie e di malattia inseriti nel "
         "periodo. Ore lavorate: come nel generatore, le settimane con ferie o malattia (anche di un solo giorno) non "
         "cambiano lo scarto, così chi è stato assente non risulta indietro; nelle ore fatte ogni giorno di assenza conta "
         "6 ore e le settimane di assenza intera non ci sono. Andamento: lo scarto di oggi rispetto a 4 settimane generate fa.",
         _NOTA))
     for rot in rotazioni:
         unita = "turno" if rot.get("differenza") == 1 and rot.get("unita") == "turni" else rot.get("unita", "turni")
-        riassunto = [f"Differenza tra chi è più avanti e chi è più indietro: <b>{et._num(rot.get('differenza'))} {unita}</b>"]
+        riassunto = [f"Distanza tra chi ha fatto di più e chi di meno: <b>{et._num(rot.get('differenza'))} {unita}</b>"]
         if rot.get("tendenza"):
             riassunto.append(et._TENDENZA.get(rot["tendenza"], rot["tendenza"]))
-        estremi = [f"{nome} {escape(x['nome'])} ({et._scarto(x['scarto'])})"
-                   for nome, x in (("più avanti", rot.get("piu_avanti")), ("più indietro", rot.get("piu_indietro"))) if x]
+        estremi = [f"{escape(x['nome'])} {et._scarto(x['scarto'])}: {escape(et.frase_scarto(rot, x['scarto']))}"
+                   for x in (rot.get("piu_avanti"), rot.get("piu_indietro")) if x]
+        altro = rot.get("altro")
         righe = []
         for d in rot.get("dipendenti", []):
             nota = "; ".join(x for x in ("" if d["partecipa"] else (d.get("motivo") or "non partecipa"),
                                          assenze.get(d["persona_id"], "")) if x)
             righe.append([Markup(f"<b>{escape(d['nome'])}</b>" + ("" if d.get("attivo", True) else " <i>(non attivo)</i>")),
-                          et._num(d["fatti"]), et._num(d["quota"]), _scarto(d["scarto"]),
+                          et._num(d["fatti"]), et._num(d["quota"]),
+                          *([et._num(d.get("altro"))] if altro else []), _scarto(d["scarto"]),
                           et._scarto(d.get("scarto_prima")), _ANDAMENTO.get(d.get("andamento"), "—"), nota])
+        intestazioni = ["Dipendente", rot.get("fatti", "Fatti"), rot.get("quota", "La sua parte"),
+                        *([altro] if altro else []), "Scarto", "4 settimane fa", "Andamento", "Note"]
+        larghezze = [16, 9, 9, 9, 7, 8, 15, 27] if altro else [18, 10, 10, 8, 9, 17, 28]
+        numeriche = set(range(1, 6 if altro else 5))
         out.append(KeepTogether([
             Paragraph(escape(rot["nome"]), _H3),
+            *([_p(escape(rot["spiegazione"]), _NOTA)] if rot.get("spiegazione") else []),
             _p(" · ".join(riassunto) + (f"<br/>{'; '.join(estremi)}" if estremi else ""), _TESTO), Spacer(1, 3),
-            _tabella(["Dipendente", rot.get("fatti", "Fatti"), rot.get("quota", "La sua parte"), "Scarto", "4 settimane fa",
-                      "Andamento", "Note"], righe, [18, 10, 10, 8, 9, 17, 28], {1, 2, 3, 4}),
+            _tabella(intestazioni, righe, larghezze, numeriche),
             _p(f"Scarto positivo: {escape(rot.get('sopra', ''))}; negativo: {escape(rot.get('sotto', ''))}.", _NOTA)]))
     return out
 

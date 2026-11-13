@@ -53,10 +53,15 @@ class Rotazione:
     festivita: bool = False
     # festività: turni di una persona nello storico (per mostrare gli ex dipendenti esclusi e il motivo)
     turni_storico: Callable[[int], int] | None = None
+    # rotazioni "a metà": l'altro valore del confronto (es. turni a Venarotta), mostrato dopo la metà
+    altro: Callable[[StoricoPersona], int] | None = None
+    altro_titolo: str | None = None
+    spiegazione: str = ""                      # come si legge la riga, per la pagina, il PDF e l'email
 
 
 def a_quota(chiave: str, nome: str, contatore: Callable[[StoricoPersona], int],
-            esposizione: Callable[[StoricoPersona], int], postazioni: tuple[str, ...] = ()) -> Rotazione:
+            esposizione: Callable[[StoricoPersona], int], postazioni: tuple[str, ...] = (),
+            spiegazione: str = "") -> Rotazione:
     """Rotazione con il meccanismo del debito del generatore: quota = tasso medio del gruppo x esposizione.
 
     Stessa formula di `solver._Modello._rotazioni` e `_weekend` (tasso = turni di tutti / esposizione di tutti;
@@ -67,17 +72,19 @@ def a_quota(chiave: str, nome: str, contatore: Callable[[StoricoPersona], int],
         tasso = sum(contatore(st) for st in gruppo.values()) / esposizione_tot if esposizione_tot else 0.0
         return {pid: (contatore(st), tasso * esposizione(st)) for pid, st in gruppo.items()}
     return Rotazione(chiave, nome, "turni", calcola, partecipa=lambda st: esposizione(st) > 0,
-                     postazioni=postazioni)
+                     postazioni=postazioni, spiegazione=spiegazione)
 
 
 def a_meta(chiave: str, nome: str, unita: str, primo: Callable[[StoricoPersona], int],
            secondo: Callable[[StoricoPersona], int], sopra: str, sotto: str, fatti: str, quota: str,
-           postazioni: tuple[str, ...] = (), fasce: bool = False) -> Rotazione:
+           altro_titolo: str, postazioni: tuple[str, ...] = (), fasce: bool = False,
+           spiegazione: str = "") -> Rotazione:
     """Rotazione "tanti dell'uno quanti dell'altro" (giorni/notti, sedi): la parte attesa è metà del totale."""
     def calcola(gruppo: dict[int, StoricoPersona]) -> dict[int, tuple[float, float]]:
         return {pid: (primo(st), (primo(st) + secondo(st)) / 2) for pid, st in gruppo.items()}
     return Rotazione(chiave, nome, unita, calcola, partecipa=lambda st: primo(st) + secondo(st) > 0,
-                     sopra=sopra, sotto=sotto, fatti=fatti, quota=quota, postazioni=postazioni, fasce=fasce)
+                     sopra=sopra, sotto=sotto, fatti=fatti, quota=quota, postazioni=postazioni, fasce=fasce,
+                     altro=secondo, altro_titolo=altro_titolo, spiegazione=spiegazione)
 
 
 def _ore(gruppo: dict[int, StoricoPersona]) -> dict[int, tuple[float, float]]:
@@ -86,15 +93,23 @@ def _ore(gruppo: dict[int, StoricoPersona]) -> dict[int, tuple[float, float]]:
     return {pid: (st.ore_contate, st.ore_contate - (st.saldo_ore - medio)) for pid, st in gruppo.items()}
 
 
+def _parte(turni: str, settimane: str) -> str:
+    """Spiegazione delle rotazioni a quota: come si calcola la sua parte."""
+    return (f"Turni fatti: {turni}. La sua parte: i turni di tutti divisi per le {settimane} di tutti, per le sue "
+            f"{settimane}; chi ha lavorato meno settimane ha una parte più piccola. Scarto = turni fatti − la sua parte.")
+
+
 def _weekend(chiave: str, nome: str) -> Rotazione:
     # `solver._weekend`: esposizione = settimane lavorate, su tutti i dipendenti
-    return a_quota(chiave, nome, contatore=lambda st: st.weekend[chiave], esposizione=lambda st: st.settimane)
+    return a_quota(chiave, nome, contatore=lambda st: st.weekend[chiave], esposizione=lambda st: st.settimane,
+                   spiegazione=_parte(f"i turni di {nome.lower()}", "settimane lavorate"))
 
 
-def _richiesta(chiave: str, postazione: str, esposizione: Callable[[StoricoPersona], int]) -> Rotazione:
+def _richiesta(chiave: str, postazione: str, esposizione: Callable[[StoricoPersona], int], turni: str,
+               settimane: str) -> Rotazione:
     # `solver.ROTAZIONI` (_rotazione_postazione): settimane A per Standby e Programmati, tutte per Extra
     return a_quota(chiave, postazione, contatore=lambda st: st.richieste[postazione],
-                   esposizione=esposizione, postazioni=(postazione,))
+                   esposizione=esposizione, postazioni=(postazione,), spiegazione=_parte(turni, settimane))
 
 
 ACQUASANTA, VENAROTTA = SEDI_ALTERNATE
@@ -103,33 +118,53 @@ ACQUASANTA, VENAROTTA = SEDI_ALTERNATE
 ROTAZIONI: tuple[Rotazione, ...] = (
     Rotazione("ore", "Ore lavorate", "ore", _ore, partecipa=lambda st: st.settimane > 0,
               sopra="ha lavorato più ore della media", sotto="ha lavorato meno ore della media",
-              fatti="Ore fatte", quota="Ore attese"),
+              fatti="Ore fatte", quota="Ore attese",
+              spiegazione="Ore fatte: ore lavorate più 6 ore per ogni giorno di ferie o malattia. Ore attese: le ore "
+                          "che lo porterebbero in pari con la media del gruppo. Scarto = ore fatte − ore attese. Come nel "
+                          "generatore, le settimane con ferie o malattia non cambiano lo scarto."),
     a_meta("giorno_notte", "Giorni e notti", "ore", lambda st: st.ore_giorno, lambda st: st.ore_notte,
            sopra="ha fatto più giorni che notti", sotto="ha fatto più notti che giorni",
-           fatti="Ore di giorno", quota="Metà delle ore"),
+           fatti="Ore di giorno", quota="Metà delle ore", altro_titolo="Ore di notte",
+           spiegazione="Ore di giorno e ore di notte lavorate; in pari quando sono metà e metà. "
+                       "Scarto = ore di giorno − metà delle ore: positivo, più giorni; negativo, più notti."),
     _weekend("sab_giorno", "Sabato giorno"),
     _weekend("sab_notte", "Sabato notte"),
     _weekend("dom_giorno", "Domenica giorno"),
     _weekend("dom_notte", "Domenica notte"),
-    _richiesta("standby", STANDBY, lambda st: st.settimane_a),
+    _richiesta("standby", STANDBY, lambda st: st.settimane_a, "i turni di Standby (anche mezzi)",
+               "settimane A (senza Ascoli)"),
     # `solver._standby_giorno_notte`
     a_meta("standby_giorno_notte", "Standby: giorni e notti", "turni",
            lambda st: st.standby_giorno, lambda st: st.standby_notte,
            sopra="in Standby ha fatto più giorni che notti", sotto="in Standby ha fatto più notti che giorni",
-           fatti="Giorni di Standby", quota="Metà dei turni", postazioni=(STANDBY,), fasce=True),
-    _richiesta("programmati", PROGRAMMATI, lambda st: st.settimane_a),
-    _richiesta("assistenze", EXTRA, lambda st: st.settimane),
+           fatti="Giorni di Standby", quota="Metà dei turni", altro_titolo="Notti di Standby",
+           postazioni=(STANDBY,), fasce=True,
+           spiegazione="Turni di Standby di giorno e di notte (anche mezzi); in pari quando sono metà e metà. "
+                       "Scarto = giorni − metà dei turni: positivo, più giorni; negativo, più notti. "
+                       "Non entra chi non può fare i giorni o le notti di Standby."),
+    _richiesta("programmati", PROGRAMMATI, lambda st: st.settimane_a, "i turni di Programmati",
+               "settimane A (senza Ascoli)"),
+    _richiesta("assistenze", EXTRA, lambda st: st.settimane,
+               "i turni di Assistenze ed Extra (ognuno conta 1, qualunque sia la durata)", "settimane lavorate"),
     # `solver.ROTAZIONI`: esposizione = settimane con Ascoli
     a_quota("ascoli", "Ascoli", contatore=lambda st: st.ascoli, esposizione=lambda st: st.settimane_ascoli,
-            postazioni=(ASCOLI,)),
+            postazioni=(ASCOLI,), spiegazione=_parte("i turni ad Ascoli (anche mezzi)", "settimane con Ascoli")),
     a_meta("ascoli_giorno_notte", "Ascoli: giorni e notti", "turni",
            lambda st: st.ascoli_giorno, lambda st: st.ascoli_notte,
            sopra="ad Ascoli ha fatto più giorni che notti", sotto="ad Ascoli ha fatto più notti che giorni",
-           fatti="Giorni ad Ascoli", quota="Metà dei turni", postazioni=(ASCOLI,), fasce=True),
+           fatti="Giorni ad Ascoli", quota="Metà dei turni", altro_titolo="Notti ad Ascoli",
+           postazioni=(ASCOLI,), fasce=True,
+           spiegazione="Turni ad Ascoli di giorno e di notte (anche mezzi); in pari quando sono metà e metà. "
+                       "Scarto = giorni − metà dei turni: positivo, più giorni; negativo, più notti. "
+                       "Non entra chi non può fare i giorni o le notti ad Ascoli."),
     a_meta("sedi", "Acquasanta e Venarotta", "turni",
            lambda st: st.sedi[ACQUASANTA], lambda st: st.sedi[VENAROTTA],
            sopra="ha fatto più turni ad Acquasanta", sotto="ha fatto più turni a Venarotta",
-           fatti="Turni ad Acquasanta", quota="Metà dei turni", postazioni=SEDI_ALTERNATE),
+           fatti="Turni ad Acquasanta", quota="Metà dei turni", altro_titolo="Turni a Venarotta",
+           postazioni=SEDI_ALTERNATE,
+           spiegazione="Turni ad Acquasanta e a Venarotta (anche mezzi); in pari quando sono metà e metà. "
+                       "Scarto = turni ad Acquasanta − metà dei turni: positivo, più Acquasanta; negativo, più "
+                       "Venarotta."),
 )
 
 
@@ -146,7 +181,10 @@ def rotazione_festivita(festivita: Mapping, conti: Mapping[int, ContoFestivita])
                 for pid, d in debiti(conti, list(gruppo)).items()}
     return Rotazione(f"festivita_{festivita['id']}", festivita["nome"], "turni", calcola,
                      partecipa=lambda st: True, fatti=f"Turni negli ultimi {ANNI_FESTIVI} anni", festivita=True,
-                     turni_storico=lambda pid: conti.get(pid, vuoto).turni)
+                     turni_storico=lambda pid: conti.get(pid, vuoto).turni,
+                     spiegazione=f"Turni lavorati in questa festività negli ultimi {ANNI_FESTIVI} anni. La sua parte: "
+                                 "come nel generatore, in proporzione agli anni in servizio in quella festività. "
+                                 "Scarto = turni fatti − la sua parte.")
 
 
 def _andamento_persona(scarto: float | None, prima: float | None) -> str | None:
@@ -253,7 +291,8 @@ def _mostrati(rot: Rotazione, scelti: list[dict], persone: Sequence[dict]) -> li
 
 
 def _dettaglio(rot: Rotazione, persone: list[dict], valori: dict[int, tuple[float, float]],
-               valori_prima: dict[int, tuple[float, float]] | None = None) -> list[dict]:
+               valori_prima: dict[int, tuple[float, float]] | None = None,
+               storico: Mapping[int, StoricoPersona] | None = None) -> list[dict]:
     """`valori_prima`: gli stessi valori SETTIMANE_TENDENZA settimane generate fa, per l'andamento di ognuno."""
     out = []
     for p in persone:
@@ -266,6 +305,8 @@ def _dettaglio(rot: Rotazione, persone: list[dict], valori: dict[int, tuple[floa
                     "partecipa": fatti_quota is not None,
                     "motivo": None if fatti_quota is not None else _motivo(rot, p),
                     "fatti": None if f is None else _r(f), "quota": None if q is None else _r(q),
+                    "altro": (_r(rot.altro(storico[p["id"]])) if rot.altro and f is not None and storico
+                              and p["id"] in storico else None),
                     "scarto": scarto, "scarto_prima": scarto_prima,
                     "andamento": _andamento_persona(scarto, scarto_prima)})
     # chi partecipa per primo, dallo scarto più alto; a pari scarto in ordine di nome (già ordinati)
@@ -286,7 +327,7 @@ def equita(settimane: Sequence[tuple[date, SettimanaPassata]], persone: Sequence
     `divieti`: per id, tutti i divieti (anche di fascia), per le rotazioni giorno/notte.
     Restituisce `{chiave: {nome, unita, sopra, sotto, fatti, quota, festivita, con_dati, piu_avanti, piu_indietro,
     differenza, tendenza, andamento: [{settimana, differenza}], dipendenti: [{persona_id, nome, attivo, partecipa,
-    motivo, fatti, quota, scarto, scarto_prima, andamento}]}}` nell'ordine del registro (`scarto_prima`: lo scarto
+    motivo, fatti, quota, altro, scarto, scarto_prima, andamento}]}}` nell'ordine del registro (`scarto_prima`: lo scarto
     SETTIMANE_TENDENZA settimane generate fa; `andamento`: si_avvicina | si_allontana | stabile | None). `con_dati`: False per una festività senza turni né
     quota per nessuno (la pagina la nasconde); sempre True per le altre rotazioni."""
     vietate = vietate or {}
@@ -319,13 +360,15 @@ def equita(settimane: Sequence[tuple[date, SettimanaPassata]], persone: Sequence
         andamento = [] if rot.festivita else [
             {"settimana": inizio.isoformat(), "differenza": _differenza(_valori(rot, st, ids, esclusi))}
             for inizio, st in storici]
-        valori = _valori(rot, storici[-1][1] if storici else {}, [p["id"] for p in mostrati], esclusi)
+        finale = storici[-1][1] if storici else {}
+        valori = _valori(rot, finale, [p["id"] for p in mostrati], esclusi)
         valori_prima = None if rot.festivita or storico_prima is None else _valori(
             rot, storico_prima, [p["id"] for p in mostrati], esclusi)
-        dettaglio = _dettaglio(rot, mostrati, valori, valori_prima)
+        dettaglio = _dettaglio(rot, mostrati, valori, valori_prima, finale)
         out[rot.chiave] = {
             "nome": rot.nome, "unita": rot.unita, "sopra": rot.sopra, "sotto": rot.sotto,
-            "fatti": rot.fatti, "quota": rot.quota, "festivita": rot.festivita,
+            "fatti": rot.fatti, "quota": rot.quota, "altro": rot.altro_titolo, "spiegazione": rot.spiegazione,
+            "festivita": rot.festivita,
             "con_dati": not rot.festivita or any(f or q for f, q in valori.values()),
             "piu_avanti": _estremo(dettaglio, primo=True), "piu_indietro": _estremo(dettaglio, primo=False),
             "differenza": _differenza(valori), "tendenza": _tendenza([p["differenza"] for p in andamento]),

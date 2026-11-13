@@ -611,6 +611,15 @@ def note_assenze(ferie: list[dict], dal: date, al: date) -> dict[int, str]:
             for pid, g in giorni.items()}
 
 
+def frase_scarto(rot: dict, scarto: float | None) -> str:
+    """La frase di uno scarto nella sua riga (es. "ha fatto più turni a Venarotta"); "in pari" se è zero."""
+    if not scarto:
+        return "in pari"
+    if scarto > 0:
+        return rot.get("sopra") or "ha fatto più della sua parte"
+    return rot.get("sotto") or "ha fatto meno della sua parte"
+
+
 def _riassunto_equita(s: dict, equita: dict) -> list[str]:
     """Le poche righe del corpo dell'email: posti scoperti e i criteri con la differenza più alta."""
     scoperti = len(((s.get("report") or {}).get("scoperti")) or [])
@@ -621,9 +630,10 @@ def _riassunto_equita(s: dict, equita: dict) -> list[str]:
     for unita, quante in (("ore", 2), ("turni", 3)):
         scelte = sorted((r for r in rotazioni if r.get("unita") == unita), key=lambda r: -(r.get("differenza") or 0))[:quante]
         for r in scelte:
-            righe.append(f"{r['nome']}: differenza {_num(r['differenza'])} {unita} "
-                         f"(più avanti {r['piu_avanti']['nome']} {_scarto(r['piu_avanti']['scarto'])}, "
-                         f"più indietro {r['piu_indietro']['nome']} {_scarto(r['piu_indietro']['scarto'])}).")
+            su, giu = r["piu_avanti"], r["piu_indietro"]
+            righe.append(f"{r['nome']}: distanza {_num(r['differenza'])} {unita}. "
+                         f"{su['nome']} {_scarto(su['scarto'])}: {frase_scarto(r, su['scarto'])}; "
+                         f"{giu['nome']} {_scarto(giu['scarto'])}: {frase_scarto(r, giu['scarto'])}.")
     return righe
 
 
@@ -643,7 +653,8 @@ def componi_equita(s: dict, indirizzo: str, nome: str | None, *, equita: dict, s
 <p style="margin:0;color:{VERDE};font-weight:bold;font-size:14px;">Croce Verde Ascoli Piceno · Turnistica</p>
 <h1 style="font-size:22px;margin:6px 0 4px;">Equità dei turni dopo la settimana {_e(periodo)}</h1>
 <p style="font-size:15px;margin:12px 0;">{saluto} settimana è stata confermata. Il resoconto completo dell'equità è nel
-<b>PDF allegato</b>; qui le differenze più grandi:</p>
+<b>PDF allegato</b>; qui le distanze più grandi. Lo scarto di ognuno è quanto ha fatto in più (+) o in meno (−) della
+sua parte; la distanza è lo scarto di chi ha fatto di più meno quello di chi ha fatto di meno.</p>
 <ul style="font-size:14px;margin:0 0 12px;padding-left:20px;">{"".join(f"<li>{_e(r)}</li>" for r in righe)}</ul>
 <p style="margin:20px 0 0;font-size:12px;color:#4d5868;">Email inviata in automatico dal programma dei turni a ogni settimana confermata.
 Si cambia o si disattiva in Impostazioni → Email dell'equità.</p>
