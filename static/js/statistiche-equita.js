@@ -1,5 +1,5 @@
 // Scheda "Equità" delle Statistiche: per ogni rotazione (ore, giorni/notti, weekend, Standby, ...) chi ha fatto
-// più e chi meno della sua parte, quanto sono lontani, l'andamento settimana per settimana (grafico SVG fatto a
+// più e chi meno del previsto, quanto sono lontani, l'andamento settimana per settimana (grafico SVG fatto a
 // mano) e, cliccando la riga, il dettaglio per dipendente. Dati: GET /api/statistiche/equita (cvap/equita.py).
 
 import { api } from "./api.js";
@@ -48,7 +48,7 @@ function render() {
   root.append(renderSchede("equita"), el("header", { class: "view-header" },
     el("div", { class: "view-header-riga" }, el("h1", {}, titoloVersione("Equità dei turni")), bottoneStampa("equità dei turni")),
     el("p", { class: "muted" },
-      "Per ogni tipo di turno: chi ha fatto più della sua parte e chi meno, quanto sono lontani tra loro e se la "
+      "Per ogni tipo di turno: chi ha fatto più del previsto e chi meno, quanto sono lontani tra loro e se la "
       + "distanza si sta riducendo. La parte di ognuno tiene conto delle settimane in cui ha lavorato. "
       + "Fai clic su una riga per vedere tutti i dipendenti.")));
   root.append(renderPeriodo(), el("p", { class: "solo-stampa" }, `Periodo: ${descriviPeriodo()}`));
@@ -120,7 +120,7 @@ function renderConfronti(c) {
       + `(${formatOre(w.media)}% dei weekend) per le settimane in cui c'era; le settimane tutte in ferie o malattia non contano. `
       + `Distanza tra chi ne ha avuti di più e chi di meno: ${formatOre(w.differenza)}.`),
     tabellaSemplice("Weekend interi liberi per dipendente",
-      [["Dipendente"], ["Weekend liberi", 1], ["Settimane", 1], ["La sua parte", 1], ["Differenza", 1]],
+      [["Dipendente"], ["Weekend liberi", 1], ["Settimane", 1], ["Weekend liberi attesi", 1], ["Scarto", 1]],
       w.dipendenti.map((d) => el("tr", {}, el("th", { scope: "row" }, nome(d)), el("td", { class: "num" }, String(d.liberi)),
         el("td", { class: "num" }, String(d.settimane)), el("td", { class: "num" }, formatOre(d.quota)),
         el("td", { class: `num ${d.scarto > 0 ? "eq-sopra" : d.scarto < 0 ? "eq-sotto" : ""}` }, formatSaldo(d.scarto))))),
@@ -369,7 +369,7 @@ function apriGrafico(r) {
   d.append(
     el("div", { class: "dialog-head" },
       el("h2", { id: "eq-grafico-titolo", class: "dialog-title" }, `Andamento – ${r.nome}`),
-      el("p", { class: "muted" }, "Distanza tra chi ha fatto più e chi meno della sua parte, alla fine di ogni settimana "
+      el("p", { class: "muted" }, "Distanza tra chi ha fatto più e chi meno del previsto, alla fine di ogni settimana "
         + "generata. Più è bassa, più la rotazione è equa."),
       el("button", { type: "button", class: "dialog-x", "aria-label": "Chiudi", onclick: () => d.close() }, "×")),
     el("div", { class: "eq-grafico-contenitore" }, graficoGrande(r, mostraValore)),
@@ -385,8 +385,8 @@ function apriGrafico(r) {
 // ---------- dettaglio per dipendente ----------
 
 const ANDAMENTI = {
-  si_avvicina: ["Si avvicina alla sua parte", "↓", "eq-tend-giu"],
-  si_allontana: ["Si allontana dalla sua parte", "↑", "eq-tend-su"],
+  si_avvicina: ["Si avvicina al valore atteso", "↓", "eq-tend-giu"],
+  si_allontana: ["Si allontana dal valore atteso", "↑", "eq-tend-su"],
   stabile: ["Stabile", "→", "eq-tend-pari"],
 };
 
@@ -401,22 +401,24 @@ function renderDettaglio(r) {
   const esclusi = r.dipendenti.filter((d) => !d.partecipa);
   const scala = Math.max(...validi.map((d) => Math.abs(d.scarto)), 0) || 1;
   const contenuto = [];
-  if (r.spiegazione) contenuto.push(el("p", { class: "eq-spiegazione" }, r.spiegazione));
+  if (r.spiegazione) contenuto.push(el("p", { class: "eq-spiegazione" }, r.spiegazione, r.calcolo ? ` ${r.calcolo}` : null));
   if (validi.length) {
     contenuto.push(el("table", { class: "tabella tabella-equita-dettaglio" },
       el("caption", {}, `${r.nome}: dettaglio per dipendente`),
       el("thead", {}, el("tr", {},
         el("th", { scope: "col" }, "Dipendente"),
         el("th", { scope: "col", class: "num" }, r.fatti),
+        r.base ? el("th", { scope: "col", class: "num" }, r.base) : null,
         el("th", { scope: "col", class: "num" }, r.quota),
         r.altro ? el("th", { scope: "col", class: "num" }, r.altro) : null,
         el("th", { scope: "col", class: "num" }, "Scarto"),
-        el("th", { scope: "col" }, "Rispetto alla sua parte"),
+        el("th", { scope: "col" }, "Rispetto al valore atteso"),
         conAndamento ? el("th", { scope: "col", class: "num" }, "4 settimane fa") : null,
         conAndamento ? el("th", { scope: "col" }, "Andamento") : null)),
       el("tbody", {}, validi.map((d) => el("tr", {},
         el("th", { scope: "row" }, d.nome, d.attivo ? null : el("span", { class: "muted" }, " (non attivo)")),
         el("td", { class: "num" }, formatOre(d.fatti)),
+        r.base ? el("td", { class: "num" }, d.base === null ? "—" : formatOre(d.base)) : null,
         el("td", { class: "num" }, formatOre(d.quota)),
         r.altro ? el("td", { class: "num" }, d.altro === null ? "—" : formatOre(d.altro)) : null,
         el("td", { class: `num ${d.scarto > 0 ? "eq-sopra" : d.scarto < 0 ? "eq-sotto" : ""}` }, unita(r, d.scarto)),
@@ -434,7 +436,7 @@ function renderDettaglio(r) {
   return el("div", { class: "eq-dettaglio" }, contenuto);
 }
 
-/** Barra divergente: a destra chi ha fatto più della sua parte, a sinistra chi meno. */
+/** Barra divergente: a destra chi ha fatto più del previsto, a sinistra chi meno. */
 function barra(r, d, scala) {
   const pct = Math.round((Math.abs(d.scarto) / scala) * 50);
   const frase = d.scarto > 0 ? r.sopra : d.scarto < 0 ? r.sotto : "in pari";

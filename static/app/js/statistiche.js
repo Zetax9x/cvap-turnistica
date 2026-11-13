@@ -130,12 +130,12 @@ async function equita(versione) {
         !r.settimane.length ? avviso("Nessuna settimana generata e confermata nel periodo: restano solo le festività.") : null,
         visibili.length ? gruppo(...visibili.map((x) => riga({
           titolo: x.nome,
-          sotto: [x.piu_avanti ? `avanti: ${x.piu_avanti.nome} (${formatSaldo(x.piu_avanti.scarto)})` : null,
-            x.piu_indietro ? `indietro: ${x.piu_indietro.nome} (${formatSaldo(x.piu_indietro.scarto)})` : null].filter(Boolean).join("\n"),
+          sotto: [x.piu_avanti ? `${x.piu_avanti.nome} (${formatSaldo(x.piu_avanti.scarto)}): ${x.piu_avanti.scarto ? x.sopra : "in pari"}` : null,
+            x.piu_indietro ? `${x.piu_indietro.nome} (${formatSaldo(x.piu_indietro.scarto)}): ${x.piu_indietro.scarto ? x.sotto : "in pari"}` : null].filter(Boolean).join("\n"),
           fine: x.tendenza && TEND[x.tendenza] ? pill(...TEND[x.tendenza]) : el("span", { class: "riga-fine num" }, `Δ ${formatOre(x.differenza)}`),
           onClick: () => dettaglioEquita(x),
         }))) : el("div", { class: "vuoto" }, "Nessun dato nel periodo."),
-        el("p", { class: "muto piccolo" }, "Lo scarto è quanto una persona ha fatto in più (+) o in meno (−) della sua parte."));
+        el("p", { class: "muto piccolo" }, "Lo scarto è quanto una persona ha fatto in più (+) o in meno (−) del previsto: la media del gruppo per le settimane che ha lavorato."));
     } catch (e) { monta(contenitore, avviso(e.message, "errore")); }
   };
   await disegna();
@@ -161,7 +161,7 @@ function grafico(andamento) {
   cerchio.setAttribute("cx", ultimo[0]); cerchio.setAttribute("cy", ultimo[1]); cerchio.setAttribute("r", "4"); cerchio.setAttribute("fill", "currentColor");
   svg.append(linea, cerchio);
   return el("section", { class: "card" },
-    el("div", { class: "card-titolo" }, "Andamento della differenza"), svg,
+    el("div", { class: "card-titolo" }, "Andamento della distanza"), svg,
     el("div", { style: "display:flex;justify-content:space-between", class: "muto piccolo" },
       el("span", {}, ddmm(andamento[0].settimana)), el("span", {}, `${formatOre(andamento[0].differenza)} → ${formatOre(andamento[andamento.length - 1].differenza)}`), el("span", {}, ddmm(andamento[andamento.length - 1].settimana))));
 }
@@ -172,11 +172,17 @@ function dettaglioEquita(x) {
     const max = Math.max(0.01, ...dip.map((d) => Math.abs(d.scarto)));
     const altri = x.dipendenti.filter((d) => !d.partecipa);
     return [
-      el("p", { class: "muto" }, `Differenza tra chi ha fatto di più e di meno: ${formatOre(x.differenza)} ${x.unita}.`),
+      el("p", { class: "muto" }, `Distanza tra chi ha fatto di più e chi di meno: ${formatOre(x.differenza)} ${x.unita}.`),
+      x.spiegazione ? el("p", { class: "muto piccolo" }, x.spiegazione + (x.calcolo ? ` ${x.calcolo}` : "")) : null,
       x.andamento && x.andamento.length > 1 ? grafico(x.andamento) : x.festivita ? el("p", { class: "muto piccolo" }, "Una volta l'anno: nessun andamento.") : null,
       dip.length ? gruppo(...dip.map((d) => riga({
         titolo: d.nome, freccia: false,
-        sotto: el("div", {}, `${formatOre(d.fatti)} fatti · quota ${formatOre(d.quota)}`,
+        sotto: el("div", {}, [
+          `${x.fatti}: ${formatOre(d.fatti)}`,
+          x.base && d.base !== null ? `${x.base}: ${formatOre(d.base)}` : null,
+          `${x.quota}: ${formatOre(d.quota)}`,
+          x.altro && d.altro !== null ? `${x.altro}: ${formatOre(d.altro)}` : null,
+        ].filter(Boolean).join(" · "),
           el("div", { class: "barra", style: "margin-top:6px" }, el("i", { class: d.scarto > 0 ? "sopra" : "", style: `width:${(Math.abs(d.scarto) / max) * 100}%` }))),
         fine: el("span", { class: "riga-fine num" }, formatSaldo(d.scarto)),
       }))) : el("div", { class: "vuoto" }, "Nessuno partecipa a questa rotazione."),

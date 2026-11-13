@@ -469,3 +469,16 @@ def test_ogni_rotazione_spiega_come_si_legge():
     assert all(r["spiegazione"] for r in out.values())
     assert "settimane A" in out["standby"]["spiegazione"]
     assert "settimane con Ascoli" in out["ascoli"]["spiegazione"]
+
+
+def test_turni_attesi_con_le_settimane_e_il_calcolo():
+    out = equita(settimane_note(), PERSONE)
+    standby = out["standby"]
+    assert (standby["fatti"], standby["base"], standby["quota"]) == ("Turni fatti", "Settimane A lavorate", "Turni attesi")
+    assert per_id(standby)[1]["base"] == 1  # una sola settimana A (la seconda ha Ascoli)
+    # 4 turni su 4 settimane A: 1 a settimana
+    assert standby["calcolo"] == "In media 1 turno per settimana A: chi ha 1 settimana A ne ha attesi 1."
+    assert out["ascoli"]["base"] == "Settimane con Ascoli"
+    assert out["sab_giorno"]["base"] == "Settimane lavorate" and out["sab_giorno"]["calcolo"] is None  # nessun turno
+    assert out["sedi"]["base"] is None and out["sedi"]["calcolo"] is None
+    assert "sua parte" not in standby["sopra"] + standby["sotto"] + standby["spiegazione"]

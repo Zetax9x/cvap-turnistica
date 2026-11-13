@@ -616,8 +616,8 @@ def frase_scarto(rot: dict, scarto: float | None) -> str:
     if not scarto:
         return "in pari"
     if scarto > 0:
-        return rot.get("sopra") or "ha fatto più della sua parte"
-    return rot.get("sotto") or "ha fatto meno della sua parte"
+        return rot.get("sopra") or "ha fatto più turni del previsto"
+    return rot.get("sotto") or "ha fatto meno turni del previsto"
 
 
 def _riassunto_equita(s: dict, equita: dict) -> list[str]:
@@ -653,8 +653,8 @@ def componi_equita(s: dict, indirizzo: str, nome: str | None, *, equita: dict, s
 <p style="margin:0;color:{VERDE};font-weight:bold;font-size:14px;">Croce Verde Ascoli Piceno · Turnistica</p>
 <h1 style="font-size:22px;margin:6px 0 4px;">Equità dei turni dopo la settimana {_e(periodo)}</h1>
 <p style="font-size:15px;margin:12px 0;">{saluto} settimana è stata confermata. Il resoconto completo dell'equità è nel
-<b>PDF allegato</b>; qui le distanze più grandi. Lo scarto di ognuno è quanto ha fatto in più (+) o in meno (−) della
-sua parte; la distanza è lo scarto di chi ha fatto di più meno quello di chi ha fatto di meno.</p>
+<b>PDF allegato</b>; qui le distanze più grandi. Lo scarto di ognuno è quanto ha fatto in più (+) o in meno (−) di
+quanto previsto per lui, cioè rispetto alla media del gruppo per le settimane che ha lavorato; la distanza è lo scarto di chi ha fatto di più meno quello di chi ha fatto di meno.</p>
 <ul style="font-size:14px;margin:0 0 12px;padding-left:20px;">{"".join(f"<li>{_e(r)}</li>" for r in righe)}</ul>
 <p style="margin:20px 0 0;font-size:12px;color:#4d5868;">Email inviata in automatico dal programma dei turni a ogni settimana confermata.
 Si cambia o si disattiva in Impostazioni → Email dell'equità.</p>

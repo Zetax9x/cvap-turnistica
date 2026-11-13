@@ -29,10 +29,11 @@ _TESTA_DESTRA = ParagraphStyle("testa_destra", parent=_TESTA, alignment=2)
 class Markup(str):
     """Testo di una cella già in formato reportlab (grassetto, colori): non va escapato."""
 _GRIGLIA = colors.HexColor("#c3cbd6")
-_SOPRA, _SOTTO = "#c2410c", "#1d4ed8"  # come nella pagina Equità: arancio più della sua parte, blu meno
+_SOPRA, _SOTTO = "#c2410c", "#1d4ed8"  # come nella pagina Equità: arancio più del previsto, blu meno
 LARGHEZZA = landscape(A4)[0] - 36
 # senza frecce: i caratteri standard dei PDF non le hanno
-_ANDAMENTO = {"si_avvicina": "si avvicina alla sua parte", "si_allontana": "si allontana dalla sua parte", "stabile": "stabile"}
+_ANDAMENTO = {"si_avvicina": "si avvicina al valore atteso", "si_allontana": "si allontana dal valore atteso",
+              "stabile": "stabile"}
 
 
 def _p(testo, stile=_CELLA) -> Paragraph:
@@ -94,7 +95,7 @@ def _equita(quadro: dict, assenze: dict[int, str]) -> list:
     out.append(_p(
         f"Calcolata su {len(settimane)} {'settimana' if len(settimane) == 1 else 'settimane'} confermate con turni generati"
         + (f", dal {et._dmy(settimane[0])}" if settimane else "") + ". Per ogni dipendente lo scarto è quanto ha fatto in "
-        "più (positivo) o in meno (negativo) della sua parte; la distanza è lo scarto di chi ha fatto di più meno quello "
+        "più (positivo) o in meno (negativo) del valore atteso (turni o ore attesi, o la metà nei confronti a metà); la distanza è lo scarto di chi ha fatto di più meno quello "
         "di chi ha fatto di meno. Sotto ogni titolo, come si legge. È lo stesso calcolo che usa il generatore. Nelle note i giorni di ferie e di malattia inseriti nel "
         "periodo. Ore lavorate: come nel generatore, le settimane con ferie o malattia (anche di un solo giorno) non "
         "cambiano lo scarto, così chi è stato assente non risulta indietro; nelle ore fatte ogni giorno di assenza conta "
@@ -107,22 +108,24 @@ def _equita(quadro: dict, assenze: dict[int, str]) -> list:
             riassunto.append(et._TENDENZA.get(rot["tendenza"], rot["tendenza"]))
         estremi = [f"{escape(x['nome'])} {et._scarto(x['scarto'])}: {escape(et.frase_scarto(rot, x['scarto']))}"
                    for x in (rot.get("piu_avanti"), rot.get("piu_indietro")) if x]
-        altro = rot.get("altro")
+        altro, base = rot.get("altro"), rot.get("base")
         righe = []
         for d in rot.get("dipendenti", []):
             nota = "; ".join(x for x in ("" if d["partecipa"] else (d.get("motivo") or "non partecipa"),
                                          assenze.get(d["persona_id"], "")) if x)
             righe.append([Markup(f"<b>{escape(d['nome'])}</b>" + ("" if d.get("attivo", True) else " <i>(non attivo)</i>")),
-                          et._num(d["fatti"]), et._num(d["quota"]),
+                          et._num(d["fatti"]), *([et._num(d.get("base"))] if base else []), et._num(d["quota"]),
                           *([et._num(d.get("altro"))] if altro else []), _scarto(d["scarto"]),
                           et._scarto(d.get("scarto_prima")), _ANDAMENTO.get(d.get("andamento"), "—"), nota])
-        intestazioni = ["Dipendente", rot.get("fatti", "Fatti"), rot.get("quota", "La sua parte"),
-                        *([altro] if altro else []), "Scarto", "4 settimane fa", "Andamento", "Note"]
-        larghezze = [16, 9, 9, 9, 7, 8, 15, 27] if altro else [18, 10, 10, 8, 9, 17, 28]
-        numeriche = set(range(1, 6 if altro else 5))
+        intestazioni = ["Dipendente", rot.get("fatti", "Fatti"), *([base] if base else []),
+                        rot.get("quota", "Turni attesi"), *([altro] if altro else []), "Scarto", "4 settimane fa",
+                        "Andamento", "Note"]
+        larghezze = [16, 9, 9, 9, 7, 8, 15, 27] if (altro or base) else [18, 10, 10, 8, 9, 17, 28]
+        numeriche = set(range(1, 6 if (altro or base) else 5))
         out.append(KeepTogether([
             Paragraph(escape(rot["nome"]), _H3),
-            *([_p(escape(rot["spiegazione"]), _NOTA)] if rot.get("spiegazione") else []),
+            *([_p(escape(rot["spiegazione"]) + (f" {escape(rot['calcolo'])}" if rot.get("calcolo") else ""), _NOTA)]
+              if rot.get("spiegazione") else []),
             _p(" · ".join(riassunto) + (f"<br/>{'; '.join(estremi)}" if estremi else ""), _TESTO), Spacer(1, 3),
             _tabella(intestazioni, righe, larghezze, numeriche),
             _p(f"Scarto positivo: {escape(rot.get('sopra', ''))}; negativo: {escape(rot.get('sotto', ''))}.", _NOTA)]))
@@ -139,7 +142,7 @@ def _confronti(c: dict) -> list:
         _p(f"Differenza tra chi ne ha avuti di più e chi di meno: <b>{et._num(w['differenza'])}</b> · media del gruppo "
            f"{et._num(w['media'])}% dei weekend. Nessun turno né sabato né domenica; le settimane tutte in ferie o malattia "
            "non contano.", _TESTO), Spacer(1, 3),
-        _tabella(["Dipendente", "Weekend liberi", "Settimane", "La sua parte", "Scarto"],
+        _tabella(["Dipendente", "Weekend liberi", "Settimane", "Weekend liberi attesi", "Scarto"],
                  [[d["nome"], d["liberi"], d["settimane"], et._num(d["quota"]), _scarto(d["scarto"])] for d in w["dipendenti"]],
                  [30, 15, 15, 15, 15], {1, 2, 3, 4})])]
     out += [KeepTogether([
