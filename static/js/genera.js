@@ -25,11 +25,10 @@ const TURNI_VOLONTARI = [
   ["giorno", "intero", "Giorno 8–20"], ["giorno", "mattina", "Mattina 8–14"],
   ["giorno", "pomeriggio", "Pomeriggio 14–20"], ["notte", "intero", "Notte 20–8"],
 ];
-// nelle postazioni a richiesta (se richieste in settimana) orari diversi
+// in Standby (se richiesto in settimana) orari diversi; i Programmati non si offrono ai volontari
 const TURNI_VOLONTARI_RICHIESTA = {
   [STANDBY]: [["giorno", "standby", "Giorno 7–19"], ["giorno", "standby_mattina", "Mattina 7–14"],
     ["giorno", "standby_pomeriggio", "Pomeriggio 14–19"], ["notte", "standby", "Notte 19–7"]],
-  [PROGRAMMATI]: [["giorno", "prog_mattina", "Mattina 7–14"], ["giorno", "prog_pomeriggio", "Pomeriggio 14–20"]],
 };
 
 // servizi: null = non ancora chiesto se servono Standby, Programmati o Assistenze; true/false = risposta
@@ -420,7 +419,7 @@ function passoVolontari() {
   const chi = el("input", { list: "guida-volontari", required: true, autocomplete: "off", placeholder: "Nome e cognome" });
   const ruolo = el("select", {}, RUOLI.map((r) => opzione(r, etichetta("ruolo", r))));
   const quando = el("select", {}, s.giorni.map((g) => opzione(g, giorno(g))));
-  // Standby e Programmati solo se richiesti questa settimana (passo 1): altrimenti non c'è il posto
+  // Standby solo se richiesto questa settimana (passo 1): altrimenti non c'è il posto
   const richieste = Object.keys(TURNI_VOLONTARI_RICHIESTA).filter((postazione) => (s.fabbisogno || [])
     .some((f) => f.postazione === postazione && Number(f.quantita) > 0));
   const dove = el("select", {}, [...s.postazioni, ...richieste].map((p) => opzione(p, p)));
