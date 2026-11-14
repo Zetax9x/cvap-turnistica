@@ -860,7 +860,6 @@ function renderCella(s, cella, scopertiReport, violazioni, confermata, tag = "td
     },
       el("span", { class: "chip-nome" }, a.persona_nome),
       seg ? el("span", { class: "chip-seg" }, etichetta("segmento", a.segmento)) : null,
-      a.origine === "manuale" ? el("span", { class: "chip-tag" }, "fissato") : null,
       a.origine === "sostituzione" ? el("span", { class: "chip-tag" }, "extra") : null,
       viol ? el("span", { class: "chip-alert", "aria-hidden": "true" }, "!") : null,
     ));
