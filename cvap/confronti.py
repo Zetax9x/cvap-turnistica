@@ -103,6 +103,60 @@ def colleghi(contate: list[tuple[date, SettimanaPassata]], scelti: list[dict], p
     return out
 
 
+def con_chi(settimane: Sequence[tuple[date, SettimanaPassata]], persone: Sequence[dict]) -> dict:
+    """Prospetto dettagliato di con chi si lavora (per il PDF): solo le coppie autista + soccorritore, per qualifica
+    (due autisti nello stesso turno non contano, anche se uno fa il soccorritore), nello stesso giorno, postazione
+    e fascia. Per dipendente: turni nel periodo, quanti in compagnia di qualcuno dell'altra qualifica, con chi
+    (giorni, notti, ultima volta insieme; prima i dipendenti, poi i volontari) e con quali dipendenti dell'altra
+    qualifica mai. `matrice[autista][soccorritore]`: turni insieme (chiavi come stringhe, 0 se mai)."""
+    contate = _contate(settimane)
+    scelti = sorted(_scelti(persone, [s for _, s in contate]), key=lambda p: (p["nome"].lower(), p["id"]))
+    info = {p["id"]: p for p in persone}
+    qualifica = {p["id"]: p.get("qualifica") for p in persone}
+    ids = {p["id"] for p in scelti}
+    turni, in_compagnia = Counter(), Counter()
+    insieme = defaultdict(lambda: defaultdict(lambda: {"turni": 0, "giorno": 0, "notte": 0, "ultima": None}))
+    for _, s in contate:
+        gruppi = defaultdict(set)
+        for a in s.assegnazioni:
+            gruppi[(a.data, a.postazione, a.fascia)].add(a.persona_id)
+        for (giorno, _, fascia), chi in gruppi.items():
+            for pid in chi & ids:
+                turni[pid] += 1
+                altri = {x for x in chi if x != pid and qualifica.get(x) and qualifica.get(x) != qualifica[pid]}
+                if altri:
+                    in_compagnia[pid] += 1
+                for altro in altri:
+                    c = insieme[pid][altro]
+                    c["turni"] += 1
+                    c[fascia] += 1
+                    c["ultima"] = max(c["ultima"] or giorno, giorno)
+
+    def scheda(p: dict, altri_dip: list[dict]) -> dict:
+        pid = p["id"]
+        colleghi_ = []
+        for altro, c in insieme[pid].items():
+            q = info.get(altro, {})
+            colleghi_.append({"persona_id": altro, "nome": q.get("nome", f"n. {altro}"),
+                              "volontario": q.get("tipo") == "volontario", "turni": c["turni"], "giorno": c["giorno"],
+                              "notte": c["notte"],
+                              "percentuale": round(c["turni"] / turni[pid] * 100) if turni[pid] else 0,
+                              "ultima": c["ultima"].isoformat()})
+        colleghi_.sort(key=lambda c: (c["volontario"], -c["turni"], c["nome"].lower()))
+        mai = [{"persona_id": q["id"], "nome": q["nome"], "attivo": bool(q["attivo"])}
+               for q in altri_dip if q["id"] not in insieme[pid]]
+        return {"persona_id": pid, "nome": p["nome"], "attivo": bool(p["attivo"]), "turni": turni[pid],
+                "in_compagnia": in_compagnia[pid], "colleghi": colleghi_, "mai": mai}
+
+    autisti = [p for p in scelti if p.get("qualifica") == "autista"]
+    soccorritori = [p for p in scelti if p.get("qualifica") == "soccorritore"]
+    matrice = {str(a["id"]): {str(b["id"]): insieme[a["id"]][b["id"]]["turni"] if b["id"] in insieme[a["id"]] else 0
+                              for b in soccorritori} for a in autisti}
+    return {"settimane": [inizio.isoformat() for inizio, s in contate if solo_generate([s])],
+            "autisti": [scheda(p, soccorritori) for p in autisti],
+            "soccorritori": [scheda(p, autisti) for p in soccorritori], "matrice": matrice}
+
+
 def confronti(settimane: Sequence[tuple[date, SettimanaPassata]], persone: Sequence[dict]) -> dict:
     """{settimane, weekend_liberi, sequenze, colleghi} sulle settimane del quadro dell'equità."""
     contate = _contate(settimane)

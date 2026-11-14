@@ -141,6 +141,10 @@ function renderConfronti(c) {
     el("h2", { class: "eq-confronti-titolo" }, "Con chi si lavora"),
     el("p", { class: "muted" }, "Colleghi nello stesso turno (giorno, postazione e fascia), volontari compresi: quanti turni "
       + "in compagnia, quanti colleghi diversi e con chi capita più spesso."),
+    el("p", {}, el("a", {
+      class: "btn btn-secondary", href: urlPdfColleghi(), download: "con-chi-si-lavora.pdf",
+      title: "Tabella incrociata dei dipendenti e, per ognuno, con chi ha lavorato, quante volte e con chi mai",
+    }, "Scarica il PDF dettagliato (anche con chi non si è mai lavorato)")),
     tabellaSemplice("Con chi lavora ogni dipendente",
       [["Dipendente"], ["Turni in compagnia", 1], ["Colleghi diversi", 1], ["Più spesso con"]],
       c.colleghi.map((d) => el("tr", {}, el("th", { scope: "row" }, nome(d)), el("td", { class: "num" }, String(d.turni)),
@@ -148,6 +152,14 @@ function renderConfronti(c) {
         el("td", {}, d.frequenti.length ? d.frequenti.map((f) => `${f.nome} (${f.turni}, ${f.percentuale}%)`).join(" · ") : "—")))),
   ];
   return [...weekend, ...sequenze, ...colleghi];
+}
+
+/** Il PDF «Con chi si lavora» per lo stesso periodo e la stessa versione dei turni mostrati nella pagina. */
+function urlPdfColleghi() {
+  const q = new URLSearchParams({ versione: versioneStatistiche() });
+  if (stato.dal) q.set("dal", stato.dal);
+  if (stato.al) q.set("al", stato.al);
+  return `/api/statistiche/colleghi.pdf?${q}`;
 }
 
 /** "ore" | "turni", al singolare per 1 (1 turno, ma 0,5 turni). */
