@@ -58,7 +58,7 @@ export const scoperti = (gruppi) => gruppi.reduce((n, g) => n + g.turni.reduce((
 
 function posto(p, { postazione, fascia, segmento }, suTocco) {
   const a = p.assegnazione;
-  const classe = !a ? "vuoto-posto" : a.origine === "volontario" ? "vol" : a.origine === "manuale" ? "man" : "";
+  const classe = !a ? "vuoto-posto" : a.origine === "volontario" ? "vol" : "";
   const contenuto = [
     el("span", { class: "ruolo", title: etichetta("ruolo", p.ruolo) }, SIGLA[p.ruolo]),
     el("span", { class: "nome" }, a ? a.persona_nome : "Scoperto"),

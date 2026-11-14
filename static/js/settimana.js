@@ -385,8 +385,7 @@ async function apriTabelloneGenerato(inizio) {
 function renderLegenda(conSpeciali) {
   return el("ul", { class: "legenda", "aria-label": "Legenda" },
     el("li", {}, el("span", { class: "chip chip-volontario" }, "Nome"), " volontario"),
-    el("li", {}, el("span", { class: "chip chip-manuale" }, "Nome"), " fissato manualmente"),
-    el("li", {}, el("span", { class: "chip chip-generato" }, "Nome"), " generato"),
+    el("li", {}, el("span", { class: "chip chip-generato" }, "Nome"), " dipendente"),
     el("li", {}, el("span", { class: "chip chip-sostituzione" }, "Nome", el("span", { class: "chip-tag" }, "extra")),
       " sostituzione (ore extra)"),
     el("li", {}, el("span", { class: "scoperto" }, "scoperto"), " posto da coprire"),
@@ -855,12 +854,12 @@ function renderCella(s, cella, scopertiReport, violazioni, confermata, tag = "td
     const viol = violazioni.get(`${a.persona_id}|${a.data}`);
     const seg = mostraSegmento(a);
     contenuto.push(el("span", {
-      class: `chip chip-${a.origine}${viol ? ` chip-viol-${viol}` : ""}`,
+      // chi è fissato a mano non si distingue da chi è generato: stesso colore (resta il titolo e la lettura vocale)
+      class: `chip chip-${a.origine === "manuale" ? "generato" : a.origine}${viol ? ` chip-viol-${viol}` : ""}`,
       title: `${etichetta("origine", a.origine)}${viol ? (viol === "errore" ? " · violazione" : " · avviso") : ""}`,
     },
       el("span", { class: "chip-nome" }, a.persona_nome),
       seg ? el("span", { class: "chip-seg" }, etichetta("segmento", a.segmento)) : null,
-      a.origine === "manuale" ? el("span", { class: "chip-tag" }, "fissato") : null,
       a.origine === "sostituzione" ? el("span", { class: "chip-tag" }, "extra") : null,
       viol ? el("span", { class: "chip-alert", "aria-hidden": "true" }, "!") : null,
     ));

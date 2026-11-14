@@ -12,7 +12,7 @@ export function apriPosto(info, sett, data, ricarica) {
   if (!a) return apriAssegna(info, sett, data, ricarica, bloccata);
   foglio(a.persona_nome, (chiudi) => [
     el("p", { class: "muto" }, titoloPosto(info, data)),
-    el("div", {}, pill(etichetta("origine", a.origine), a.origine === "volontario" ? "verde" : a.origine === "manuale" ? "blu" : ""),
+    el("div", {}, pill(etichetta("origine", a.origine), a.origine === "volontario" ? "verde" : ""),
       " ", el("span", { class: "muto piccolo num" }, `${a.ore} ore`)),
     bloccata ? avviso("La settimana è confermata: riaprila per modificare i turni.") : null,
     el("div", { class: "azioni" },

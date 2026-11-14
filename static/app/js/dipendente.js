@@ -54,7 +54,7 @@ export default async function dipendente(root, { parametri }) {
             el("strong", { style: "flex:1" }, `${GIORNI_BREVI[indiceGiorno(g)]} ${parseISO(g).getDate()}/${parseISO(g).getMonth() + 1}`),
             festivo ? pill(festivo.nome, "rosso") : null,
             errori.has(g) ? pill("da controllare", "ambra") : null),
-          turni.length ? turni.map((a) => el("div", { class: `posto ${a.origine === "volontario" ? "vol" : a.origine === "manuale" ? "man" : ""}`, style: "flex-wrap:wrap" },
+          turni.length ? turni.map((a) => el("div", { class: `posto ${a.origine === "volontario" ? "vol" : ""}`, style: "flex-wrap:wrap" },
             icona(a.fascia === "notte" ? "luna" : "sole", a.fascia === "notte" ? "notte-i" : "giorno-i"),
             el("span", { class: "nome", style: "white-space:normal" }, `${orarioTurno(a.fascia, a.segmento)} · ${a.postazione} · ${etichetta("ruolo", a.ruolo)}`),
             a.origine === "sostituzione" ? pill("extra", "ambra") : null,
