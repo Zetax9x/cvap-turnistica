@@ -98,7 +98,7 @@ def _equita(quadro: dict, assenze: dict[int, str]) -> list:
         intestazioni = ["Dipendente", rot.get("fatti", "Fatti"), *([base] if base else []),
                         rot.get("quota", "Turni attesi"), *([altro] if altro else []), "Scarto", "4 settimane fa",
                         "Andamento", "Note"]
-        larghezze = [16, 9, 9, 9, 7, 8, 15, 27] if (altro or base) else [18, 10, 10, 8, 9, 17, 28]
+        larghezze = [15, 9, 9, 9, 7, 11, 15, 25] if (altro or base) else [17, 10, 10, 8, 11, 17, 27]
         numeriche = set(range(1, 6 if (altro or base) else 5))
         out.append(KeepTogether([
             Paragraph(escape(rot["nome"]), _H3),
