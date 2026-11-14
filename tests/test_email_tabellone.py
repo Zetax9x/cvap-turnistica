@@ -119,14 +119,14 @@ def test_colleghi_solo_nelle_ore_e_nel_servizio_condivisi():
     assert float(pdf.pages[0].mediabox.width) > float(pdf.pages[0].mediabox.height)
 
 
-def test_colleghi_distinti_per_richiesta_extra():
+def test_nelle_assistenze_nessun_collega():
+    # nelle Assistenze ed Extra non si lavora in equipaggio: niente «Con …»
     from cvap.email_turni import colleghi_turno
     s = settimana([
         a("Assistenze ed Extra", "giorno", "intero", nome="Mario"),
         a("Assistenze ed Extra", "giorno", "intero", "soccorritore", nome="Anna"),
-        a("Assistenze ed Extra", "giorno", "mattina", nome="Altro servizio"),
     ])
-    assert colleghi_turno(s, s["assegnazioni"][0]) == "Anna"
+    assert colleghi_turno(s, s["assegnazioni"][0]) == ""
 
 def test_i_turni_personali_hanno_le_etichette_del_sito():
     from cvap.email_turni import turni_personali
@@ -180,7 +180,7 @@ def test_tabellone_extra_con_nome_orario_persone_e_scoperti():
     assert "Anna" in testo and "Bruno" in testo and "1 di 2 scoperto" in testo
     t = _testo(s, "Anna", 1, "Turni")
     assert "Martedì" in t and "Partita stadio" in t and "15–19" in t
-    assert "Con Bruno" in t and "scoperto" not in t
+    assert "Con Bruno" not in t and "scoperto" not in t  # nelle Assistenze niente colleghi
 
 
 def test_nei_turni_personali_c_e_il_nome_della_richiesta():
@@ -188,3 +188,13 @@ def test_nei_turni_personali_c_e_il_nome_della_richiesta():
     s = con_extra([a("Assistenze ed Extra", "giorno", "extra_5_15_19", data=GIORNI[1], nome="Anna")])
     [t] = [t for g in turni_personali(s, 1) for t in g["turni"]]
     assert t["postazione"] == "Partita stadio (Assistenze ed Extra)" and t["orario"] == "Pomeriggio 15–19"
+
+
+def test_nei_programmati_e_nelle_assistenze_nessun_collega():
+    from cvap.email_turni import colleghi_turno
+    s = settimana([a("Programmati", "giorno", "prog_mattina", nome="Mario"),
+                   a("Programmati", "giorno", "prog_mattina", "soccorritore", nome="Anna"),
+                   a("Standby", "giorno", "standby", nome="Luca"),
+                   a("Standby", "giorno", "standby", "soccorritore", nome="Sara")])
+    assert colleghi_turno(s, s["assegnazioni"][0]) == ""
+    assert colleghi_turno(s, s["assegnazioni"][2]) == "Sara"

@@ -9,13 +9,10 @@ from collections.abc import Sequence
 from datetime import date, timedelta
 
 from .equita import _differenza, _r, _scelti
-from .modello import STANDBY
-from .storico import SEDI_ALTERNATE, SettimanaPassata, solo_generate
-from .vincoli import ASCOLI
+from .modello import POSTAZIONI_EQUIPAGGIO
+from .storico import SettimanaPassata, solo_generate
 
 FREQUENTI = 3  # colleghi più frequenti mostrati per persona
-# dove si lavora davvero in equipaggio; nei Programmati e nelle Assistenze ognuno ha il suo servizio
-POSTAZIONI_EQUIPAGGIO = frozenset({*SEDI_ALTERNATE, ASCOLI, STANDBY})
 
 
 def _contate(settimane: Sequence[tuple[date, SettimanaPassata]]) -> list[tuple[date, SettimanaPassata]]:

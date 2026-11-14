@@ -3,7 +3,7 @@
 import { api } from "./api.js";
 import {
   el, clear, addDays, mondayOf, todayISO, ddmm, dataLunga, dataEstesa, indiceGiorno, etichetta, formatOre,
-  orarioTurno, oraInizio, etichettaParti,
+  orarioTurno, oraInizio, etichettaParti, POSTAZIONI_EQUIPAGGIO,
   badgeAssenza, toast, toastErrore, chiediConferma,
 } from "./util.js";
 import { scaricaPdf } from "./pdf.js";
@@ -166,6 +166,7 @@ async function nuovoLink(persona, mostraLink) {
 
 /** Per ogni giorno: turni della persona e contenuto da mostrare (turni, ferie, indisponibilità o riposo). */
 function colleghiTurno(s, turno) {
+  if (!POSTAZIONI_EQUIPAGGIO.includes(turno.postazione)) return "";  // Programmati e Assistenze: ognuno per sé
   const dal = oraInizio(turno.fascia, turno.segmento), al = dal + turno.ore;
   const nomi = new Map();
   for (const a of s.assegnazioni) {
