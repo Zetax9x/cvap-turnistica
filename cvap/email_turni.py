@@ -653,7 +653,8 @@ def componi_equita(s: dict, indirizzo: str, nome: str | None, *, equita: dict, s
 <p style="margin:0;color:{VERDE};font-weight:bold;font-size:14px;">Croce Verde Ascoli Piceno · Turnistica</p>
 <h1 style="font-size:22px;margin:6px 0 4px;">Equità dei turni dopo la settimana {_e(periodo)}</h1>
 <p style="font-size:15px;margin:12px 0;">{saluto} settimana è stata confermata. Il resoconto completo dell'equità è nel
-<b>PDF allegato</b>; qui le distanze più grandi. Lo scarto di ognuno è quanto ha fatto in più (+) o in meno (−) di
+<b>PDF allegato</b>; qui le distanze più grandi. Tutto è calcolato sui turni generati, senza i cambi turno fatti
+dopo, come fa il generatore. Lo scarto di ognuno è quanto ha fatto in più (+) o in meno (−) di
 quanto previsto per lui, cioè rispetto alla media del gruppo per le settimane che ha lavorato; la distanza è lo scarto di chi ha fatto di più meno quello di chi ha fatto di meno.</p>
 <ul style="font-size:14px;margin:0 0 12px;padding-left:20px;">{"".join(f"<li>{_e(r)}</li>" for r in righe)}</ul>
 <p style="margin:20px 0 0;font-size:12px;color:#4d5868;">Email inviata in automatico dal programma dei turni a ogni settimana confermata.
@@ -662,7 +663,8 @@ Si cambia o si disattiva in Impostazioni → Email dell'equità.</p>
     m = EmailMessage()
     m["To"] = indirizzo
     m["Subject"] = f"Equità dei turni dopo la settimana {periodo}"
-    m.set_content(f"Equità dei turni dopo la settimana {periodo}\n\nIl resoconto completo è nel PDF allegato.\n\n"
+    m.set_content(f"Equità dei turni dopo la settimana {periodo}\n\nIl resoconto completo è nel PDF allegato. "
+                  "Calcolato sui turni generati, senza i cambi turno fatti dopo.\n\n"
                   + "\n".join(f"- {r}" for r in righe) + "\n")
     m.add_alternative(corpo, subtype="html")
     pdf = genera_equita(s, equita=equita, statistiche=statistiche, statistiche_indisp=statistiche_indisp,

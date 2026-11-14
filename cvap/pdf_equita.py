@@ -93,7 +93,8 @@ def _equita(quadro: dict, assenze: dict[int, str]) -> list:
     if not rotazioni:
         return out + [_p("Nessuna settimana confermata con turni generati.", _TESTO)]
     out.append(_p(
-        f"Calcolata su {len(settimane)} {'settimana' if len(settimane) == 1 else 'settimane'} confermate con turni generati"
+        f"Calcolata sui turni generati (senza i cambi turno fatti dopo, come il generatore) di {len(settimane)} "
+        f"{'settimana' if len(settimane) == 1 else 'settimane'} confermate"
         + (f", dal {et._dmy(settimane[0])}" if settimane else "") + ". Per ogni dipendente lo scarto è quanto ha fatto in "
         "più (positivo) o in meno (negativo) del valore atteso (turni o ore attesi, o la metà nei confronti a metà); la distanza è lo scarto di chi ha fatto di più meno quello "
         "di chi ha fatto di meno. Sotto ogni titolo, come si legge. È lo stesso calcolo che usa il generatore. Nelle note i giorni di ferie e di malattia inseriti nel "
@@ -178,7 +179,7 @@ def _statistiche(righe: list[dict]) -> list:
     return out + [_tabella(["Dipendente", "Settimane", "Ore totali", "Saldo ore", "Ore giorno / notte",
                             "Acquasanta / Venarotta", "Weekend", "Standby (g / n)", "Programmati", "Ascoli (g / n)", "Assistenze"],
                            dati, [14, 7, 13, 7, 9, 9, 6, 6, 7, 8, 7], set(range(1, 11))),
-                  _p("Solo i dipendenti e le settimane con turni generati. Ore totali: ore lavorate più 6 h per ogni giorno di ferie o "
+                  _p("Solo i dipendenti e le settimane con turni generati, contati come li ha fatti il generatore (senza i cambi turno). Ore totali: ore lavorate più 6 h per ogni giorno di ferie o "
                      "malattia. Saldo ore: differenza rispetto alla media dei dipendenti; le settimane con ferie o malattia "
                      "non lo cambiano, come nel generatore.", _NOTA)]
 
