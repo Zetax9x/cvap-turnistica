@@ -4,13 +4,13 @@ from collections.abc import Callable
 from datetime import date, timedelta
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 
 from . import db, db_festivita
 from .api_comune import DATA_MAX, DATA_MIN, DataValida, errore
 from .calendario import lunedi
 from .dati_festivi import riferimento_statistiche, conti_festivita
-from .confronti import confronti
+from .confronti import con_chi, confronti
 from .equita import Rotazione, equita, rotazione_festivita
 from .storico import SettimanaPassata, solo_generate
 
@@ -87,5 +87,24 @@ def crea_router(connessione: Callable, settimana_passata: Callable[..., Settiman
     def leggi_confronti(conn: Conn, dal: DataValida | None = None, al: DataValida | None = None,
                         versione: Literal["generati", "effettivi"] = "effettivi"):
         return confronti_equita(conn, settimana_passata, dal, al, versione)
+
+    @router.get("/api/statistiche/colleghi.pdf")
+    def pdf_colleghi(conn: Conn, dal: DataValida | None = None, al: DataValida | None = None,
+                     versione: Literal["generati", "effettivi"] = "effettivi"):
+        """Con chi si lavora, in dettaglio (cvap/pdf_colleghi.py), sulle stesse settimane del quadro dell'equità."""
+        from .pdf_colleghi import genera_colleghi  # import tardivo: reportlab serve solo qui
+        dati = con_chi(_settimane(conn, settimana_passata, dal, al, versione), db.lista_persone(conn))
+        settimane = dati["settimane"]
+        if settimane:
+            fine = date.fromisoformat(settimane[-1]) + timedelta(days=6)
+            periodo = f"dal {date.fromisoformat(settimane[0]):%d/%m/%Y} al {fine:%d/%m/%Y}"
+        else:
+            periodo = "nessuna settimana nel periodo"
+        if versione == "effettivi":
+            periodo += ", turni effettivi (con i cambi turno)"
+        else:
+            periodo += ", turni generati"
+        return Response(genera_colleghi(dati, periodo), media_type="application/pdf",
+                        headers={"Content-Disposition": 'attachment; filename="con-chi-si-lavora.pdf"'})
 
     return router
