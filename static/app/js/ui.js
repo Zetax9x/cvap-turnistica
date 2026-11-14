@@ -134,12 +134,14 @@ export function foglio(titolo, costruisci, { alChiudere } = {}) {
     const i = aperti.indexOf(chiudi);
     if (i >= 0) aperti.splice(i, 1);
     velo.remove(); box.remove();
+    document.documentElement.classList.toggle("foglio-aperto", aperti.length > 0);
     if (!daIndietro) riallinea();
     if (alChiudere) alChiudere();
   }
   velo.addEventListener("click", () => chiudi());
   strati.append(velo, box);
   aperti.push(chiudi);
+  document.documentElement.classList.add("foglio-aperto");
   if (voci < aperti.length) { history.pushState({ foglio: true }, ""); voci++; }
   aggiungi(corpo, costruisci(chiudi));
   return chiudi;
