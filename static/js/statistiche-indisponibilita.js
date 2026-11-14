@@ -35,7 +35,7 @@ async function carica() {
 function render() {
   const root = clear(stato.root);
   root.append(renderSchede("indisponibilita"), el("header", { class: "view-header" },
-    el("div", { class: "view-header-riga" }, el("h1", {}, titoloVersione("Indisponibilità per giorno")), bottoneStampa("indisponibilità per giorno")),
+    el("div", { class: "view-header-riga" }, el("h1", {}, titoloVersione("Indisponibilità per giorno")), bottoneStampa(urlPdf, "indisponibilita")),
     el("p", { class: "muted" },
       "Quante volte ogni dipendente ha chiesto di essere indisponibile in ciascun giorno della settimana. "
       + "Il numero conta i giorni (anche se indisponibile solo in una parte); sotto, il dettaglio per mattina (M), "
@@ -83,6 +83,14 @@ function piuRichiesto(r) {
   const massimo = Math.max(...r.giorni.map((g) => g.totale));
   const giorni = r.giorni.map((g, i) => (g.totale === massimo ? GIORNI_LUNGHI[i] : null)).filter(Boolean);
   return `${giorni.join(", ")} (${massimo} su ${r.totale})`;
+}
+
+/** Il PDF delle indisponibilità per lo stesso periodo della pagina (senza date: tutte). */
+function urlPdf() {
+  const q = new URLSearchParams();
+  if (stato.dal) q.set("dal", stato.dal);
+  if (stato.al) q.set("al", stato.al);
+  return `/api/statistiche/indisponibilita.pdf${q.size ? `?${q}` : ""}`;
 }
 
 function descriviPeriodo() {

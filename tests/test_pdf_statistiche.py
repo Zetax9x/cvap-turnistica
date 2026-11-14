@@ -106,7 +106,9 @@ def test_equita_in_pdf(client):
     assert "Equità dei turni" in t and "Turni effettivi" in t
     assert all(x in t for x in ("Turni attesi", "Scarto", "Altri confronti", "Con chi si lavora"))
     assert "Weekend interi liberi" in t and "Sequenze pesanti" in t
-    assert "Turni generati" in leggi(client.get("/api/statistiche/equita.pdf", params={"versione": "generati"}))
+    assert "Calcolata sui turni effettivi (con i cambi turno)" in t
+    generati = leggi(client.get("/api/statistiche/equita.pdf", params={"versione": "generati"}))
+    assert "Turni generati" in generati and "senza i cambi turno fatti dopo" in generati
 
 
 def test_equita_senza_settimane(tmp_path):

@@ -57,11 +57,17 @@ function errore(err) {
     el("div", { class: "banner banner-errore", role: "alert" }, el("strong", {}, "Impossibile caricare il riepilogo. "), err.message));
 }
 
+/** Il PDF del riepilogo mostrato: stesso dipendente, periodo e versione dei turni. */
+function urlPdf() {
+  const q = new URLSearchParams({ dal: stato.dal, al: stato.al, versione: versioneStatistiche() });
+  return `/api/statistiche/persona/${stato.personaId}.pdf?${q}`;
+}
+
 function render() {
   const root = clear(stato.root);
   const d = stato.dati && String(stato.dati.persona_id) === stato.personaId ? stato.dati : null;
   root.append(renderSchede("dipendente"), el("header", { class: "view-header" },
-    el("div", { class: "view-header-riga" }, el("h1", {}, titoloVersione("Riepilogo per dipendente")), d ? bottoneStampa("riepilogo dipendente") : null),
+    el("div", { class: "view-header-riga" }, el("h1", {}, titoloVersione("Riepilogo per dipendente")), d ? bottoneStampa(urlPdf, `riepilogo-${d.nome}`) : null),
     el("p", { class: "muted no-print" }, "Scegli un dipendente e il periodo: vedi i turni della versione scelta giorno per giorno e, in fondo, i totali.")));
   root.append(renderFiltri());
   if (!stato.persone.length) {

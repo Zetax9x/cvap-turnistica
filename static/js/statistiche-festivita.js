@@ -1,16 +1,16 @@
 // Scheda "Festività" delle Statistiche: per ogni prossima festività a rotazione l'ordine in cui toccherebbe
 // lavorarla (stesso calcolo del generatore), con "vuole lavorarla" modificabile e le assenze già registrate;
-// sotto, chi ha lavorato le festività anno per anno (storico importato o programma). Stampabile.
+// sotto, chi ha lavorato le festività anno per anno (storico importato o programma). Il PDF lo prepara il server.
 // Dati: GET /api/festivita/prossime, PUT /api/festivita/disponibili, GET /api/festivita/lavorate (docs/API.md).
 
 import { api } from "./api.js";
 import { el, clear, dataEstesa, etichetta, toast, toastErrore, todayISO } from "./util.js";
-import { scaricaPdf } from "./pdf.js";
+import { scaricaPdfServer } from "./pdf.js";
 import { focusTitolo, nuovoCaricamento, renderSchede, superato, titoloVersione, versioneStatistiche } from "./statistiche.js";
 
 const stato = {
   root: null, mesi: 12, prossime: [], lavorate: null, anno: null, salvataggi: Promise.resolve(),
-  aperture: new Set(), voglia: new Map(), stampa: null, focusStampa: null,
+  aperture: new Set(), voglia: new Map(),
 };
 
 const IMPORTANZA = { 1: "normale", 2: "importante", 3: "molto importante" };
@@ -93,7 +93,7 @@ function render() {
       + "Le festività che contano si scelgono in Impostazioni."));
   } else {
     root.append(el("div", { class: "festivita-azioni festivita-azioni-tutte no-print" }, el("button", {
-      type: "button", class: "btn btn-ghost", onclick: (e) => stampaTutteFestivita(e.currentTarget),
+      type: "button", class: "btn btn-ghost", onclick: (e) => scaricaFestivita(e.currentTarget),
     }, "Scarica PDF festività")));
     root.append(...stato.prossime.map(renderFestivita));
   }
@@ -117,7 +117,7 @@ function turniCheContano(f) {
 
 /** I pannelli partono chiusi e conservano la scelta anche quando si cambia l'anno dello storico. */
 function salvaAperture() {
-  if (!stato.root || stato.stampa) return;
+  if (!stato.root) return;
   for (const pannello of stato.root.querySelectorAll("details[data-apertura]")) {
     if (pannello.open) stato.aperture.add(pannello.dataset.apertura);
     else stato.aperture.delete(pannello.dataset.apertura);
@@ -128,7 +128,7 @@ function pannello(classe, chiave, ...contenuto) {
   return el("details", {
     class: classe, dataset: { apertura: chiave }, open: stato.aperture.has(chiave),
     ontoggle: (e) => {
-      if (!e.currentTarget.isConnected || stato.stampa) return;
+      if (!e.currentTarget.isConnected) return;
       if (e.currentTarget.open) stato.aperture.add(chiave);
       else stato.aperture.delete(chiave);
     },
@@ -148,7 +148,7 @@ function renderFestivita(f) {
         : el("p", { class: "muted" }, "Nessuna fascia selezionata per questa festività."),
       el("div", { class: "festivita-azioni no-print" }, el("button", {
         type: "button", class: "btn btn-ghost", disabled: !fasce.length || !datiCompleti,
-        onclick: () => stampaFestivita(sezione),
+        onclick: (e) => scaricaFestivita(e.currentTarget, f),
       }, "Scarica PDF festività"))));
   return sezione;
 }
@@ -179,57 +179,25 @@ function renderFascia(f, fascia, titoloId) {
   return sezione;
 }
 
-/** L'esportazione espande solo la festività scelta e poi ripristina tutti i pannelli. */
-function stampaFestivita(target) {
-  avviaStampa([target], target.querySelector("button"));
-}
-
-/** Esporta tutte le festività attualmente mostrate, con entrambe le fasce anche se chiuse. */
-function stampaTutteFestivita(controllo) {
-  avviaStampa([...stato.root.querySelectorAll(".festivita-prossima")], controllo);
-}
-
-async function avviaStampa(targets, controllo) {
-  if (stato.stampa || !targets.length || targets.some((target) => !target.isConnected)) return;
-  stato.focusStampa = null;
-  salvaAperture();
-  const pannelli = targets.flatMap((target) => [target, ...target.querySelectorAll("details")]);
-  stato.stampa = {
-    targets, pannelli: pannelli.map((p) => [p, p.open]), focus: controllo || document.activeElement,
-    tutte: targets.length > 1,
-  };
-  for (const target of targets) target.classList.add("festivita-da-stampare");
-  for (const p of pannelli) p.open = true;
+/** Scarica il PDF «a chi tocca» (tutte le festività mostrate, o solo `f`) dal server, dopo aver aspettato che le
+ * scelte «vuole lavorarla» in corso siano salvate: il PDF le legge dal database. */
+async function scaricaFestivita(btn, f = null) {
+  const q = new URLSearchParams({ mesi: String(stato.mesi), versione: versioneStatistiche() });
+  if (f) {
+    q.set("data", f.data);
+    q.set("festivita_id", String(f.festivita_id));
+  }
+  btn.disabled = true;
   try {
-    await scaricaPdf(targets, titoloVersione(stato.stampa.tutte ? "festivita" : "festivita-a-chi-tocca"), { orientamento: "landscape" });
+    await stato.salvataggi;
+    await scaricaPdfServer(`/api/festivita/prossime.pdf?${q}`,
+      f ? `festivita-${f.nome}-${f.data}-${versioneStatistiche()}` : `festivita-a-chi-tocca-${versioneStatistiche()}`);
   } catch (err) {
-    ripristinaStampa();
     toastErrore(err);
-    return;
-  }
-  ripristinaStampa();
-}
-
-function ripristinaStampa() {
-  const stampa = stato.stampa;
-  if (stampa) {
-    for (const [pannello, aperto] of stampa.pannelli) pannello.open = aperto;
-    for (const target of stampa.targets) target.classList.remove("festivita-da-stampare");
-    stato.stampa = null;
-    stato.focusStampa = stampa.focus;
-  }
-  ripristinaFocusStampa();
-}
-
-function ripristinaFocusStampa() {
-  const controllo = stato.focusStampa;
-  stato.focusStampa = null;
-  const attivo = document.activeElement;
-  if (controllo?.isConnected && (!attivo || attivo === document.body || attivo === controllo)) {
-    controllo.focus({ preventScroll: true });
+  } finally {
+    if (btn.isConnected) btn.disabled = false;
   }
 }
-
 
 function renderPersona(f, x, i, fascia) {
   const assenza = x.assente ? ASSENZA[x.assente] : null;

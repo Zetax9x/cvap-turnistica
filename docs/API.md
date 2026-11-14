@@ -20,6 +20,7 @@ Frontend: HTML + JS vanilla (ES modules) in `static/`, servito da FastAPI. UI in
 | `dati_festivi.py`, `db_festivi_disponibili.py` | Dati della rotazione letti dal database per generatore, statistiche e riepiloghi; chi vuole lavorare |
 | `prossime_festivita.py` | Ordine di rotazione delle prossime festività e chi le ha lavorate in un anno |
 | `equita.py`, `api_equita.py` | Quadro dell'equità (`/api/statistiche/equita`) |
+| `pdf_stile.py`, `pdf_tabellone.py`, `pdf_turni_personali.py`, `pdf_cambi_turno.py`, `pdf_equita.py`, `pdf_colleghi.py`, `pdf_statistiche.py` | Tutti i PDF, fatti dal server con lo stesso stile (testata con logo, piè di pagina con data e pagina, tabelle comuni di `pdf_stile`): vedi «PDF» più sotto |
 | `riepilogo.py`, `email_turni.py`, `posta.py`, `liberi.py`, `accesso.py` | Riepilogo per dipendente, email dei turni e dei riepiloghi, invio SMTP, liberi del giorno, password del sito |
 | `simulazione.py` | Simulazione su dati di prova (file temporaneo, stesse API della pagina) con report HTML; con `--festivita` le festività di fine anno su più anni con storico importato, per tarare i pesi (sezione "Simulazione") |
 
@@ -38,7 +39,7 @@ predefinito `effettivi`; altro valore ammesso `generati`. I trigger di entrambe 
 
 Tabellone, pagina dipendenti, email e PDF operativi leggono sempre Effettivi. Le API
 `GET /statistiche`, `/statistiche/festivi`, `/statistiche/persona/{id}`, `/statistiche/equita`,
-`/festivita/prossime` e `/festivita/lavorate?anno=AAAA` accettano `versione=generati|effettivi`
+`/festivita/prossime` e `/festivita/lavorate?anno=AAAA` (e i loro PDF) accettano `versione=generati|effettivi`
 (predefinito Effettivi; valore diverso → 422). Date e formati delle risposte restano invariati.
 Le indisponibilità e lo storico festivo importato sono comuni. La fonte appare nei titoli e nei PDF statistici.
 
@@ -244,6 +245,30 @@ porta anche il ruolo `normale` o `master` dentro la firma; HttpOnly, SameSite=La
 `GET /` → `static/index.html`; `/static/*` → file statici.
 App factory: `create_app(db_path, password=None, postino=None) -> FastAPI` in `cvap/app.py`; `uvicorn cvap.app:app`
 usa `data/turni.db` (o Turso) e legge `APP_PASSWORD` e le variabili SMTP (`cvap/posta.py`).
+
+## PDF
+
+Tutti i PDF sono preparati dal server (reportlab) con `cvap/pdf_stile.py`: stessa testata (logo, titolo, periodo e
+versione dei turni), stesso piè di pagina (ente, data di creazione, pagina), stesse tabelle. Il sito li scarica con
+`scaricaPdfServer` (`static/js/pdf.js`); non esiste più la «fotografia» della pagina fatta dal browser.
+Risposta: `application/pdf`, `Content-Disposition: attachment`, `Cache-Control: no-store`. I fogli con una
+versione dei turni accettano `versione=generati|effettivi` (predefinito Effettivi).
+
+| Indirizzo | Contenuto |
+|---|---|
+| `GET /settimane/{data}/pdf-tabellone` | Tabellone della settimana (`versione`); lo stesso foglio è allegato all'email dei cambi turno, con in più un riquadro «aggiornato con i cambi turno» (o «rettifica») nella testata |
+| `GET /settimane/{data}/pdf-liberi` | Dipendenti liberi, giorno per giorno |
+| `GET /settimane/{data}/pdf/{persona_id}` | Turni di un dipendente nella settimana (anche allegato alle email) |
+| `GET /settimane/{data}/pdf-sostituti?ids=1,2` | «Sostituzioni da organizzare»: per ogni turno (id separati da virgola) la proposta consigliata, le alternative e chi non rispetta le regole; id inesistente → 404, turno di un'altra settimana → 400 |
+| `GET /statistiche/turni.pdf` | Statistiche → Turni (dipendenti e volontari, in due tabelle: ore e sedi; weekend e turni speciali) |
+| `GET /statistiche/indisponibilita.pdf?dal&al` | Indisponibilità per giorno, stesso periodo della pagina |
+| `GET /statistiche/persona/{id}.pdf?dal&al` | Riepilogo per dipendente (come `GET /statistiche/persona/{id}`: periodo massimo 366 giorni) |
+| `GET /statistiche/equita.pdf?dal&al` | Rotazioni dell'equità e altri confronti |
+| `GET /statistiche/colleghi.pdf?dal&al` | Con chi si lavora (solo coppie autista + soccorritore, in Acquasanta, Venarotta, Ascoli e Standby) |
+| `GET /festivita/prossime.pdf?mesi=12[&data=&festivita_id=]` | «A chi tocca»: tutte le festività dei prossimi mesi, o una sola (`data` e `festivita_id`; nessuna corrispondenza → 404) |
+
+L'allegato dell'email dell'equità (`pdf_equita.genera_equita`) è lo stesso stile con le sezioni dell'equità, gli
+altri confronti, le statistiche e le indisponibilità, sempre sui turni generati.
 
 ## Calendari .ics dei dipendenti
 

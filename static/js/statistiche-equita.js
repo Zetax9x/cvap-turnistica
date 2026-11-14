@@ -46,7 +46,7 @@ function render() {
   const { settimane } = stato.dati;
   const rotazioni = stato.dati.rotazioni.filter((r) => !r.festivita);  // le festività hanno la loro pagina
   root.append(renderSchede("equita"), el("header", { class: "view-header" },
-    el("div", { class: "view-header-riga" }, el("h1", {}, titoloVersione("Equità dei turni")), bottoneStampa("equità dei turni")),
+    el("div", { class: "view-header-riga" }, el("h1", {}, titoloVersione("Equità dei turni")), bottoneStampa(() => urlPdf("equita"), "equita")),
     el("p", { class: "muted" },
       "Per ogni tipo di turno: chi ha fatto più del previsto e chi meno, quanto sono lontani tra loro e se la "
       + "distanza si sta riducendo. La parte di ognuno tiene conto delle settimane in cui ha lavorato. "
@@ -155,12 +155,13 @@ function renderConfronti(c) {
 }
 
 /** Il PDF «Con chi si lavora» per lo stesso periodo e la stessa versione dei turni mostrati nella pagina. */
-function urlPdfColleghi() {
+function urlPdf(nome) {
   const q = new URLSearchParams({ versione: versioneStatistiche() });
   if (stato.dal) q.set("dal", stato.dal);
   if (stato.al) q.set("al", stato.al);
-  return `/api/statistiche/colleghi.pdf?${q}`;
+  return `/api/statistiche/${nome}.pdf?${q}`;
 }
+const urlPdfColleghi = () => urlPdf("colleghi");
 
 /** "ore" | "turni", al singolare per 1 (1 turno, ma 0,5 turni). */
 function nomeUnita(r, valore) {

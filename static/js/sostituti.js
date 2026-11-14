@@ -4,9 +4,9 @@
 import { api } from "./api.js";
 import {
   el, clear, toast, toastErrore, GIORNI_BREVI, ddmm, dataEstesa, indiceGiorno, orarioTurno, oraInizio,
-  etichetta, formatOre, badgeAssenza, EXTRA, dataLunga,
+  etichetta, formatOre, badgeAssenza, EXTRA,
 } from "./util.js";
-import { scaricaPdf } from "./pdf.js";
+import { scaricaPdfServer } from "./pdf.js";
 
 const PRIMI = 3;  // candidati mostrati subito, gli altri con "Mostra tutti"
 const NOTA_EXTRA = "Le ore di una sostituzione sono extra: non contano nelle ore della settimana né nelle statistiche.";
@@ -60,11 +60,6 @@ function scaricaSostituti(id) {
     cache.inVolo.set(id, promessa);
   }
   return cache.inVolo.get(id);
-}
-
-/** Suggerimenti di un turno, da quelli già in memoria se ci sono. */
-function ottieniSostituti(id) {
-  return cache.risposte.has(id) ? Promise.resolve(cache.risposte.get(id)) : scaricaSostituti(id);
 }
 
 function nomePostazione(s, a) {
@@ -375,164 +370,22 @@ async function eseguiCambio(chiamata, messaggio, btn, opzioni) {
   }
 }
 
-// ---------------------------------------------------------------- stampa "Chi può sostituire"
-
-const CLASSE_STAMPA = "stampa-sostituti-attiva";
-const ID_FOGLIO = "stampa-sostituti";
-
-/** Toglie il foglio di stampa e torna alla stampa normale (dopo la stampa, o prima di un'altra stampa). */
-export function annullaStampaSostituti() {
-  document.body.classList.remove(CLASSE_STAMPA);
-  const foglio = document.getElementById(ID_FOGLIO);
-  if (foglio) foglio.remove();
-}
+// ---------------------------------------------------------------- PDF "Chi può sostituire"
 
 /**
- * Scarica per ogni turno l'elenco completo di chi può sostituire (prima carica i suggerimenti che mancano).
- * turni: assegnazioni, con `motivo` ("ferie" | "malattia") se chi le ha è assente.
+ * Scarica il PDF «Sostituzioni da organizzare» per i turni dati: lo prepara il server (stesso stile di tutti gli
+ * altri fogli) con, per ogni turno, la proposta consigliata, le alternative e chi non rispetta le regole.
+ * turni: assegnazioni della settimana `s`.
  */
 export async function stampaSostituti(s, turni, btn = null) {
-  aggiornaCache(s);
   const testo = btn ? btn.textContent : "";
   if (btn) { btn.disabled = true; btn.textContent = "Preparo il PDF…"; }
   try {
-    const esiti = await Promise.allSettled(turni.map((a) => ottieniSostituti(a.id)));
-    const falliti = esiti.filter((e) => e.status === "rejected").length;
-    if (falliti) {
-      toast(`Per ${falliti === 1 ? "1 turno" : `${falliti} turni`} non sono riuscito a caricare i sostituti: è segnato sul foglio.`, "avviso");
-    }
-    annullaStampaSostituti();
-    const foglio = renderFoglio(s, turni, esiti);
-    document.body.append(foglio);
-    await scaricaPdf(foglio, `sostituti-${s.inizio}`);
-    annullaStampaSostituti();
+    await scaricaPdfServer(`/api/settimane/${s.inizio}/pdf-sostituti?ids=${turni.map((a) => a.id).join(",")}`,
+      `sostituti-${s.inizio}`);
+  } catch (err) {
+    toastErrore(err);
   } finally {
     if (btn && btn.isConnected) { btn.disabled = false; btn.textContent = testo; }
   }
-}
-
-function renderFoglio(s, turni, esiti) {
-  const fine = (s.giorni && s.giorni.length) ? s.giorni[s.giorni.length - 1] : s.inizio;
-  const oggi = new Date().toLocaleDateString("it-IT", { day: "numeric", month: "long", year: "numeric" });
-  const quanti = turni.length === 1 ? "C'è 1 turno da coprire" : `Ci sono ${turni.length} turni da coprire`;
-  return el("section", { id: ID_FOGLIO, class: "stampa-sostituti", "aria-hidden": "true" },
-    el("header", { class: "sost-testata" },
-      el("h1", {}, "Sostituzioni da organizzare"),
-      el("p", { class: "sost-periodo" }, `Settimana dal ${dataLunga(s.inizio)} al ${dataLunga(fine)} · stampato il ${oggi}`)),
-    el("p", { class: "sost-intro" }, `${quanti} perché chi lo aveva è in malattia o in ferie. `
-      + "Per ogni turno c'è una proposta consigliata e, sotto, le alternative in ordine di preferenza."),
-    turni.map((a, i) => bloccoStampa(s, a, esiti[i], i + 1, turni.length)),
-    el("footer", { class: "sost-nota" },
-      el("p", {}, NOTA_EXTRA),
-      el("p", {}, "Regole controllate: almeno 11 ore di riposo tra due turni, al massimo 3 giorni o 3 notti di fila, "
-        + "mai più di 12 ore di lavoro di fila, nessun turno a chi è in ferie, in malattia o indisponibile.")));
-}
-
-/** "Lunedì 23 novembre" */
-function giornoLungo(iso) {
-  const [a, m, g] = iso.split("-").map(Number);
-  const testo = new Date(a, m - 1, g).toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" });
-  return testo.charAt(0).toUpperCase() + testo.slice(1);
-}
-
-function bloccoStampa(s, a, esito, n, totale) {
-  const motivo = a.motivo === "malattia" ? "in malattia" : a.motivo === "ferie" ? "in ferie" : null;
-  return el("article", { class: "sost-blocco" },
-    el("p", { class: "sost-numero" }, totale > 1 ? `Turno ${n} di ${totale}` : "Turno da coprire"),
-    el("h2", {}, `${giornoLungo(a.data)} · ${orarioTurno(a.fascia, a.segmento)}`),
-    el("p", { class: "sost-dove" }, `${nomePostazione(s, a)} · ${etichetta("ruolo", a.ruolo)}`),
-    el("p", { class: "sost-assente" }, motivo
-      ? ["Lo aveva ", el("strong", {}, a.persona_nome), `, che è ${motivo}.`]
-      : ["Ora è assegnato a ", el("strong", {}, a.persona_nome), "."]),
-    esito.status === "rejected"
-      ? el("p", { class: "sost-errore" }, "Non è stato possibile cercare i sostituti: ",
-        esito.reason && esito.reason.message ? esito.reason.message : String(esito.reason))
-      : contenutoStampa(esito.value || {}));
-}
-
-function contenutoStampa(r) {
-  const candidati = r.candidati || [];
-  const catene = r.catene || [];
-  const inRegola = candidati.filter((c) => !(c.regole || []).length);
-  const fuoriRegola = candidati.filter((c) => (c.regole || []).length);
-  const parti = [];
-  if (inRegola.length) {
-    parti.push(propostaDiretta(inRegola[0]));
-    if (inRegola.length > 1) {
-      parti.push(tabellaStampa("Se non è disponibile, in alternativa (in ordine):", inRegola.slice(1), false));
-    }
-  } else if (catene.length) {
-    parti.push(propostaScambio(catene[0]));
-  } else {
-    parti.push(el("div", { class: "sost-proposta sost-proposta-nessuna" },
-      el("p", { class: "sost-etichetta" }, "Nessun dipendente disponibile"),
-      el("p", { class: "sost-scelta" }, "Nessun dipendente può farlo rispettando le regole: serve un volontario.")));
-  }
-  if (fuoriRegola.length) {
-    parti.push(tabellaStampa("Solo se non c'è altra soluzione (non rispettano le regole):", fuoriRegola, true));
-  }
-  return parti;
-}
-
-function oreTotali(c) {
-  return (Number(c.ore) || 0) + (Number(c.ore_sostituzioni) || 0);
-}
-
-function propostaDiretta(c) {
-  const note = (c.avvisi || []).map((v) => semplifica(v, c.nome));
-  return el("div", { class: "sost-proposta" },
-    el("p", { class: "sost-etichetta" }, "Proposta consigliata"),
-    el("p", { class: "sost-scelta" }, "Chiamare ", el("strong", {}, c.nome), "."),
-    el("p", { class: "sost-dettaglio" },
-      `Rispetta tutte le regole. Questa settimana lavora ${formatOre(oreTotali(c))} h; con questo turno ${formatOre(c.ore_dopo)} h.`),
-    note.length ? el("p", { class: "sost-dettaglio" }, `Da sapere: ${note.join("; ")}.`) : null);
-}
-
-function propostaScambio(k) {
-  const b = k.prende;
-  const c = k.copre;
-  // nello scambio le persone sono due: la nota dice di chi è
-  const note = [...(b.avvisi || []).map((v) => `${b.nome}: ${semplifica(v, b.nome).toLowerCase()}`),
-    ...(c.avvisi || []).map((v) => `${c.nome}: ${semplifica(v, c.nome).toLowerCase()}`)];
-  const t = k.ceduto;
-  const ceduto = `${giornoLungo(t.data)} · ${orarioTurno(t.fascia, t.segmento)} · ${t.postazione}`;
-  return el("div", { class: "sost-proposta" },
-    el("p", { class: "sost-etichetta" }, "Proposta consigliata: uno scambio"),
-    el("p", { class: "sost-dettaglio" }, "Nessuno può fare questo turno direttamente rispettando le regole, "
-      + "ma con uno scambio tra due persone si copre tutto:"),
-    el("ol", { class: "sost-passi" },
-      el("li", {}, el("strong", {}, b.nome), " fa questo turno ",
-        el("span", { class: "sost-piccolo" }, Number(b.ore_dopo) === Number(b.ore)
-          ? "(lascia un suo turno: le sue ore non cambiano)"
-          : `(lascia un suo turno: le sue ore passano da ${formatOre(b.ore)} a ${formatOre(b.ore_dopo)} h)`), "."),
-      el("li", {}, el("strong", {}, c.nome), " fa al posto di ", b.nome, " il turno di ", el("strong", {}, ceduto), " ",
-        el("span", { class: "sost-piccolo" }, `(ore extra; con questo turno lavora ${formatOre(c.ore_dopo)} h)`), ".")),
-    note.length ? el("p", { class: "sost-dettaglio" }, `Da sapere: ${note.join("; ")}.`) : null);
-}
-
-function tabellaStampa(titolo, lista, fuoriRegola) {
-  return el("div", { class: `sost-alternative${fuoriRegola ? " sost-alternative-fuori" : ""}` },
-    el("p", { class: "sost-titoletto" }, titolo),
-    el("table", { class: "sost-tabella" },
-      el("thead", {}, el("tr", {},
-        el("th", { class: "sost-col-n" }, "#"), el("th", {}, "Nome"), el("th", {}, "Ore nella settimana"),
-        el("th", {}, fuoriRegola ? "Cosa non rispetta" : "Note"))),
-      el("tbody", {}, lista.map((c, i) => {
-        const testi = [...(fuoriRegola ? c.regole || [] : []), ...(c.avvisi || [])].map((v) => semplifica(v, c.nome));
-        return el("tr", {},
-          el("td", { class: "sost-col-n" }, String(i + 1)),
-          el("td", {}, el("strong", {}, c.nome)),
-          el("td", { class: "sost-col-ore" }, `${formatOre(oreTotali(c))} → ${formatOre(c.ore_dopo)} h`),
-          el("td", {}, testi.length ? testi.join("; ") : "—"));
-      }))));
-}
-
-/** Messaggi del controllo in parole semplici: senza il nome davanti, "eccezione" = consentito. */
-function semplifica(messaggio, nome) {
-  let t = String(messaggio);
-  if (nome && t.startsWith(`${nome}: `)) t = t.slice(nome.length + 2);
-  t = t.replace(/solo (\d+)h di riposo tra (.+) e (.+)$/, "solo $1 ore di riposo tra due turni ($2 e $3)")
-    .replace("(eccezione)", "(consentito)")
-    .replace(/\(massimo (\d+)\)/, "(il massimo è $1)");
-  return t.charAt(0).toUpperCase() + t.slice(1);
 }

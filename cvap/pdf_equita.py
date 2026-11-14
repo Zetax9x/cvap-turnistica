@@ -6,7 +6,7 @@ indisponibilità. I testi e i formati dei numeri vengono da `email_turni`, così
 """
 from html import escape
 
-from reportlab.platypus import KeepTogether, PageBreak, Paragraph, Spacer
+from reportlab.platypus import CondPageBreak, PageBreak, Paragraph, Spacer
 
 from . import email_turni as et
 from . import pdf_stile as st
@@ -21,6 +21,13 @@ LARGHEZZA = st.larghezza()
 # senza frecce: i caratteri standard dei PDF non le hanno
 _ANDAMENTO = {"si_avvicina": "si avvicina al valore atteso", "si_allontana": "si allontana dal valore atteso",
               "stabile": "stabile"}
+
+
+def _sezione(*elementi, minimo: float = 230) -> list:
+    """Un blocco (titolo, testi e tabella) che scorre da una pagina all'altra: se resta poco spazio in fondo
+    ricomincia in una pagina nuova, altrimenti la tabella continua (intestazione ripetuta). Con «tenere insieme»
+    tutto, una tabella lunga lasciava mezze pagine vuote."""
+    return [CondPageBreak(minimo), *elementi]
 
 
 def _p(testo, stile=_CELLA) -> Paragraph:
@@ -63,15 +70,16 @@ def _generazione(s: dict) -> list:
     return out
 
 
-def _equita(quadro: dict, assenze: dict[int, str], intestazione: bool = True) -> list:
-    """`intestazione`: il titolo «Equità dei turni» sopra (no nel PDF della pagina, dove è già la testata)."""
+def _equita(quadro: dict, assenze: dict[int, str], intestazione: bool = True, versione: str = "generati") -> list:
+    """`intestazione`: il titolo «Equità dei turni» sopra (no nel PDF della pagina, dove è già la testata).
+    `versione`: i turni su cui è calcolata (l'email dell'equità usa sempre i generati)."""
     rotazioni = [r for r in quadro.get("rotazioni", []) if r.get("con_dati", True) and not r.get("festivita")]
     settimane = quadro.get("settimane", [])
     out = [Paragraph("Equità dei turni", _H2)] if intestazione else []
     if not rotazioni:
         return out + [_p("Nessuna settimana confermata con turni generati.", _TESTO)]
     out.append(_p(
-        f"Calcolata sui turni generati (senza i cambi turno fatti dopo, come il generatore) di {len(settimane)} "
+        f"Calcolata {'sui turni generati (senza i cambi turno fatti dopo, come il generatore)' if versione == 'generati' else 'sui turni effettivi (con i cambi turno)'} di {len(settimane)} "
         f"{'settimana' if len(settimane) == 1 else 'settimane'} confermate"
         + (f", dal {et._dmy(settimane[0])}" if settimane else "") + ". Per ogni dipendente lo scarto è quanto ha fatto in "
         "più (positivo) o in meno (negativo) del valore atteso (turni o ore attesi, o la metà nei confronti a metà); la distanza è lo scarto di chi ha fatto di più meno quello "
@@ -101,13 +109,13 @@ def _equita(quadro: dict, assenze: dict[int, str], intestazione: bool = True) ->
                         "Andamento", "Note"]
         larghezze = [15, 9, 9, 9, 7, 11, 15, 25] if (altro or base) else [17, 10, 10, 8, 11, 17, 27]
         numeriche = set(range(1, 6 if (altro or base) else 5))
-        out.append(KeepTogether([
+        out += _sezione(
             Paragraph(escape(rot["nome"]), _H3),
             *([_p(escape(rot["spiegazione"]) + (f" {escape(rot['calcolo'])}" if rot.get("calcolo") else ""), _NOTA)]
               if rot.get("spiegazione") else []),
             _p(" · ".join(riassunto) + (f"<br/>{'; '.join(estremi)}" if estremi else ""), _TESTO), Spacer(1, 3),
             _tabella(intestazioni, righe, larghezze, numeriche),
-            _p(f"Scarto positivo: {escape(rot.get('sopra', ''))}; negativo: {escape(rot.get('sotto', ''))}.", _NOTA)]))
+            _p(f"Scarto positivo: {escape(rot.get('sopra', ''))}; negativo: {escape(rot.get('sotto', ''))}.", _NOTA))
     return out
 
 
@@ -116,22 +124,22 @@ def _confronti(c: dict) -> list:
     if not c or not c.get("settimane"):
         return out + [_p("Nessuna settimana confermata con turni generati.", _TESTO)]
     w = c["weekend_liberi"]
-    out += [KeepTogether([
+    out += _sezione(
         Paragraph("Weekend interi liberi", _H3),
         _p(f"Differenza tra chi ne ha avuti di più e chi di meno: <b>{et._num(w['differenza'])}</b> · media del gruppo "
            f"{et._num(w['media'])}% dei weekend. Nessun turno né sabato né domenica; le settimane tutte in ferie o malattia "
            "non contano.", _TESTO), Spacer(1, 3),
         _tabella(["Dipendente", "Weekend liberi", "Settimane", "Weekend liberi attesi", "Scarto"],
                  [[d["nome"], d["liberi"], d["settimane"], et._num(d["quota"]), _scarto(d["scarto"])] for d in w["dipendenti"]],
-                 [30, 15, 15, 15, 15], {1, 2, 3, 4})])]
-    out += [KeepTogether([
+                 [30, 15, 15, 15, 15], {1, 2, 3, 4}))
+    out += _sezione(
         Paragraph("Sequenze pesanti", _H3),
         _p("Notti di fila: due notti in giorni consecutivi. Tre di fila: tre giorni consecutivi nella stessa fascia. "
            "Giorni di fila: il massimo di giorni consecutivi con almeno un turno.", _TESTO), Spacer(1, 3),
         _tabella(["Dipendente", "Notti di fila", "Tre di fila", "Massimo giorni di fila"],
                  [[d["nome"], d["notti_di_fila"], d["tre_di_fila"], d["giorni_di_fila_max"]] for d in c["sequenze"]],
-                 [30, 20, 20, 20], {1, 2, 3})])]
-    out += [Paragraph("Con chi si lavora", _H3),
+                 [30, 20, 20, 20], {1, 2, 3}))
+    out += [CondPageBreak(230), Paragraph("Con chi si lavora", _H3),
             _p("Stesso giorno, postazione e fascia, volontari compresi.", _TESTO), Spacer(1, 3),
             _tabella(["Dipendente", "Turni in compagnia", "Colleghi diversi", "Più spesso con"],
                      [[d["nome"], d["turni"], d["colleghi_diversi"],

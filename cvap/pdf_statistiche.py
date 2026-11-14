@@ -10,7 +10,7 @@ from html import escape
 
 from reportlab.lib import colors
 from reportlab.lib.styles import ParagraphStyle
-from reportlab.platypus import KeepTogether, PageBreak, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import CondPageBreak, KeepTogether, PageBreak, Paragraph, Spacer, Table, TableStyle
 
 from . import email_turni as et
 from . import pdf_equita as eq
@@ -213,7 +213,8 @@ def _totali(r: dict) -> list:
 def genera_equita_pagina(quadro: dict, confronti: dict, periodo: str, versione: str = "effettivi",
                          assenze: dict[int, str] | None = None) -> bytes:
     """Le rotazioni dell'equità e gli altri confronti, come la pagina e come l'allegato dell'email."""
-    blocchi = [*eq._equita(quadro, assenze or {}, intestazione=False), PageBreak(), *eq._confronti(confronti or {})]
+    blocchi = [*eq._equita(quadro, assenze or {}, intestazione=False, versione=versione), PageBreak(),
+               *eq._confronti(confronti or {})]
     return st.documento("Equità dei turni", f"{periodo} · {versione_testo(versione)}", blocchi)
 
 
@@ -266,9 +267,9 @@ def _festivita(f: dict) -> list:
             righe = [[i + 1, _grassetto(x["nome"]), et.RUOLI.get(x["qualifica"], x["qualifica"]), x["volte_5_anni"],
                       str(x["ultimo_anno"]) if x["ultimo_anno"] else "mai", VOGLIA.get(x.get("disponibile"), "No"),
                       ASSENZA.get(x.get("assente"), "–")] for i, x in enumerate(ordine)]
-            out.append(KeepTogether([titolo, st.tabella(
+            out += [CondPageBreak(160), titolo, st.tabella(
                 ["N.", "Dipendente", "Qualifica", "Volte negli ultimi 5 anni", "Ultima volta", "Vuole lavorarla",
-                 "Assenze registrate"], righe, [5, 27, 15, 15, 11, 14, 13], destra={0, 3, 4})]))
+                 "Assenze registrate"], righe, [5, 27, 15, 15, 11, 14, 13], destra={0, 3, 4})]
     return out
 
 
@@ -310,7 +311,8 @@ def _turno_da_coprire(settimana: dict, e: dict, n: int, totale: int) -> list:
                Paragraph(f"{_giorno_lungo(a['data'])} · {escape(et.orario_turno(a['fascia'], a['segmento']))}", st.H2),
                p(f"{_nome_postazione(settimana, a)} · {et.RUOLI.get(a['ruolo'], a['ruolo'])}", st.TESTO),
                Paragraph(chi, st.TESTO), Spacer(1, 4)]
-    return [KeepTogether([*testata, *_proposte(e)]), Spacer(1, 12)]
+    # la testata e la proposta stanno insieme (CondPageBreak); le tabelle delle alternative possono continuare
+    return [CondPageBreak(230), *testata, *_proposte(e), Spacer(1, 12)]
 
 
 def _riquadro(contenuto: list, sfondo=RIQUADRO_BG, bordo=st.VERDE) -> Table:
@@ -333,7 +335,7 @@ def _proposte(e: dict) -> list:
     if in_regola:
         out.append(_proposta_diretta(in_regola[0]))
         if len(in_regola) > 1:
-            out += [Spacer(1, 6), _alternative("Se non è disponibile, in alternativa (in ordine):", in_regola[1:], False)]
+            out += [Spacer(1, 6), *_alternative("Se non è disponibile, in alternativa (in ordine):", in_regola[1:], False)]
     elif catene:
         out.append(_proposta_scambio(catene[0]))
     else:
@@ -341,7 +343,7 @@ def _proposte(e: dict) -> list:
                               Paragraph("Nessun dipendente può farlo rispettando le regole: serve un volontario.",
                                         _SCELTA)], st.AVVISO_BG, "#d99000"))
     if fuori:
-        out += [Spacer(1, 6), _alternative("Solo se non c'è altra soluzione (non rispettano le regole):", fuori, True)]
+        out += [Spacer(1, 6), *_alternative("Solo se non c'è altra soluzione (non rispettano le regole):", fuori, True)]
     return out
 
 
@@ -387,12 +389,12 @@ def _proposta_scambio(k: dict) -> Table:
     return _riquadro(righe)
 
 
-def _alternative(titolo: str, lista: list[dict], fuori_regola: bool) -> KeepTogether:
+def _alternative(titolo: str, lista: list[dict], fuori_regola: bool) -> list:
     righe = []
     for i, c in enumerate(lista, start=1):
         testi = [_semplifica(v, c["nome"]) for v in [*(c.get("regole", []) if fuori_regola else []), *c.get("avvisi", [])]]
         righe.append([i, _grassetto(c["nome"]), f"{et._num(_ore_totali(c))} h (con il turno: {et._num(c['ore_dopo'])} h)",
                       "; ".join(testi) or "—"])
-    return KeepTogether([Paragraph(f"<b>{escape(titolo)}</b>", st.TESTO), Spacer(1, 3),
-                         st.tabella(["#", "Nome", "Ore nella settimana", "Cosa non rispetta" if fuori_regola else "Note"],
-                                    righe, [4, 26, 28, 42], destra={0})])
+    return [CondPageBreak(110), Paragraph(f"<b>{escape(titolo)}</b>", st.TESTO), Spacer(1, 3),
+            st.tabella(["#", "Nome", "Ore nella settimana", "Cosa non rispetta" if fuori_regola else "Note"],
+                       righe, [4, 26, 28, 42], destra={0})]

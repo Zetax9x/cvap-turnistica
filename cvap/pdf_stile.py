@@ -83,7 +83,7 @@ def tabella(intestazioni: list[str], righe: list[list], larghezze: list[float], 
     for riga in righe:
         dati.append([c if isinstance(c, (Paragraph, list)) else p(c, stile(i, False)) for i, c in enumerate(riga)])
     somma = sum(larghezze)
-    t = Table(dati, colWidths=[w * totale / somma for w in larghezze], repeatRows=1)
+    t = Table(dati, colWidths=[w * totale / somma for w in larghezze], repeatRows=1, hAlign="LEFT")
     stile = [("GRID", (0, 0), (-1, -1), 0.4, GRIGLIA), ("VALIGN", (0, 0), (-1, -1), "TOP"),
              ("BACKGROUND", (0, 0), (-1, 0), TESTA_BG),
              ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
