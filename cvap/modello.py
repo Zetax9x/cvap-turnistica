@@ -25,6 +25,9 @@ TURNI_VIETABILI = ("mattina", "pomeriggio", "giorno", "notte")  # tipi di turno 
 STANDBY = "Standby"
 PROGRAMMATI = "Programmati"
 POSTAZIONI_A_RICHIESTA = (STANDBY, PROGRAMMATI)
+# Dove si lavora in equipaggio (autista e soccorritore insieme): solo qui i colleghi del turno contano e si
+# mostrano. Nei Programmati e nelle Assistenze ed Extra ognuno ha il suo servizio.
+POSTAZIONI_EQUIPAGGIO = frozenset({"Acquasanta", "Venarotta", "Ascoli", STANDBY})
 
 # Assistenze ed Extra (tutte le settimane): richieste con nome e orario libero a ore intere, con N autisti e
 # M soccorritori. Ogni richiesta ha il suo segmento "extra_<id>_<inizio>_<fine>" (ore dall'inizio del

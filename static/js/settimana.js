@@ -11,7 +11,7 @@ import {
   PARTI_TURNO, SCELTE_INDISPONIBILITA, partiTurno, valoreParti, etichettaParti, badgeAssenza,
   EXTRA, leggiExtra,
 } from "./util.js";
-import { scaricaPdf } from "./pdf.js";
+import { scaricaPdf, scaricaPdfServer } from "./pdf.js";
 
 const FASCE = ["giorno", "notte"];
 const RUOLI = ["autista", "soccorritore"];
@@ -370,7 +370,7 @@ async function apriTabelloneGenerato(inizio) {
     pdf.onclick = async () => {
       pdf.disabled = true;
       try {
-        await scaricaPdf([testata, griglie], `tabellone-generati-${inizio}`, { orientamento: "landscape", modalita: "tabellone" });
+        await scaricaPdfServer(`/api/settimane/${inizio}/pdf-tabellone?versione=generati`, `tabellone-generati-${inizio}`);
       } catch (err) {
         toast(err.message, "errore");
       } finally {
@@ -1425,15 +1425,17 @@ function renderStampaLiberi(s) {
       + "Fanno la notte = sono liberi di giorno e fanno la notte quella sera."));
 }
 
+// Tabellone e liberi: lo stesso PDF del server che si scarica dall'app e che arriva con i cambi turno
 function stampaGriglia() {
   annullaStampaSostituti();
-  scaricaPdf(stato.root, `tabellone-${stato.settimana.inizio}`, { orientamento: "landscape", modalita: "tabellone" });
+  const inizio = stato.settimana.inizio;
+  scaricaPdfServer(`/api/settimane/${inizio}/pdf-tabellone`, `tabellone-${inizio}`).catch(toastErrore);
 }
 
 function stampaLiberi() {
   annullaStampaSostituti();
-  scaricaPdf([stato.root.querySelector(".week-header"), stato.root.querySelector(".stampa-liberi")],
-    `liberi-${stato.settimana.inizio}`, { orientamento: "landscape", modalita: "liberi" });
+  const inizio = stato.settimana.inizio;
+  scaricaPdfServer(`/api/settimane/${inizio}/pdf-liberi`, `liberi-${inizio}`).catch(toastErrore);
 }
 
 // ---------------------------------------------------------------- Assistenze ed Extra

@@ -19,7 +19,7 @@ from zoneinfo import ZoneInfo
 
 from . import db
 from .email_turni import RUOLI, orario_turno
-from .modello import EXTRA, leggi_extra, orario
+from .modello import EXTRA, POSTAZIONI_EQUIPAGGIO, leggi_extra, orario
 
 ZONA = ZoneInfo("Europe/Rome")
 GIORNI_PRIMA = 62    # turni passati che restano nel calendario
@@ -118,8 +118,10 @@ def eventi_persona(conn: sqlite3.Connection, persona_id: int, oggi: date) -> lis
     for a in tutte:
         if a.persona_id != persona_id:
             continue
+        # colleghi solo dove si lavora in equipaggio (non nei Programmati né nelle Assistenze ed Extra)
         colleghi = sorted(f"{nomi.get(b.persona_id, '?')} ({b.ruolo})" for b in tutte
-                          if b.persona_id != persona_id and b.data == a.data and b.postazione == a.postazione
+                          if a.postazione in POSTAZIONI_EQUIPAGGIO and b.persona_id != persona_id
+                          and b.data == a.data and b.postazione == a.postazione
                           and b.inizio < a.fine and a.inizio < b.fine)
         ruolo = RUOLI.get(a.ruolo, a.ruolo)
         righe = [orario_turno(a.fascia, a.segmento), f"Ruolo: {ruolo}"]

@@ -1,10 +1,11 @@
 // Turni di un dipendente nella settimana: colleghi, totali, PDF e calendario .ics sul telefono.
 import { api } from "/static/js/api.js";
-import { el, todayISO, mondayOf, addDays, ddmm, parseISO, GIORNI_BREVI, indiceGiorno, etichetta, orarioTurno, oraInizio, formatOre, etichettaParti } from "/static/js/util.js";
+import { el, todayISO, mondayOf, addDays, ddmm, parseISO, GIORNI_BREVI, indiceGiorno, etichetta, orarioTurno, oraInizio, formatOre, etichettaParti, POSTAZIONI_EQUIPAGGIO } from "/static/js/util.js";
 import { testata, icona, pill, avviso, foglio, gruppo, riga, conferma, mostra, mostraErrore, monta, caricamento } from "./ui.js";
 
 /** Colleghi che condividono (anche solo in parte) il turno nella stessa postazione. */
 function colleghi(s, t) {
+  if (!POSTAZIONI_EQUIPAGGIO.includes(t.postazione)) return "";  // Programmati e Assistenze: ognuno per sé
   const dal = oraInizio(t.fascia, t.segmento), al = dal + t.ore;
   const nomi = new Map();
   for (const a of s.assegnazioni) {

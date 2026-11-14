@@ -10,7 +10,7 @@ import json
 from datetime import date, timedelta
 from email.message import EmailMessage
 
-from .modello import EXTRA, POSTAZIONI_A_RICHIESTA, meta_di, PROGRAMMATI, orario, parti_turno, segmento_intero
+from .modello import EXTRA, POSTAZIONI_A_RICHIESTA, POSTAZIONI_EQUIPAGGIO, meta_di, PROGRAMMATI, orario, parti_turno, segmento_intero
 
 GIORNI = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
 GIORNI_BREVI = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"]
@@ -92,7 +92,10 @@ def _ruoli_extra(e: dict) -> list[str]:
 
 
 def colleghi_turno(s: dict, turno: dict) -> str:
-    """Colleghi nello stesso servizio, limitati alle ore effettivamente condivise."""
+    """Colleghi nello stesso servizio, limitati alle ore effettivamente condivise; solo dove si lavora in equipaggio
+    (non nei Programmati né nelle Assistenze ed Extra)."""
+    if turno["postazione"] not in POSTAZIONI_EQUIPAGGIO:
+        return ""
     dal, al = orario(date.fromisoformat(turno["data"]), turno["fascia"], turno["segmento"])
     colleghi = set()
     for a in s["assegnazioni"]:

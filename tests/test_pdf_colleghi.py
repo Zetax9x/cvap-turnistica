@@ -83,3 +83,15 @@ def test_pdf_dall_api(tmp_path):
     assert r.headers["content-type"] == "application/pdf"
     assert r.content.startswith(b"%PDF")
     assert "attachment" in r.headers["content-disposition"]
+
+
+def test_programmati_e_assistenze_non_contano():
+    turni = [turno(0, 1, postazione="Programmati"), turno(0, 3, postazione="Programmati", ruolo="soccorritore"),
+             turno(1, 1, postazione="Standby"), turno(1, 4, postazione="Standby", ruolo="soccorritore")]
+    s = settimana(turni)
+    s[1].dipendenti = [1, 2, 3, 4]
+    out = con_chi([s], PERSONE)
+    anna = per_nome(out["autisti"])["Anna"]
+    assert anna["turni"] == 1  # solo lo Standby
+    assert [c["nome"] for c in anna["colleghi"]] == ["Elena"]
+    assert out["matrice"]["1"] == {"3": 0, "4": 1}

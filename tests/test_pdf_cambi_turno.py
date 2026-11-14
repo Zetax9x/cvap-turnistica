@@ -19,5 +19,6 @@ def test_pdf_servizi_ordinari_extra_e_rettifica(scenario):
     s = payload_settimana(conn, date(2090, 1, 2))
     pdf = pdf_cambi_turno.genera([s], rettifica=True)
     assert pdf.startswith(b'%PDF-')
-    testo = '\n'.join(p.extract_text() for p in PdfReader(BytesIO(pdf)).pages)
+    # gli a capo dipendono dalla larghezza delle celle: si confronta il testo come una riga sola
+    testo = ' '.join(' '.join(p.extract_text() for p in PdfReader(BytesIO(pdf)).pages).split())
     assert all(x in testo for x in ['Rettifica', 'Anna', 'Acquasanta', 'Venarotta', 'Assistenza partita', '16', '20'])

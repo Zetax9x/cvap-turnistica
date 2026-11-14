@@ -110,6 +110,8 @@ export const PARTI_TURNO = ["mattina", "pomeriggio", "notte"];
 // ---------- Assistenze ed Extra: segmento "extra_<id>_<inizio>_<fine>" (fine oltre 24 = giorno dopo) ----------
 
 export const EXTRA = "Assistenze ed Extra";
+// Dove si lavora in equipaggio: solo qui si mostrano i colleghi del turno (come POSTAZIONI_EQUIPAGGIO in modello.py)
+export const POSTAZIONI_EQUIPAGGIO = ["Acquasanta", "Venarotta", "Ascoli", "Standby"];
 
 /** {id, inizio, fine} di un segmento di Assistenze ed Extra, altrimenti null. */
 export function leggiExtra(segmento) {

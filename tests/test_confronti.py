@@ -67,3 +67,9 @@ def test_andamento_per_persona_dopo_quattro_settimane():
     assert anna["andamento"] == "si_avvicina"
     poche = equita(settimane[:3], persone)["giorno_notte"]
     assert all(d["andamento"] is None for d in poche["dipendenti"])
+
+
+def test_con_chi_si_lavora_senza_programmati():
+    turni = [turno(0, 1, postazione="Programmati"), turno(0, 2, postazione="Programmati", ruolo="soccorritore")]
+    col = {x["nome"]: x for x in confronti([settimana(turni)], PERSONE)["colleghi"]}
+    assert col["Anna"]["turni"] == 0 and col["Anna"]["frequenti"] == []

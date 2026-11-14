@@ -131,6 +131,21 @@ function normalizzaColori(documento) {
   }
 }
 
+/** Scarica un PDF preparato dal server (tabellone, liberi, turni personali…): lo stesso foglio, con lo stesso
+ * stile, che arriva via email e che si scarica dall'app. */
+export async function scaricaPdfServer(percorso, nome) {
+  const r = await fetch(percorso, { credentials: "same-origin" });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || `Errore ${r.status}`);
+  const url = URL.createObjectURL(await r.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${nomeFile(nome)}.pdf`;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
 /** Scarica un PDF del contenuto già visibile, senza aprire il dialogo di stampa del browser. */
 export async function scaricaPdf(sorgenti, titolo, { orientamento = "portrait", modalita = "" } = {}) {
   const area = document.createElement("article");

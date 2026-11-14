@@ -202,3 +202,16 @@ def test_cancellare_la_persona_toglie_il_link(client):
     p = percorso(client, mario)
     assert client.delete(f"/api/persone/{mario}").status_code == 204
     assert client.get(p).status_code == 404
+
+
+def test_nei_programmati_non_ci_sono_colleghi(client):
+    mario = crea(client, "Mario Rossi")
+    luca = crea(client, "Luca Bianchi")
+    voci = [{"data": LUNEDI, "postazione": "Programmati", "fascia": "giorno", "segmento": "prog_mattina",
+             "ruolo": "autista", "quantita": 2}]
+    assert client.put(f"/api/settimane/{LUNEDI}/fabbisogno", json={"voci": voci}).status_code == 200
+    turno(client, mario, postazione="Programmati", segmento="prog_mattina")
+    turno(client, luca, postazione="Programmati", segmento="prog_mattina")
+    conferma(client)
+    [e] = eventi(client.get(percorso(client, mario)).text)
+    assert e["SUMMARY"].startswith("Programmati") and "Luca" not in e["DESCRIPTION"]

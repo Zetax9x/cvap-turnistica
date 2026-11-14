@@ -19,8 +19,8 @@ def test_email_contiene_prima_dopo_avvisi_e_due_tabelloni(scenario):
     assert 'Segnalazioni' in testo and '2090-01-02' in testo and '2090-01-16' in testo
     pdf = PdfReader(BytesIO(list(m.iter_attachments())[0].get_payload(decode=True)))
     assert len(pdf.pages) >= 2
-    assert any('2090-01-02' in p.extract_text() for p in pdf.pages)
-    assert any('2090-01-16' in p.extract_text() for p in pdf.pages)
+    assert any('02/01/2090' in p.extract_text() for p in pdf.pages)  # date come nel resto del sito
+    assert any('16/01/2090' in p.extract_text() for p in pdf.pages)
 
 
 def test_reinvio_solo_destinatario_fallito_con_fotografia_originaria(scenario):
