@@ -30,19 +30,19 @@ AVVISO_BG, AVVISO_BORDO = colors.HexColor("#fff4cc"), colors.HexColor("#d99000")
 MARGINE = 24
 TESTATA = 54  # spazio riservato in alto per logo e titolo
 
-TITOLO = ParagraphStyle("titolo", fontName="Helvetica-Bold", fontSize=16, leading=19, textColor=colors.HexColor(VERDE))
-H2 = ParagraphStyle("h2", fontName="Helvetica-Bold", fontSize=12.5, leading=15, textColor=colors.HexColor(VERDE),
+TITOLO = ParagraphStyle("titolo", fontName="Helvetica-Bold", fontSize=18, leading=22, textColor=colors.HexColor(VERDE))
+H2 = ParagraphStyle("h2", fontName="Helvetica-Bold", fontSize=14, leading=17, textColor=colors.HexColor(VERDE),
                     spaceBefore=8, spaceAfter=5)
-H3 = ParagraphStyle("h3", fontName="Helvetica-Bold", fontSize=10.5, leading=13, textColor=colors.HexColor(TESTO_COLORE),
+H3 = ParagraphStyle("h3", fontName="Helvetica-Bold", fontSize=12, leading=15, textColor=colors.HexColor(TESTO_COLORE),
                     spaceBefore=7, spaceAfter=3)
-TESTO = ParagraphStyle("testo", fontName="Helvetica", fontSize=9, leading=12.5, textColor=colors.HexColor(TESTO_COLORE))
-CELLA = ParagraphStyle("cella", fontName="Helvetica", fontSize=8, leading=10.5, textColor=colors.HexColor(TESTO_COLORE))
+TESTO = ParagraphStyle("testo", fontName="Helvetica", fontSize=10.5, leading=14.5, textColor=colors.HexColor(TESTO_COLORE))
+CELLA = ParagraphStyle("cella", fontName="Helvetica", fontSize=9.5, leading=12.5, textColor=colors.HexColor(TESTO_COLORE))
 CELLA_DESTRA = ParagraphStyle("cella_destra", parent=CELLA, alignment=2)
 CELLA_CENTRO = ParagraphStyle("cella_centro", parent=CELLA, alignment=1)
 TESTA = ParagraphStyle("testa", parent=CELLA, fontName="Helvetica-Bold")
 TESTA_DESTRA = ParagraphStyle("testa_destra", parent=TESTA, alignment=2)
 TESTA_CENTRO = ParagraphStyle("testa_centro", parent=TESTA, alignment=1)
-NOTA = ParagraphStyle("nota", parent=CELLA, fontSize=7.5, leading=9.5, textColor=colors.HexColor(MUTO))
+NOTA = ParagraphStyle("nota", parent=CELLA, fontSize=8.5, leading=11, textColor=colors.HexColor(MUTO))
 AVVISO = ParagraphStyle("avviso", parent=TESTO, fontName="Helvetica-Bold", backColor=AVVISO_BG,
                         borderColor=AVVISO_BORDO, borderWidth=0.8, borderPadding=6, spaceBefore=4, spaceAfter=10)
 
@@ -74,8 +74,8 @@ def tabella(intestazioni: list[str], righe: list[list], larghezze: list[float], 
     t = Table(dati, colWidths=[w * totale / somma for w in larghezze], repeatRows=1)
     stile = [("GRID", (0, 0), (-1, -1), 0.4, GRIGLIA), ("VALIGN", (0, 0), (-1, -1), "TOP"),
              ("BACKGROUND", (0, 0), (-1, 0), TESTA_BG),
-             ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-             ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4)]
+             ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+             ("LEFTPADDING", (0, 0), (-1, -1), 5), ("RIGHTPADDING", (0, 0), (-1, -1), 5)]
     if alternata and len(dati) > 2:
         stile.append(("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, RIGA_ALTERNATA]))
     t.setStyle(TableStyle([*stile, *regole]))
@@ -86,8 +86,8 @@ def stile_griglia(regole=()) -> TableStyle:
     """Lo stile di base delle tabelle, per le griglie costruite a mano (tabellone, turni personali)."""
     return TableStyle([("GRID", (0, 0), (-1, -1), 0.4, GRIGLIA), ("VALIGN", (0, 0), (-1, -1), "TOP"),
                        ("BACKGROUND", (0, 0), (-1, 0), TESTA_BG),
-                       ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-                       ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4), *regole])
+                       ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                       ("LEFTPADDING", (0, 0), (-1, -1), 5), ("RIGHTPADDING", (0, 0), (-1, -1), 5), *regole])
 
 
 def documento(titolo: str, sottotitolo: str, blocchi: list, *, verticale: bool = False,
@@ -109,18 +109,18 @@ def documento(titolo: str, sottotitolo: str, blocchi: list, *, verticale: bool =
             canvas.drawImage(str(LOGO), x, alto - 40, width=91, height=40, mask="auto")
             x += 104
         canvas.setFillColor(colors.HexColor(VERDE))
-        canvas.setFont("Helvetica-Bold", 16)
-        canvas.drawString(x, alto - 17, titolo)
+        canvas.setFont("Helvetica-Bold", 18)
+        canvas.drawString(x, alto - 18, titolo)
         canvas.setFillColor(colors.HexColor(MUTO))
-        canvas.setFont("Helvetica", 9.5)
-        canvas.drawString(x, alto - 32, sottotitolo)
+        canvas.setFont("Helvetica", 11)
+        canvas.drawString(x, alto - 34, sottotitolo)
         canvas.setStrokeColor(colors.HexColor(VERDE))
         canvas.setLineWidth(1.2)
         canvas.line(MARGINE, alto - 47, w - MARGINE, alto - 47)
         canvas.setStrokeColor(GRIGLIA)
         canvas.setLineWidth(0.5)
         canvas.line(MARGINE, MARGINE + 2, w - MARGINE, MARGINE + 2)
-        canvas.setFont("Helvetica", 7.5)
+        canvas.setFont("Helvetica", 8.5)
         canvas.drawString(MARGINE, MARGINE - 8, f"{ENTE} · {titolo} · creato il {creato}")
         canvas.drawRightString(w - MARGINE, MARGINE - 8, f"Pagina {_doc.page}")
         canvas.restoreState()

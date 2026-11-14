@@ -33,7 +33,7 @@ def _testa_giorni(s: dict) -> tuple[list, list]:
         feste = et._nomi_feste(s, g)
         testo = f"{et.GIORNI_BREVI[date.fromisoformat(g).weekday()]} {et._dm(g)}"
         if feste:
-            testo += f'<br/><font size="7" color="{et.FESTIVO_TESTO}">{escape(feste)}</font>'
+            testo += f'<br/><font size="8.5" color="{et.FESTIVO_TESTO}">{escape(feste)}</font>'
             regole.append(("BACKGROUND", (i, 0), (i, 0), _c(et.FESTIVO_BG)))
         elif date.fromisoformat(g).weekday() >= 5:
             regole.append(("BACKGROUND", (i, 0), (i, 0), _c(et.WEEKEND_BG)))
@@ -53,7 +53,7 @@ def _voci(persone: list[dict], scoperte: list[str]) -> list[Paragraph]:
 
 
 def _tabella(righe: list[list], regole: list, larghezza: float) -> Table:
-    colonne = [72] + [(larghezza - 72) / 7] * 7
+    colonne = [80] + [(larghezza - 80) / 7] * 7
     t = Table(righe, colWidths=colonne, repeatRows=1)
     t.setStyle(st.stile_griglia(regole))
     return t

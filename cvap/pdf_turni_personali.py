@@ -10,7 +10,7 @@ from reportlab.platypus import Paragraph, Spacer, Table
 from . import email_turni
 from . import pdf_stile as st
 
-_TURNO = ParagraphStyle("turno", parent=st.CELLA, fontSize=10, leading=13.5, alignment=1, spaceAfter=6)
+_TURNO = ParagraphStyle("turno", parent=st.CELLA, fontSize=11.5, leading=15, alignment=1, spaceAfter=7)
 _GIORNO = ParagraphStyle("giorno", parent=_TURNO, fontName="Helvetica-Bold", spaceAfter=0)
 _RIPOSO = ParagraphStyle("riposo", parent=_TURNO, textColor=colors.HexColor(st.MUTO))
 
@@ -24,7 +24,7 @@ def genera(settimana: dict, persona: dict) -> bytes:
         feste = email_turni._nomi_feste(settimana, g['data'])
         testa = f"{email_turni.GIORNI[d.weekday()]}<br/>{email_turni._dm(g['data'])}"
         if feste:
-            testa += f'<br/><font size="7.5" color="{email_turni.FESTIVO_TESTO}">{escape(feste)}</font>'
+            testa += f'<br/><font size="9" color="{email_turni.FESTIVO_TESTO}">{escape(feste)}</font>'
             regole.append(('BACKGROUND', (i, 0), (i, 0), colors.HexColor(email_turni.FESTIVO_BG)))
         elif d.weekday() >= 5:
             regole.append(('BACKGROUND', (i, 0), (i, 0), colors.HexColor(email_turni.WEEKEND_BG)))
@@ -34,7 +34,7 @@ def genera(settimana: dict, persona: dict) -> bytes:
             contenuto.append(Paragraph(
                 f"<b>{escape(t['orario'])}</b><br/>{escape(t['postazione'])}<br/>"
                 f"<font color=\"{st.MUTO}\">{escape(t['ruolo'])}</font>"
-                + (f"<br/><font size=\"8.5\">Con {escape(t['colleghi'])}</font>" if t['colleghi'] else ''), _TURNO))
+                + (f"<br/><font size=\"10\">Con {escape(t['colleghi'])}</font>" if t['colleghi'] else ''), _TURNO))
         if not contenuto:
             contenuto.append(Paragraph(escape(email_turni.stato_giorno(settimana, persona['id'], g)), _RIPOSO))
         celle.append(contenuto)
