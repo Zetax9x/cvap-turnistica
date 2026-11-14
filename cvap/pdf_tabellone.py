@@ -5,34 +5,21 @@ così il foglio coincide con quello che si vede nella pagina.
 """
 from datetime import date
 from html import escape
-from io import BytesIO
 
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import KeepTogether, PageBreak, Paragraph, Spacer, Table
 
 from . import email_turni as et
+from . import pdf_stile as st
 from .modello import EXTRA
 
-_PICCOLO = ParagraphStyle("cella", fontName="Helvetica", fontSize=8, leading=10)
-_CENTRO = ParagraphStyle("testa", parent=_PICCOLO, alignment=1, fontName="Helvetica-Bold")
-_NOTA = ParagraphStyle("nota", parent=_PICCOLO, textColor=colors.HexColor("#4d5868"))
-_GRIGLIA = colors.HexColor("#8a94a3")
+_PICCOLO = st.CELLA
+_CENTRO = st.TESTA_CENTRO
+_NOTA = st.NOTA
 
 
 def _c(hex_: str):
     return colors.HexColor(hex_)
-
-
-def _documento(titolo: str, sottotitolo: str, blocchi: list) -> bytes:
-    out = BytesIO()
-    doc = SimpleDocTemplate(out, pagesize=landscape(A4), leftMargin=18, rightMargin=18, topMargin=20,
-                            bottomMargin=20, title=titolo)
-    stili = getSampleStyleSheet()
-    doc.build([Paragraph(escape(titolo), stili["Title"]), Paragraph(escape(sottotitolo), stili["Heading3"]),
-               Spacer(1, 6), *blocchi])
-    return out.getvalue()
 
 
 def _periodo(s: dict) -> str:
@@ -66,16 +53,16 @@ def _voci(persone: list[dict], scoperte: list[str]) -> list[Paragraph]:
 
 
 def _tabella(righe: list[list], regole: list, larghezza: float) -> Table:
-    colonne = [70] + [(larghezza - 70) / 7] * 7
+    colonne = [72] + [(larghezza - 72) / 7] * 7
     t = Table(righe, colWidths=colonne, repeatRows=1)
-    t.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.5, _GRIGLIA), ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                           ("BACKGROUND", (0, 0), (-1, 0), _c(et.TESTA_BG)),
-                           ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3), *regole]))
+    t.setStyle(st.stile_griglia(regole))
     return t
 
 
-def genera_tabellone(s: dict) -> bytes:
-    larghezza = landscape(A4)[0] - 36
+def blocchi_tabellone(s: dict) -> list:
+    """Le griglie del tabellone di una settimana (una per postazione, più Assistenze ed Extra): le stesse per il
+    download e per l'email dei cambi turno."""
+    larghezza = st.larghezza()
     testa, regole_testa = _testa_giorni(s)
     blocchi = []
     for postazione in et._postazioni(s):
@@ -88,8 +75,8 @@ def genera_tabellone(s: dict) -> bytes:
             regole.append(("BACKGROUND", (0, i), (-1, i), sfondo))
             if i > 1 and ruolo == "autista":
                 regole.append(("LINEABOVE", (0, i), (-1, i), 1.5, colors.black))
-        blocchi.append(KeepTogether([Paragraph(f"<b>{escape(postazione)}</b>", getSampleStyleSheet()["Heading4"]),
-                                     _tabella(righe, regole, larghezza), Spacer(1, 8)]))
+        blocchi.append(KeepTogether([Paragraph(escape(postazione), st.H3), _tabella(righe, regole, larghezza),
+                                     Spacer(1, 6)]))
     if s.get("extra"):
         celle = []
         for g in s["giorni"]:
@@ -101,14 +88,47 @@ def genera_tabellone(s: dict) -> bytes:
                     schede.append(Paragraph(f"<i>{et.RUOLI[ruolo]}</i>", _NOTA))
                     schede += _voci(persone, scoperte)
             celle.append(schede or [Paragraph("—", _PICCOLO)])
-        blocchi.append(KeepTogether([Paragraph(f"<b>{EXTRA}</b>", getSampleStyleSheet()["Heading4"]),
+        blocchi.append(KeepTogether([Paragraph(EXTRA, st.H3),
                                      _tabella([[Paragraph("Richieste", _CENTRO), *testa], [Paragraph("Assistenze<br/>ed Extra", _PICCOLO), *celle]],
                                               regole_testa, larghezza)]))
-    return _documento("Tabellone dei turni", _periodo(s), blocchi)
+    blocchi.append(_legenda())
+    return blocchi
+
+
+def _legenda() -> Paragraph:
+    return Paragraph(
+        f'<font backColor="{et.GIORNO_BG}">&nbsp;Giorno&nbsp;</font> &nbsp; '
+        f'<font backColor="{et.NOTTE_BG}">&nbsp;Notte&nbsp;</font> &nbsp; '
+        f'<font backColor="{et.VOL_BG}" color="{et.VOL_TESTO}">&nbsp;<b>Volontario</b>&nbsp;</font> &nbsp; '
+        f'<font color="{et.ROSSO}"><b>scoperto</b></font> = posto senza nessuno · '
+        "accanto al nome l'orario, se fa solo una parte del turno.", st.NOTA)
+
+
+def genera_tabellone(s: dict, avviso: str | None = None) -> bytes:
+    """Il tabellone di una settimana. `avviso`: es. "Aggiornato con i cambi turno" (email dei cambi turno)."""
+    return st.documento("Tabellone dei turni", _periodo(s) + _versione(s), blocchi_tabellone(s), avviso=avviso)
+
+
+def genera_tabelloni(settimane: list[dict], avviso: str | None = None) -> bytes:
+    """Più settimane nello stesso PDF (email dei cambi turno), una per pagina, con lo stesso disegno."""
+    blocchi = []
+    for n, s in enumerate(settimane):
+        if n:
+            blocchi.append(PageBreak())
+        if len(settimane) > 1:
+            blocchi.append(Paragraph(escape(_periodo(s) + _versione(s)), st.H2))
+        blocchi += blocchi_tabellone(s)
+    sottotitolo = _periodo(settimane[0]) if len(settimane) == 1 else (
+        f"Dal {et._dmy(settimane[0]['inizio'])} al {et._dmy(settimane[-1]['fine'])}")
+    return st.documento("Tabellone dei turni", sottotitolo, blocchi, avviso=avviso)
+
+
+def _versione(s: dict) -> str:
+    return " · turni generati (senza i cambi turno)" if s.get("versione") == "generati" else ""
 
 
 def genera_liberi(s: dict) -> bytes:
-    larghezza = landscape(A4)[0] - 36
+    larghezza = st.larghezza()
     testa, regole = _testa_giorni(s)
     righe = [[Paragraph("", _CENTRO), *testa]]
     for chiave, titolo, bg in (("liberi", "Liberi", "#e3f2e6"), ("indisponibili", "Indisponibili", "#fdf0d5"),
@@ -127,4 +147,4 @@ def genera_liberi(s: dict) -> bytes:
         righe.append([Paragraph(f"<b>{titolo}</b>", _PICCOLO), *celle])
         regole.append(("BACKGROUND", (0, len(righe) - 1), (0, len(righe) - 1), _c(bg)))
     nota = Paragraph("Smonto notte = ha fatto la notte il giorno prima (finisce alle 8) · notte = fa la notte quella sera.", _NOTA)
-    return _documento("Dipendenti liberi", _periodo(s), [_tabella(righe, regole, larghezza), Spacer(1, 6), nota])
+    return st.documento("Dipendenti liberi", _periodo(s), [_tabella(righe, regole, larghezza), Spacer(1, 6), nota])

@@ -5,32 +5,19 @@ Stessi contenuti che prima erano nel corpo dell'email: esito della generazione, 
 indisponibilità. I testi e i formati dei numeri vengono da `email_turni`, così PDF ed email dicono lo stesso.
 """
 from html import escape
-from io import BytesIO
 
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.platypus import KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import KeepTogether, PageBreak, Paragraph, Spacer
 
 from . import email_turni as et
+from . import pdf_stile as st
 
-_STILI = getSampleStyleSheet()
-_TITOLO = _STILI["Title"]
-_H2 = ParagraphStyle("h2", parent=_STILI["Heading2"], textColor=colors.HexColor(et.VERDE), spaceBefore=4, spaceAfter=4)
-_H3 = ParagraphStyle("h3", parent=_STILI["Heading3"], fontSize=11, spaceBefore=8, spaceAfter=2)
-_TESTO = ParagraphStyle("testo", fontName="Helvetica", fontSize=9, leading=12)
-_CELLA = ParagraphStyle("cella", fontName="Helvetica", fontSize=8, leading=10)
-_NOTA = ParagraphStyle("nota", parent=_CELLA, fontSize=7.5, textColor=colors.HexColor("#4d5868"))
-_TESTA = ParagraphStyle("testa", parent=_CELLA, fontName="Helvetica-Bold")
-_DESTRA = ParagraphStyle("destra", parent=_CELLA, alignment=2)
-_TESTA_DESTRA = ParagraphStyle("testa_destra", parent=_TESTA, alignment=2)
-
-
-class Markup(str):
-    """Testo di una cella già in formato reportlab (grassetto, colori): non va escapato."""
-_GRIGLIA = colors.HexColor("#c3cbd6")
+# stili comuni a tutti i PDF (pdf_stile); i nomi brevi restano per pdf_colleghi
+_H2, _H3, _TESTO, _CELLA, _NOTA, _TESTA = st.H2, st.H3, st.TESTO, st.CELLA, st.NOTA, st.TESTA
+_DESTRA, _TESTA_DESTRA = st.CELLA_DESTRA, st.TESTA_DESTRA
+Markup = st.Markup
+_GRIGLIA = st.GRIGLIA
 _SOPRA, _SOTTO = "#c2410c", "#1d4ed8"  # come nella pagina Equità: arancio più del previsto, blu meno
-LARGHEZZA = landscape(A4)[0] - 36
+LARGHEZZA = st.larghezza()
 # senza frecce: i caratteri standard dei PDF non le hanno
 _ANDAMENTO = {"si_avvicina": "si avvicina al valore atteso", "si_allontana": "si allontana dal valore atteso",
               "stabile": "stabile"}
@@ -40,19 +27,9 @@ def _p(testo, stile=_CELLA) -> Paragraph:
     return Paragraph(testo if isinstance(testo, str) else escape(str(testo)), stile)
 
 
-def _tabella(intestazioni: list[str], righe: list[list], larghezze: list[float], destra: set[int] = frozenset()) -> Table:
-    dati = [[_p(escape(t), _TESTA_DESTRA if i in destra else _TESTA) for i, t in enumerate(intestazioni)]]
-    for riga in righe:
-        dati.append([Paragraph(c if isinstance(c, Markup) else escape(str(c)), _DESTRA if i in destra else _CELLA)
-                     for i, c in enumerate(riga)])
-    totale = sum(larghezze)
-    t = Table(dati, colWidths=[w * LARGHEZZA / totale for w in larghezze], repeatRows=1)
-    t.setStyle(TableStyle([
-        ("GRID", (0, 0), (-1, -1), 0.4, _GRIGLIA), ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(et.TESTA_BG)),
-        ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-        ]))
-    return t
+def _tabella(intestazioni: list[str], righe: list[list], larghezze: list[float], destra: set[int] = frozenset()):
+    return st.tabella(intestazioni, [[c if isinstance(c, Markup) else str(c) for c in r] for r in righe], larghezze,
+                      destra)
 
 
 def _scarto(x) -> str:
@@ -195,11 +172,8 @@ def _indisponibilita(righe: list[dict]) -> list:
 
 def genera_equita(s: dict, *, equita: dict, statistiche: list[dict], statistiche_indisp: list[dict],
                   confronti: dict | None = None, assenze: dict[int, str] | None = None) -> bytes:
-    out = BytesIO()
-    titolo = f"Equità dei turni dopo la settimana dal {et._dm(s['inizio'])} al {et._dmy(s['fine'])}"
-    doc = SimpleDocTemplate(out, pagesize=landscape(A4), leftMargin=18, rightMargin=18, topMargin=20, bottomMargin=20,
-                            title=titolo, author="Croce Verde Ascoli Piceno · Turnistica")
-    doc.build([Paragraph(escape(titolo), _TITOLO), *_generazione(s), *_equita(equita, assenze or {}), PageBreak(),
-               *_confronti(confronti or {}), PageBreak(), *_statistiche(statistiche), Spacer(1, 8),
-               *_indisponibilita(statistiche_indisp)])
-    return out.getvalue()
+    periodo = f"Dopo la settimana dal {et._dm(s['inizio'])} al {et._dmy(s['fine'])}"
+    return st.documento("Equità dei turni", periodo,
+                        [*_generazione(s), *_equita(equita, assenze or {}), PageBreak(),
+                         *_confronti(confronti or {}), PageBreak(), *_statistiche(statistiche), Spacer(1, 8),
+                         *_indisponibilita(statistiche_indisp)])

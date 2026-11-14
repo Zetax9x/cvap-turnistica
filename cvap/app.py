@@ -1424,7 +1424,7 @@ def create_app(db_path: str, password: str | None = None, postino=None,
         """PDF del tabellone della settimana (A4 orizzontale)."""
         from .pdf_tabellone import genera_tabellone
         inizio = lunedi(_data(data))
-        contenuto = genera_tabellone(payload_settimana(conn, inizio, versione=versione))
+        contenuto = genera_tabellone({**payload_settimana(conn, inizio, versione=versione), "versione": versione})
         return Response(contenuto, media_type="application/pdf", headers={
             "Content-Disposition": f'inline; filename="tabellone-{versione}-{inizio.isoformat()}.pdf"', "Cache-Control": "no-store"})
 

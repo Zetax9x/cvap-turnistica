@@ -6,14 +6,13 @@ e ogni soccorritore il dettaglio: con chi ha lavorato (dipendenti e volontari de
 giorno e di notte, l'ultima volta insieme e con chi non ha mai lavorato. Dati da `confronti.con_chi`.
 """
 from html import escape
-from io import BytesIO
 
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4, landscape
-from reportlab.platypus import KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import KeepTogether, PageBreak, Paragraph, Spacer, Table, TableStyle
 
 from . import email_turni as et
-from .pdf_equita import _CELLA, _GRIGLIA, _H2, _H3, _NOTA, _TESTA, _TESTO, _TITOLO, LARGHEZZA, Markup, _p, _tabella
+from . import pdf_stile as st
+from .pdf_equita import _CELLA, _GRIGLIA, _H2, _H3, _NOTA, _TESTA, _TESTO, LARGHEZZA, Markup, _p, _tabella
 
 _MAI_BG = colors.HexColor("#fde2e1")  # caselle «mai insieme» (testo #9f1d1d)
 _CENTRO = _CELLA.clone("centro", alignment=1)
@@ -36,7 +35,7 @@ def _matrice(dati: dict) -> list:
         _p("Soccorritori mai incontrati", _TESTA_CENTRO)]
     righe = [testa]
     stile = [("GRID", (0, 0), (-1, -1), 0.4, _GRIGLIA), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(et.TESTA_BG)),
+             ("BACKGROUND", (0, 0), (-1, 0), st.TESTA_BG),
              ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]
     for r, a in enumerate(autisti, start=1):
         riga = [_p(f"<b>{_nome(a)}</b>", _CELLA)]
@@ -52,7 +51,7 @@ def _matrice(dati: dict) -> list:
     # in fondo, per ogni soccorritore, quanti autisti non ha mai incontrato
     righe.append([_p("<b>Autisti mai incontrati</b>", _CELLA)] + [_p(str(len(b["mai"])), _CENTRO) for b in soccorritori]
                  + [_p("", _CENTRO)])
-    stile.append(("BACKGROUND", (0, len(righe) - 1), (-1, len(righe) - 1), colors.HexColor(et.TESTA_BG)))
+    stile.append(("BACKGROUND", (0, len(righe) - 1), (-1, len(righe) - 1), st.TESTA_BG))
     nome, mai = 120, 70
     cella = (LARGHEZZA - nome - mai) / len(soccorritori)
     t = Table(righe, colWidths=[nome] + [cella] * len(soccorritori) + [mai], repeatRows=1)
@@ -95,15 +94,12 @@ def _scheda(d: dict, altri: str) -> list:
 
 def genera_colleghi(dati: dict, periodo: str) -> bytes:
     """`dati`: `confronti.con_chi`; `periodo`: es. "dal 19/10/2026 al 15/11/2026"."""
-    out = BytesIO()
-    doc = SimpleDocTemplate(out, pagesize=landscape(A4), leftMargin=18, rightMargin=18, topMargin=20, bottomMargin=20,
-                            title="Con chi si lavora", author="Croce Verde Ascoli Piceno")
     settimane = dati.get("settimane", [])
     intro = (f"{len(settimane)} {'settimana confermata' if len(settimane) == 1 else 'settimane confermate'} con turni "
              f"generati, {escape(periodo)}. Si contano solo le coppie autista + soccorritore (per qualifica): lavorano "
              "insieme quando hanno un turno nello stesso giorno, nella stessa postazione e nella stessa fascia (giorno o "
              "notte), anche se uno dei due fa mezzo turno.")
-    contenuto = [Paragraph("Con chi si lavora", _TITOLO), _p(intro, _TESTO), Spacer(1, 6)]
+    contenuto = [_p(intro, _TESTO), Spacer(1, 6)]
     if not dati.get("autisti") and not dati.get("soccorritori"):
         contenuto.append(_p("Nessuna settimana confermata con turni generati nel periodo.", _TESTO))
     else:
@@ -114,14 +110,4 @@ def genera_colleghi(dati: dict, periodo: str) -> bytes:
         contenuto += [PageBreak(), Paragraph("Soccorritori: con quali autisti", _H2)]
         for d in dati["soccorritori"]:
             contenuto += _scheda(d, "autisti")
-    doc.build(contenuto, onFirstPage=_pie, onLaterPages=_pie)
-    return out.getvalue()
-
-
-def _pie(canvas, doc):
-    canvas.saveState()
-    canvas.setFont("Helvetica", 7)
-    canvas.setFillColor(colors.HexColor("#4d5868"))
-    canvas.drawCentredString(landscape(A4)[0] / 2, 10,
-                             f"Croce Verde Ascoli Piceno · Con chi si lavora · pagina {doc.page}")
-    canvas.restoreState()
+    return st.documento("Con chi si lavora", periodo[0].upper() + periodo[1:], contenuto)

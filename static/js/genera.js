@@ -7,6 +7,7 @@ import {
   el, toast, toastErrore, chiediConferma, addDays, mondayOf, todayISO, ddmm, parseISO, GIORNI_BREVI, indiceGiorno,
   etichetta, orarioTurno, PARTI_TURNO, SCELTE_INDISPONIBILITA, etichettaParti, badgeAssenza,
 } from "./util.js";
+import { scaricaPdfServer } from "./pdf.js";
 
 const TEMPO_GENERAZIONE = 180;  // secondi
 const PASSI = ["Servizi", "Volontari", "Ferie e malattie", "Indisponibilità", "Riepilogo", "Generazione"];
@@ -103,16 +104,9 @@ function intestazione() {
 }
 
 async function scaricaPdf(tipo) {
-  const percorso = `/api/settimane/${stato.settimana.inizio}/pdf-${tipo}`;
+  const inizio = stato.settimana.inizio;
   try {
-    const r = await fetch(percorso, { credentials: "same-origin" });
-    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || `Errore ${r.status}`);
-    const url = URL.createObjectURL(await r.blob());
-    const a = el("a", { href: url, download: `${tipo === "liberi" ? "liberi" : "turni"}-${stato.settimana.inizio}.pdf` });
-    document.body.append(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    await scaricaPdfServer(`/api/settimane/${inizio}/pdf-${tipo}`, `${tipo === "liberi" ? "liberi" : "tabellone"}-${inizio}`);
   } catch (err) {
     toastErrore(err);
   }

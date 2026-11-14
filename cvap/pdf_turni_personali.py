@@ -1,54 +1,53 @@
-"""PDF personale: sette giorni in colonna, come la stampa della pagina Dipendenti."""
+"""PDF personale (allegato alle email dei turni e scaricabile da «Turni dipendente»): sette giorni in colonna,
+con lo stile comune dei PDF (`pdf_stile`) e gli stessi colori del tabellone (giorno, notte, weekend, festività)."""
 from datetime import date
 from html import escape
-from io import BytesIO
 
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.platypus import Paragraph, Spacer, Table
 
 from . import email_turni
+from . import pdf_stile as st
+
+_TURNO = ParagraphStyle("turno", parent=st.CELLA, fontSize=10, leading=13.5, alignment=1, spaceAfter=6)
+_GIORNO = ParagraphStyle("giorno", parent=_TURNO, fontName="Helvetica-Bold", spaceAfter=0)
+_RIPOSO = ParagraphStyle("riposo", parent=_TURNO, textColor=colors.HexColor(st.MUTO))
 
 
 def genera(settimana: dict, persona: dict) -> bytes:
-    out = BytesIO()
-    doc = SimpleDocTemplate(out, pagesize=landscape(A4), leftMargin=20, rightMargin=20,
-                            topMargin=24, bottomMargin=24, title=f"Turni di {persona['nome']}")
-    stili = getSampleStyleSheet()
-    normale = ParagraphStyle('turno', fontName='Helvetica', fontSize=11, leading=15,
-                             alignment=1, spaceAfter=5)
-    intestazione = ParagraphStyle('giorno', parent=normale, fontName='Helvetica-Bold')
     giorni = email_turni.turni_personali(settimana, persona['id'], con_colleghi=True)
     titoli, celle = [], []
-    for g in giorni:
-        indice = date.fromisoformat(g['data']).weekday()
-        titoli.append(Paragraph(f"{email_turni.GIORNI[indice]}<br/>{email_turni._dm(g['data'])}", intestazione))
+    regole = []
+    for i, g in enumerate(giorni):
+        d = date.fromisoformat(g['data'])
+        feste = email_turni._nomi_feste(settimana, g['data'])
+        testa = f"{email_turni.GIORNI[d.weekday()]}<br/>{email_turni._dm(g['data'])}"
+        if feste:
+            testa += f'<br/><font size="7.5" color="{email_turni.FESTIVO_TESTO}">{escape(feste)}</font>'
+            regole.append(('BACKGROUND', (i, 0), (i, 0), colors.HexColor(email_turni.FESTIVO_BG)))
+        elif d.weekday() >= 5:
+            regole.append(('BACKGROUND', (i, 0), (i, 0), colors.HexColor(email_turni.WEEKEND_BG)))
+        titoli.append(Paragraph(testa, _GIORNO))
         contenuto = []
         for t in g['turni']:
             contenuto.append(Paragraph(
-                f"<b>{escape(t['orario'])}</b><br/><b>{escape(t['postazione'])}</b><br/>"
-                f"{escape(t['ruolo'])}"
-                + (f"<br/>Con {escape(t['colleghi'])}" if t['colleghi'] else ''), normale))
+                f"<b>{escape(t['orario'])}</b><br/>{escape(t['postazione'])}<br/>"
+                f"<font color=\"{st.MUTO}\">{escape(t['ruolo'])}</font>"
+                + (f"<br/><font size=\"8.5\">Con {escape(t['colleghi'])}</font>" if t['colleghi'] else ''), _TURNO))
         if not contenuto:
-            etichetta = email_turni.stato_giorno(settimana, persona['id'], g)
-            contenuto.append(Paragraph(etichetta, normale))
+            contenuto.append(Paragraph(escape(email_turni.stato_giorno(settimana, persona['id'], g)), _RIPOSO))
         celle.append(contenuto)
-    tabella = Table([titoli, celle], colWidths=[doc.width / len(giorni)] * len(giorni), repeatRows=1)
-    regole = [('GRID', (0, 0), (-1, -1), .7, colors.HexColor('#555555')),
-              ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#aac6f2')),
-              ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-              ('TOPPADDING', (0, 0), (-1, -1), 10), ('BOTTOMPADDING', (0, 0), (-1, -1), 10)]
-    for i, g in enumerate(giorni):
-        if date.fromisoformat(g['data']).weekday() >= 5:
-            regole.append(('BACKGROUND', (i, 0), (i, 0), colors.HexColor('#c79cc2')))
         if g['turni'] and all(t['fascia'] == 'notte' for t in g['turni']):
-            regole.append(('BACKGROUND', (i, 1), (i, 1), colors.HexColor('#eef1fc')))
+            regole.append(('BACKGROUND', (i, 1), (i, 1), colors.HexColor(email_turni.NOTTE_BG)))
         elif g['turni']:
-            regole.append(('BACKGROUND', (i, 1), (i, 1), colors.HexColor('#fff8de')))
-    tabella.setStyle(TableStyle(regole))
-    doc.build([Paragraph(escape(persona['nome']), stili['Title']),
-               Paragraph(f"Turni dal {email_turni._dmy(settimana['inizio'])} "
-                         f"al {email_turni._dmy(settimana['fine'])}", stili['Heading2']),
-               Spacer(1, 12), tabella])
-    return out.getvalue()
+            regole.append(('BACKGROUND', (i, 1), (i, 1), colors.HexColor(email_turni.GIORNO_BG)))
+    larghezza = st.larghezza()
+    tabella = Table([titoli, celle], colWidths=[larghezza / len(giorni)] * len(giorni), repeatRows=1)
+    tabella.setStyle(st.stile_griglia([('TOPPADDING', (0, 0), (-1, -1), 8), ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                                       *regole]))
+    periodo = f"Settimana dal {email_turni._dmy(settimana['inizio'])} al {email_turni._dmy(settimana['fine'])}"
+    legenda = Paragraph(f'<font backColor="{email_turni.GIORNO_BG}">&nbsp;Turno di giorno&nbsp;</font> &nbsp; '
+                        f'<font backColor="{email_turni.NOTTE_BG}">&nbsp;Turno di notte&nbsp;</font> &nbsp; '
+                        "«Con»: i colleghi dello stesso turno.", st.NOTA)
+    return st.documento(f"Turni di {persona['nome']}", periodo, [tabella, Spacer(1, 6), legenda])
