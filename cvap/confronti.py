@@ -9,9 +9,13 @@ from collections.abc import Sequence
 from datetime import date, timedelta
 
 from .equita import _differenza, _r, _scelti
-from .storico import SettimanaPassata, solo_generate
+from .modello import STANDBY
+from .storico import SEDI_ALTERNATE, SettimanaPassata, solo_generate
+from .vincoli import ASCOLI
 
 FREQUENTI = 3  # colleghi più frequenti mostrati per persona
+# dove si lavora davvero in equipaggio; nei Programmati e nelle Assistenze ognuno ha il suo servizio
+POSTAZIONI_EQUIPAGGIO = frozenset({*SEDI_ALTERNATE, ASCOLI, STANDBY})
 
 
 def _contate(settimane: Sequence[tuple[date, SettimanaPassata]]) -> list[tuple[date, SettimanaPassata]]:
@@ -83,7 +87,8 @@ def colleghi(contate: list[tuple[date, SettimanaPassata]], scelti: list[dict], p
     for _, s in contate:
         gruppi = defaultdict(set)
         for a in s.assegnazioni:
-            gruppi[(a.data, a.postazione, a.fascia)].add(a.persona_id)
+            if a.postazione in POSTAZIONI_EQUIPAGGIO:
+                gruppi[(a.data, a.postazione, a.fascia)].add(a.persona_id)
         for chi in gruppi.values():
             for pid in chi & ids:
                 altri = chi - {pid}
@@ -119,7 +124,8 @@ def con_chi(settimane: Sequence[tuple[date, SettimanaPassata]], persone: Sequenc
     for _, s in contate:
         gruppi = defaultdict(set)
         for a in s.assegnazioni:
-            gruppi[(a.data, a.postazione, a.fascia)].add(a.persona_id)
+            if a.postazione in POSTAZIONI_EQUIPAGGIO:
+                gruppi[(a.data, a.postazione, a.fascia)].add(a.persona_id)
         for (giorno, _, fascia), chi in gruppi.items():
             for pid in chi & ids:
                 turni[pid] += 1
