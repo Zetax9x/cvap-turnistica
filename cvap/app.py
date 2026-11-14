@@ -1199,14 +1199,18 @@ def create_app(db_path: str, password: str | None = None, postino=None,
             return payload_settimana(conn, inizio)
 
     def email_equita(conn, inizio: date, indirizzo: str):
+        """Sui turni generati, come il generatore: i cambi turno fatti dopo la conferma non contano."""
         s = payload_settimana(conn, inizio)
-        quadro = api_equita.quadro_equita(conn, _settimana_passata)
+        quadro = api_equita.quadro_equita(conn, _settimana_passata, versione="generati")
         settimane = quadro["settimane"]
         assenze = email_turni.note_assenze(db.lista_ferie(conn), date.fromisoformat(settimane[0]),
                                            date.fromisoformat(settimane[-1]) + timedelta(days=6)) if settimane else {}
         return email_turni.componi_equita(s, indirizzo, None, equita=quadro,
-                                          statistiche=statistiche(conn), statistiche_indisp=statistiche_indisponibilita(conn),
-                                          confronti=api_equita.confronti_equita(conn, _settimana_passata), assenze=assenze)
+                                          statistiche=statistiche(conn, versione="generati"),
+                                          statistiche_indisp=statistiche_indisponibilita(conn),
+                                          confronti=api_equita.confronti_equita(conn, _settimana_passata,
+                                                                                versione="generati"),
+                                          assenze=assenze)
 
     def invia_equita(inizio: date) -> None:
         """Dopo la conferma di una settimana con turni generati: email dell'equità al solo indirizzo impostato

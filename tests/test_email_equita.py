@@ -150,3 +150,19 @@ def test_nel_riassunto_ogni_estremo_ha_la_frase_della_sua_riga():
     righe = _riassunto_equita({"report": {"scoperti": []}}, {"rotazioni": [sedi]})
     assert righe[1] == ("Acquasanta e Venarotta: distanza 4 turni. Anna +2: ha fatto più turni ad Acquasanta; "
                         "Bruno -2: ha fatto più turni a Venarotta.")
+
+
+def test_l_email_si_basa_sui_turni_generati(client, postino, monkeypatch):
+    # come il generatore: i cambi turno fatti dopo non spostano l'equità dell'email
+    from cvap import api_equita
+    versioni = []
+    for nome in ("quadro_equita", "confronti_equita"):
+        originale = getattr(api_equita, nome)
+        monkeypatch.setattr(api_equita, nome, lambda *a, _o=originale, _n=nome, **k: (
+            versioni.append((_n, k.get("versione"))), _o(*a, **k))[1])
+    client.put("/api/email-equita", json={"email": "io@example.org"})
+    genera_e_conferma(client)
+    aspetta(postino, 1)
+    assert versioni and all(v == "generati" for _, v in versioni), versioni
+    pdf = next(p for p in postino.inviati[-1].iter_attachments()).get_content()
+    assert pdf.startswith(b"%PDF")
