@@ -1,8 +1,9 @@
 """PDF «Con chi si lavora» (A4 orizzontale), dalla pagina Statistiche → Equità.
 
-Prima una tabella incrociata dipendente × dipendente con i turni fatti insieme (gli zeri, «mai insieme», in rosso),
-poi per ogni dipendente il dettaglio: con chi ha lavorato (dipendenti e volontari), quante volte di giorno e di
-notte, l'ultima volta insieme e con quali colleghi non ha mai lavorato. Dati da `confronti.con_chi`.
+Solo le coppie autista + soccorritore, per qualifica: due autisti nello stesso turno non contano. Prima una tabella
+incrociata autisti × soccorritori con i turni fatti insieme (gli zeri, «mai insieme», in rosso), poi per ogni autista
+e ogni soccorritore il dettaglio: con chi ha lavorato (dipendenti e volontari dell'altra qualifica), quante volte di
+giorno e di notte, l'ultima volta insieme e con chi non ha mai lavorato. Dati da `confronti.con_chi`.
 """
 from html import escape
 from io import BytesIO
@@ -15,7 +16,6 @@ from . import email_turni as et
 from .pdf_equita import _CELLA, _GRIGLIA, _H2, _H3, _NOTA, _TESTA, _TESTO, _TITOLO, LARGHEZZA, Markup, _p, _tabella
 
 _MAI_BG = colors.HexColor("#fde2e1")  # caselle «mai insieme» (testo #9f1d1d)
-_DIAGONALE = colors.HexColor("#e5e9ee")
 _CENTRO = _CELLA.clone("centro", alignment=1)
 _TESTA_CENTRO = _TESTA.clone("testa_centro", alignment=1)
 
@@ -24,26 +24,23 @@ def _data(iso: str) -> str:
     return et._dmy(iso)
 
 
+def _nome(d: dict) -> str:
+    return escape(d["nome"]) + ("" if d["attivo"] else " <i>(non attivo)</i>")
+
+
 def _matrice(dati: dict) -> list:
-    dip = dati["dipendenti"]
-    n = len(dip)
-    if n < 2:
-        return [_p("Servono almeno due dipendenti con turni nel periodo.", _TESTO)]
-    numero = {d["persona_id"]: i + 1 for i, d in enumerate(dip)}
-    testa = [_p("Dipendente", _TESTA)] + [_p(str(numero[d["persona_id"]]), _TESTA_CENTRO) for d in dip] + [
-        _p("Mai insieme", _TESTA_CENTRO)]
+    autisti, soccorritori = dati["autisti"], dati["soccorritori"]
+    if not autisti or not soccorritori:
+        return [_p("Servono autisti e soccorritori con turni nel periodo.", _TESTO)]
+    testa = [_p("Autista (riga) / soccorritore (colonna)", _TESTA)] + [_p(_nome(b), _TESTA_CENTRO) for b in soccorritori] + [
+        _p("Soccorritori mai incontrati", _TESTA_CENTRO)]
     righe = [testa]
     stile = [("GRID", (0, 0), (-1, -1), 0.4, _GRIGLIA), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
              ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(et.TESTA_BG)),
-             ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]
-    for r, a in enumerate(dip, start=1):
-        riga = [_p(f"<b>{numero[a['persona_id']]}.</b> {escape(a['nome'])}"
-                   + ("" if a["attivo"] else " <i>(non attivo)</i>"), _CELLA)]
-        for c, b in enumerate(dip, start=1):
-            if a["persona_id"] == b["persona_id"]:
-                riga.append(_p("", _CENTRO))
-                stile.append(("BACKGROUND", (c, r), (c, r), _DIAGONALE))
-                continue
+             ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]
+    for r, a in enumerate(autisti, start=1):
+        riga = [_p(f"<b>{_nome(a)}</b>", _CELLA)]
+        for c, b in enumerate(soccorritori, start=1):
             v = dati["matrice"][str(a["persona_id"])][str(b["persona_id"])]
             if v:
                 riga.append(_p(str(v), _CENTRO))
@@ -52,21 +49,28 @@ def _matrice(dati: dict) -> list:
                 stile.append(("BACKGROUND", (c, r), (c, r), _MAI_BG))
         riga.append(_p(str(len(a["mai"])), _CENTRO))
         righe.append(riga)
-    nome, mai = 130, 50
-    cella = (LARGHEZZA - nome - mai) / n
-    t = Table(righe, colWidths=[nome] + [cella] * n + [mai], repeatRows=1)
+    # in fondo, per ogni soccorritore, quanti autisti non ha mai incontrato
+    righe.append([_p("<b>Autisti mai incontrati</b>", _CELLA)] + [_p(str(len(b["mai"])), _CENTRO) for b in soccorritori]
+                 + [_p("", _CENTRO)])
+    stile.append(("BACKGROUND", (0, len(righe) - 1), (-1, len(righe) - 1), colors.HexColor(et.TESTA_BG)))
+    nome, mai = 120, 70
+    cella = (LARGHEZZA - nome - mai) / len(soccorritori)
+    t = Table(righe, colWidths=[nome] + [cella] * len(soccorritori) + [mai], repeatRows=1)
     t.setStyle(TableStyle(stile))
     return [t, Spacer(1, 4),
-            _p("Ogni casella: turni fatti insieme (stesso giorno, stessa postazione, stessa fascia). Le colonne hanno "
-               "gli stessi numeri delle righe. In rosso le coppie che non hanno mai lavorato insieme nel periodo.", _NOTA)]
+            _p("Ogni casella: turni che l'autista della riga e il soccorritore della colonna hanno fatto insieme (stesso "
+               "giorno, stessa postazione, stessa fascia). Conta la qualifica: due autisti nello stesso turno non "
+               "contano, anche se uno dei due fa il soccorritore. In rosso le coppie che non hanno mai lavorato insieme.",
+               _NOTA)]
 
 
-def _scheda(d: dict) -> list:
-    titolo = escape(d["nome"]) + ("" if d["attivo"] else " <i>(non attivo)</i>")
+def _scheda(d: dict, altri: str) -> list:
+    """`altri`: "soccorritori" per un autista, "autisti" per un soccorritore."""
+    titolo = _nome(d)
     dip = [c for c in d["colleghi"] if not c["volontario"]]
     vol = [c for c in d["colleghi"] if c["volontario"]]
-    riassunto = (f"Turni nel periodo: <b>{d['turni']}</b> · in compagnia: <b>{d['in_compagnia']}</b> · "
-                 f"colleghi dipendenti: <b>{len(dip)}</b> · volontari: <b>{len(vol)}</b>")
+    riassunto = (f"Turni nel periodo: <b>{d['turni']}</b> · con {altri}: <b>{d['in_compagnia']}</b> · "
+                 f"{altri} dipendenti diversi: <b>{len(dip)}</b> · volontari: <b>{len(vol)}</b>")
     out = [Paragraph(titolo, _H3), _p(riassunto, _TESTO), Spacer(1, 3)]
 
     def righe(lista):
@@ -75,17 +79,17 @@ def _scheda(d: dict) -> list:
     intestazioni = ["Turni insieme", "Di giorno", "Di notte", "% dei suoi turni", "Ultima volta insieme"]
     larghezze = [30, 12, 10, 10, 13, 16]
     if dip:
-        out.append(_tabella(["Con i dipendenti", *intestazioni], righe(dip), larghezze, {1, 2, 3, 4}))
+        out.append(_tabella([f"Con i {altri} dipendenti", *intestazioni], righe(dip), larghezze, {1, 2, 3, 4}))
     if vol:
-        out += [Spacer(1, 3), _tabella(["Con i volontari", *intestazioni], righe(vol), larghezze, {1, 2, 3, 4})]
+        out += [Spacer(1, 3), _tabella([f"Con i {altri} volontari", *intestazioni], righe(vol), larghezze, {1, 2, 3, 4})]
     if not d["colleghi"]:
-        out.append(_p("Nel periodo non ha mai lavorato con nessuno.", _TESTO))
+        out.append(_p(f"Nel periodo non ha mai lavorato con {altri}.", _TESTO))
     out.append(Spacer(1, 3))
     if d["mai"]:
         nomi = ", ".join(escape(m["nome"]) + ("" if m["attivo"] else " (non attivo)") for m in d["mai"])
         out.append(_p(f'<font color="#9f1d1d"><b>Mai insieme a ({len(d["mai"])}):</b></font> {nomi}.', _TESTO))
     else:
-        out.append(_p("Ha lavorato almeno una volta con tutti i colleghi dipendenti.", _TESTO))
+        out.append(_p(f"Ha lavorato almeno una volta con tutti i {altri} dipendenti.", _TESTO))
     return [KeepTogether(out), Spacer(1, 8)]
 
 
@@ -96,16 +100,20 @@ def genera_colleghi(dati: dict, periodo: str) -> bytes:
                             title="Con chi si lavora", author="Croce Verde Ascoli Piceno")
     settimane = dati.get("settimane", [])
     intro = (f"{len(settimane)} {'settimana confermata' if len(settimane) == 1 else 'settimane confermate'} con turni "
-             f"generati, {escape(periodo)}. Due persone «lavorano insieme» quando hanno un turno nello stesso giorno, "
-             "nella stessa postazione e nella stessa fascia (giorno o notte), anche se uno dei due fa mezzo turno.")
+             f"generati, {escape(periodo)}. Si contano solo le coppie autista + soccorritore (per qualifica): lavorano "
+             "insieme quando hanno un turno nello stesso giorno, nella stessa postazione e nella stessa fascia (giorno o "
+             "notte), anche se uno dei due fa mezzo turno.")
     contenuto = [Paragraph("Con chi si lavora", _TITOLO), _p(intro, _TESTO), Spacer(1, 6)]
-    if not dati.get("dipendenti"):
+    if not dati.get("autisti") and not dati.get("soccorritori"):
         contenuto.append(_p("Nessuna settimana confermata con turni generati nel periodo.", _TESTO))
     else:
-        contenuto += [Paragraph("Tabella incrociata dei dipendenti", _H2), *_matrice(dati), PageBreak(),
-                      Paragraph("Dettaglio per dipendente", _H2)]
-        for d in dati["dipendenti"]:
-            contenuto += _scheda(d)
+        contenuto += [Paragraph("Autisti e soccorritori: turni insieme", _H2), *_matrice(dati), PageBreak(),
+                      Paragraph("Autisti: con quali soccorritori", _H2)]
+        for d in dati["autisti"]:
+            contenuto += _scheda(d, "soccorritori")
+        contenuto += [PageBreak(), Paragraph("Soccorritori: con quali autisti", _H2)]
+        for d in dati["soccorritori"]:
+            contenuto += _scheda(d, "autisti")
     doc.build(contenuto, onFirstPage=_pie, onLaterPages=_pie)
     return out.getvalue()
 
