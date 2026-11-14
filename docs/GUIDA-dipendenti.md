@@ -1,6 +1,6 @@
 # Come funzionano i turni: regolamento e guida per i dipendenti
 
-Croce Verde Ascoli Piceno · aggiornata a novembre 2026
+Croce Verde Ascoli Piceno · aggiornata al 14 novembre 2026
 
 Nella **Parte 1** c'è il regolamento, cioè le regole che ognuno deve rispettare; nella **Parte 2** la guida, che
 spiega come vengono preparati i turni e quali regole segue il programma che li assegna.
@@ -58,8 +58,8 @@ essere **decisi dal direttivo** e **non possono essere messi in discussione**.
   al massimo 72 ore lavorate a settimana, ferie, malattia, indisponibilità e turni che non puoi fare.
 - Cerca di dare a tutti circa le stesse ore: almeno 36 a settimana e di norma non più di 12 ore di differenza
   tra chi lavora di più e chi di meno.
-- Distribuisce in modo equo, anche nel corso delle settimane, ore, notti, weekend, turni di Standby e
-  Programmati, turni tra Acquasanta e Venarotta e turni nelle festività.
+- Distribuisce in modo equo, anche nel corso delle settimane, ore, notti, weekend, turni di Standby (anche tra
+  giorni e notti) e Programmati, turni tra Acquasanta e Venarotta e turni nelle festività.
 - Il responsabile dei turni controlla il risultato, lo corregge se serve, conferma la settimana e invia i turni
   entro le 20 del venerdì.
 - Ferie, malattia e indisponibilità vanno comunicate al responsabile dei turni, che le registra nel programma
@@ -71,15 +71,14 @@ essere **decisi dal direttivo** e **non possono essere messi in discussione**.
    le indisponibilità comunicate per quella settimana (le indisponibilità entro le 12 del venerdì).
    Il Calendario mostra le assenze e controlla la copertura delle settimane interessate prima dell'approvazione.
 2. **Turni dei volontari.** Vengono inseriti i turni scelti dai volontari in base alle disponibilità comunicate
-   entro le 16 del venerdì (anche mezzi turni) ed eventuali turni assegnati a mano a un dipendente. Il programma
-   non sposta mai questi turni.
+   entro le 16 del venerdì (anche mezzi turni). Il programma non sposta mai questi turni.
 3. **Assegnazione automatica.** Il programma assegna ai dipendenti tutti i posti rimasti, rispettando le regole di
    questa guida e cercando la distribuzione più equa. Tiene conto anche dei turni dei giorni a cavallo con la
    settimana precedente e con quella successiva.
 4. **Equilibrio tra le sedi.** Infine il programma può scambiare di sede due colleghi che hanno lo stesso turno,
    uno ad Acquasanta e l'altro a Venarotta, per pareggiare nel tempo i turni nelle due sedi (paragrafo 8.1).
 5. **Controllo.** Il programma segnala al responsabile eventuali problemi, come posti scoperti o regole non
-   rispettate. Il responsabile può correggere a mano.
+   rispettate, e il responsabile li sistema.
 6. **Conferma e invio.** Il responsabile conferma la settimana e invia i turni **entro le 20 del venerdì**: da
    quel momento i turni sono definitivi.
 
@@ -117,8 +116,10 @@ le postazioni da coprire:
 | Programmati pomeriggio | 14:00 – 20:00 | 6 |
 
 - La notte appartiene al giorno in cui inizia: la «notte di lunedì» va da lunedì alle 20 a martedì alle 8.
-- Mezzi turni: di solito è un volontario a coprire metà di un turno di giorno; in quel caso a un dipendente può
-  essere assegnata l'altra metà.
+- Mezzi turni: un volontario può coprire metà di un turno di giorno (8–14 o 14–20; nello Standby 7–14 o 14–19) e
+  metà di una notte di Standby (19–23 o 23–7). In quel caso a un dipendente viene assegnata l'altra metà; se
+  nessun volontario copre una parte, il dipendente fa il turno intero. Le notti di Acquasanta, Venarotta e Ascoli
+  non si dividono.
 - Questi sono gli orari previsti. Nel riepilogo mensile delle ore si scrive invece l'orario effettivo
   (regolamento, punto 4).
 
@@ -256,6 +257,9 @@ colleghi.
   discussione** (regolamento, punto 6).
 - Il responsabile le registra e il programma non assegnerà mai quei turni.
 - Un'esclusione di una parte della giornata vale anche per il turno di giorno intero che la comprende.
+- Se in una postazione non puoi fare i giorni o le notti (per esempio niente notti di Standby o ad Ascoli), per
+  quella postazione il programma non cerca di pareggiare i tuoi giorni e le tue notti: i turni che fai non
+  contano come uno squilibrio e non ti tolgono turni.
 
 ### 6.4 Sostituzioni: quando un collega si ammala
 
@@ -290,11 +294,17 @@ Se la connessione si interrompe, usa **Verifica esito** o **Riprendi lo stesso i
 ### 7.2 Standby e Programmati (settimane A)
 
 - Esistono solo nelle settimane A e solo nei turni che il responsabile indica come necessari.
-- Standby: un equipaggio (autista e soccorritore), di giorno 7–19 o di notte 19–7.
+- Standby: un equipaggio (autista e soccorritore), di giorno 7–19 o di notte 19–7. I volontari possono coprirne
+  metà (di giorno 7–14 o 14–19, di notte 19–23 o 23–7); l'altra metà va a un dipendente.
 - Programmati: possono servire più persone per turno, la mattina 7–14 o il pomeriggio 14–20. Possono guidare anche
   i soccorritori abilitati come «autista programmati».
-- Sono distribuiti in modo equo tra chi li può fare, tenendo conto di quanti ne ha già fatti ognuno. Il programma
-  evita di dare alla stessa persona due turni di Standby, o due di Programmati, nella stessa settimana.
+- Sono distribuiti in modo equo tra chi li può fare, tenendo conto di quanti ne ha già fatti ognuno. Il conto si
+  fa sulle **settimane A** in cui eri in servizio, perché solo in quelle ci sono: chi è stato assente nelle
+  settimane A ne deve fare meno, chi c'era sempre di più. Il programma evita di dare alla stessa persona due turni
+  di Standby, o due di Programmati, nella stessa settimana.
+- Nello Standby il programma cerca anche di farti fare, nel tempo, tanti giorni quante notti. Questo però conta
+  meno del numero totale di turni di Standby: decide tra giorno e notte solo tra colleghi che ne hanno fatti più o
+  meno quanti.
 - Se il personale non basta sono i primi a restare scoperti (prima i Programmati, poi lo Standby), perché le
   postazioni fisse hanno la precedenza.
 
@@ -311,7 +321,8 @@ Il programma ricorda le settimane passate e le usa per bilanciare il carico di l
 - **Weekend**: i turni di sabato giorno, sabato notte, domenica giorno e domenica notte sono distribuiti in modo
   che, nel tempo, ognuno ne faccia una quota simile: chi ne ha fatti di più ne riceve meno. Quando possibile, non
   più di un turno di weekend a testa per settimana.
-- **Standby e Programmati**: stesso principio dei weekend.
+- **Standby e Programmati**: stesso principio dei weekend, contando solo le settimane A (paragrafo 7.2); nello
+  Standby anche l'equilibrio tra giorni e notti.
 - **Acquasanta e Venarotta**: nel tempo ognuno fa più o meno tanti turni in una sede quanti nell'altra
   (paragrafo 8.1).
 - **Festività**: ogni festività gira tra i dipendenti guardando gli ultimi 5 anni (capitolo 9).
@@ -332,8 +343,6 @@ il programma:
 - Il conteggio comprende anche le settimane passate: chi finora ha fatto più turni ad Acquasanta tende ad andare a
   Venarotta, e viceversa. Anche mezzo turno conta come un turno.
 - Lo scambio non avviene mai verso una sede che per te è esclusa (divieto di postazione).
-- Vengono scambiati solo i turni assegnati dal programma: quelli assegnati a mano restano dove sono, ma contano nel
-  conteggio.
 - Se lo stesso equilibrio si può ottenere in più modi, il programma fa il minor numero di scambi possibile.
 - Non riguarda Ascoli, che ha regole proprie (capitolo 7), né Standby e Programmati.
 - Nelle statistiche il responsabile vede, per ognuno, quanti turni ha fatto ad Acquasanta e quanti a Venarotta.
@@ -341,7 +350,22 @@ il programma:
 Uno scambio è possibile solo se nello stesso giorno c'è un collega con lo stesso turno nell'altra sede: per questo
 l'equilibrio tra le due sedi si raggiunge nel corso delle settimane, non sempre in una sola.
 
-### 8.2 Cosa conta di più
+### 8.2 Come si misura l'equità
+
+Nelle statistiche e nell'email dell'equità che riceve il responsabile, per ogni tipo di turno:
+
+- **Turni attesi**: quanti turni avresti fatto se tutti ne facessero lo stesso numero per settimana di servizio,
+  cioè la media del gruppo moltiplicata per le tue settimane (lavorate, A o con Ascoli, secondo il tipo di turno).
+  Chi ha lavorato meno settimane ne ha attesi meno.
+- **Scarto**: turni fatti meno turni attesi. Positivo: hai fatto più turni del previsto; negativo: meno.
+- Per giorni e notti e per Acquasanta e Venarotta il valore atteso è la **metà**: per esempio turni ad
+  Acquasanta, metà dei turni, turni a Venarotta.
+- **Distanza**: lo scarto di chi ha fatto di più meno quello di chi ha fatto di meno. Più è bassa, più la
+  rotazione è equa.
+- Si contano i **turni generati** dal programma, come fa il programma stesso: i cambi turno fatti dopo non
+  spostano l'equità.
+
+### 8.3 Cosa conta di più
 
 Quando non si può avere tutto, il programma segue in linea di massima questo ordine di importanza:
 
@@ -353,7 +377,7 @@ Quando non si può avere tutto, il programma segue in linea di massima questo or
    Programmati;
 6. portare le ore di ciascuno vicino alla media, recuperando le differenze delle settimane passate;
 7. distribuire in modo equo nel tempo weekend, Standby, Programmati e festività;
-8. equilibrare giorni e notti.
+8. equilibrare giorni e notti, anche nello Standby e ad Ascoli.
 
 Solo alla fine, a turni decisi, il programma pareggia Acquasanta e Venarotta con gli scambi del paragrafo 8.1,
 senza cambiare nient'altro.
@@ -414,28 +438,12 @@ anno. Può stamparlo in anticipo, per esempio già in autunno per Natale.
 
 È un'indicazione: chi lavora davvero dipende anche dalle regole e dai posti da autista e da soccorritore.
 
-## 10. I turni nel calendario del telefono
-
-Puoi avere i tuoi turni nel calendario del telefono (iPhone, Android, Google Calendar), così li vedi accanto ai
-tuoi impegni e ricevi i promemoria del calendario.
-
-- Chiedi al responsabile il **tuo link personale**: lo trova nella pagina "Turni dipendente".
-- **iPhone:** apri il link dal telefono e scegli di aggiungere il calendario, oppure vai in Impostazioni →
-  Calendario → Account → Aggiungi account → Altro → Aggiungi calendario sottoscritto e incolla il link.
-- **Android e Google Calendar:** dal computer apri calendar.google.com, poi Altri calendari → + → Da URL e incolla
-  il link. Il calendario compare anche sul telefono.
-- Ci sono i **turni confermati**, cambi turno compresi, per ognuno con orario, postazione, ruolo e colleghi.
-  Le settimane ancora in bozza non compaiono.
-- Si **aggiorna da solo**: l'iPhone più o meno ogni ora, Google ogni qualche ora. Fa sempre fede il tabellone.
-- Il link è **solo tuo**: chi lo ha vede i tuoi turni. Se finisce a qualcun altro, chiedi al responsabile un link
-  nuovo: quello vecchio smette subito di funzionare.
-
-## 11. Domande frequenti
+## 10. Domande frequenti
 
 **Chi decide i turni: il programma o il responsabile?**
 
-Il programma propone, il responsabile controlla, può correggere a mano e conferma. I turni assegnati a mano dal
-responsabile e quelli dei volontari non vengono mai cambiati dal programma.
+Il programma propone, il responsabile controlla, corregge se serve e conferma. I turni dei volontari non vengono
+mai cambiati dal programma.
 
 **Quando ricevo i turni della settimana?**
 
@@ -487,16 +495,16 @@ Che hai fatto la notte il giorno prima e finisci alle 8: quel giorno non puoi fa
 
 **Perché mi è stato assegnato solo mezzo turno?**
 
-Perché l'altra metà di quel turno è coperta da un volontario.
+Perché l'altra metà di quel turno è coperta da un volontario: succede di giorno e nella notte di Standby
+(19–23 o 23–7).
 
 **Possono assegnarmi 4 notti di fila?**
 
-Il programma non lo fa mai. Se un turno del genere venisse inserito a mano, il programma lo segnalerebbe come
-errore al responsabile.
+No, il programma non lo fa mai.
 
 <div style="break-before: page"></div>
 
-## 12. Le regole in una pagina
+## 11. Le regole in una pagina
 
 | Regola | Come funziona |
 |--------|---------------|
@@ -516,7 +524,8 @@ errore al responsabile.
 | Autista e soccorritore | L'autista può fare il soccorritore, non viceversa (salvo «autista programmati» nei Programmati) |
 | Ascoli | Al massimo 2 turni (3 solo in extremis); mai 2 giorni o 2 notti di fila; alternare giorno e notte |
 | Weekend | Distribuiti in modo equo nel tempo; di norma al massimo uno a settimana |
-| Standby e Programmati | Solo nelle settimane A, quando richiesti; distribuiti in modo equo |
+| Standby e Programmati | Solo nelle settimane A, quando richiesti; distribuiti in modo equo sulle settimane A di servizio; nello Standby anche giorni e notti |
+| Mezzi turni | Solo dai volontari: di giorno e nella notte di Standby (19–23 / 23–7); l'altra metà va a un dipendente |
 | Acquasanta e Venarotta | Nel tempo, tanti turni in una sede quanti nell'altra |
 | Festività | Ognuna gira guardando gli ultimi 5 anni; chi l'ha fatta di recente ha la precedenza per restare a casa |
 | Equità nel tempo | Ore, notti, weekend e turni speciali bilanciati nel corso delle settimane |
