@@ -178,7 +178,6 @@ button.riga:active, a.riga:active { background: var(--card-2); }
 .posto.vuoto-posto { background: transparent; border: 1.5px dashed var(--rosso); color: var(--rosso); }
 .posto.vuoto-posto .ruolo { background: var(--rosso-soft); color: var(--rosso); }
 .posto.vol { background: var(--verde-soft); } .posto.vol .nome { color: var(--verde-testo); }
-.posto.man { background: var(--blu-soft); } .posto.man .nome { color: var(--blu); }
 .posto .meta { font-size: 12px; color: var(--muto); flex: none; }
 
 /* ---------- foglio dal basso ---------- */
@@ -252,7 +251,6 @@ thead .gr-prima { background: var(--card-2); padding: 6px; }
 .gr-posto { padding: 2px 4px; border-radius: 6px; margin-bottom: 2px; line-height: 1.25; }
 .gr-posto b { color: var(--muto); }
 .gr-vol { background: var(--verde-soft); color: var(--verde-testo); }
-.gr-man { background: var(--blu-soft); color: var(--blu); }
 .gr-vuoto { outline: 1.5px dashed var(--rosso); color: var(--rosso); background: transparent; }
 
 /* Registro delle azioni */

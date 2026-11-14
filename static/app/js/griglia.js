@@ -28,7 +28,7 @@ function cella(sett, postazione, t, g) {
   for (const posto of turno.posti) {
     const a = posto.assegnazione;
     if (!a) scoperti++;
-    td.append(el("div", { class: `gr-posto ${!a ? "gr-vuoto" : a.origine === "volontario" ? "gr-vol" : a.origine === "manuale" ? "gr-man" : ""}` },
+    td.append(el("div", { class: `gr-posto ${!a ? "gr-vuoto" : a.origine === "volontario" ? "gr-vol" : ""}` },
       el("b", {}, SIGLA[posto.ruolo]), " ", a ? a.persona_nome : "scoperto"));
   }
   return { td, scoperti };
@@ -44,8 +44,8 @@ export function disegnaGriglia(sett, stato, { suGiorno, ridisegna }) {
     el("button", { class: "btn", style: "min-height:36px;flex:none", "aria-pressed": String(stato.soloScoperti), type: "button",
       onClick: () => { stato.soloScoperti = !stato.soloScoperti; ridisegna(); } }, "Solo scoperti"));
   const legenda = el("div", { class: "gr-legenda piccolo muto" },
-    el("span", { class: "gr-vol gr-chip" }, "Volontario"), el("span", { class: "gr-man gr-chip" }, "Fissato"),
-    el("span", { class: "gr-chip" }, "Generato"), el("span", { class: "gr-vuoto gr-chip" }, "Scoperto"));
+    el("span", { class: "gr-vol gr-chip" }, "Volontario"),
+    el("span", { class: "gr-chip" }, "Dipendente"), el("span", { class: "gr-vuoto gr-chip" }, "Scoperto"));
 
   const testa = el("tr", {}, el("th", { class: "gr-prima" }, "Turno"), sett.giorni.map((g) => {
     const festivo = (sett.festivi || []).find((f) => f.data === g);

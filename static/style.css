@@ -853,7 +853,6 @@ body.senza-accesso .nav, body.senza-accesso .esci { display: none; }
   .griglia .col-turno { position: static; width: 26mm; }
   .cella-btn { min-height: 0; padding: 1mm; }
   .chip { border-width: 1px 1px 1px 3px; padding: 0 2px; font-size: 8pt; }
-  .chip-manuale .chip-nome { text-decoration: underline; }
   .chip-alert { display: none; }
   .scoperto { border: 1px dashed var(--err); font-size: 7.5pt; }
   .legenda { margin: 0 0 3mm; font-size: 8pt; }
