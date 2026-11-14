@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Response
 
 from . import db, db_festivita
-from .api_comune import DATA_MAX, DATA_MIN, DataValida, errore
+from .api_comune import DATA_MAX, DATA_MIN, DataValida, descrivi_periodo, errore, risposta_pdf
 from .calendario import lunedi
 from .dati_festivi import riferimento_statistiche, conti_festivita
 from .confronti import con_chi, confronti
@@ -106,5 +106,23 @@ def crea_router(connessione: Callable, settimana_passata: Callable[..., Settiman
             periodo += ", turni generati"
         return Response(genera_colleghi(dati, periodo), media_type="application/pdf",
                         headers={"Content-Disposition": 'attachment; filename="con-chi-si-lavora.pdf"'})
+
+    @router.get("/api/statistiche/equita.pdf")
+    def pdf_equita_pagina(conn: Conn, dal: DataValida | None = None, al: DataValida | None = None,
+                          versione: Literal["generati", "effettivi"] = "effettivi"):
+        """La pagina Equità in PDF (rotazioni e altri confronti), stesso periodo e stessa versione della pagina."""
+        from . import email_turni
+        from .pdf_statistiche import genera_equita_pagina
+        quadro = quadro_equita(conn, settimana_passata, dal, al, versione)
+        confronti_ = confronti_equita(conn, settimana_passata, dal, al, versione)
+        settimane = quadro["settimane"]
+        if settimane:
+            primo, ultimo = date.fromisoformat(settimane[0]), date.fromisoformat(settimane[-1]) + timedelta(days=6)
+            periodo = descrivi_periodo(primo, ultimo)
+            assenze = email_turni.note_assenze(db.lista_ferie(conn), primo, ultimo)
+        else:
+            periodo, assenze = "Nessuna settimana nel periodo", {}
+        return risposta_pdf(genera_equita_pagina(quadro, confronti_, periodo, versione, assenze),
+                            f"equita-{versione}.pdf")
 
     return router

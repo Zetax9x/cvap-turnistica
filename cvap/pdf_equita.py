@@ -63,10 +63,11 @@ def _generazione(s: dict) -> list:
     return out
 
 
-def _equita(quadro: dict, assenze: dict[int, str]) -> list:
+def _equita(quadro: dict, assenze: dict[int, str], intestazione: bool = True) -> list:
+    """`intestazione`: il titolo «Equità dei turni» sopra (no nel PDF della pagina, dove è già la testata)."""
     rotazioni = [r for r in quadro.get("rotazioni", []) if r.get("con_dati", True) and not r.get("festivita")]
     settimane = quadro.get("settimane", [])
-    out = [Paragraph("Equità dei turni", _H2)]
+    out = [Paragraph("Equità dei turni", _H2)] if intestazione else []
     if not rotazioni:
         return out + [_p("Nessuna settimana confermata con turni generati.", _TESTO)]
     out.append(_p(

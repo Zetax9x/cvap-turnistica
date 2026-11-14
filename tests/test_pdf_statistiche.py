@@ -1,7 +1,7 @@
 """PDF di Statistiche (Turni, Indisponibilità, Riepilogo per dipendente, Equità), Festività «a chi tocca» e Sostituti:
 fatti dal server con lo stile comune (`pdf_stile`), come tabellone e turni personali, e non più dal browser."""
 import os
-from datetime import date
+from datetime import datetime
 from io import BytesIO
 
 import pytest
@@ -21,7 +21,7 @@ LUNEDI = "2026-10-19"
 client_festivi = test_api_storico_festivi.client  # fixture (sqlite e libsql)
 
 
-def testo(r) -> str:
+def leggi(r) -> str:
     """Il testo del PDF su una riga sola (gli a capo dipendono dalla larghezza delle celle)."""
     assert r.status_code == 200, r.text
     assert r.headers["content-type"] == "application/pdf" and r.content.startswith(b"%PDF")
@@ -45,21 +45,24 @@ def id_di(client, nome):
 # --- Statistiche → Turni -----------------------------------------------------------------------
 
 def test_statistiche_turni_in_pdf(client):
-    t = testo(client.get("/api/statistiche/turni.pdf"))
+    t = leggi(client.get("/api/statistiche/turni.pdf"))
     assert "Statistiche dei turni" in t and "Turni effettivi" in t
     assert all(n in t for n in ("Anna", "Bruno", "Carla", "Dario"))
     assert all(x in t for x in ("Ore totali", "Saldo ore", "Acquasanta / Venarotta", "Standby"))
-    assert "Turni generati" in testo(client.get("/api/statistiche/turni.pdf", params={"versione": "generati"}))
+    assert "Turni generati" in leggi(client.get("/api/statistiche/turni.pdf", params={"versione": "generati"}))
 
 
-def test_statistiche_turni_con_i_volontari(client):
-    assert client.post(f"/api/settimane/{LUNEDI}/riapri").status_code == 200
-    r = client.post(f"/api/settimane/{LUNEDI}/assegnazioni", json={
+def test_statistiche_turni_con_i_volontari(tmp_path):
+    c = TestClient(create_app(str(tmp_path / "v.db")))
+    for nome, q in (("Anna", "autista"), ("Bruno", "soccorritore"), ("Carla", "autista"), ("Dario", "soccorritore")):
+        c.post("/api/persone", json={"nome": nome, "tipo": "dipendente", "qualifica": q})
+    r = c.post(f"/api/settimane/{LUNEDI}/assegnazioni", json={  # il volontario prima, poi si genera il resto
         "data": "2026-10-20", "postazione": "Acquasanta", "fascia": "giorno", "segmento": "mattina",
         "ruolo": "soccorritore", "nome_volontario": "Vol. Zeno"})
     assert r.status_code == 201, r.text
-    assert client.post(f"/api/settimane/{LUNEDI}/conferma").status_code == 200
-    t = testo(client.get("/api/statistiche/turni.pdf"))
+    assert c.post(f"/api/settimane/{LUNEDI}/genera", json={"tempo_max": 3}).status_code == 200
+    assert c.post(f"/api/settimane/{LUNEDI}/conferma").status_code == 200
+    t = leggi(c.get("/api/statistiche/turni.pdf"))
     assert "Vol. Zeno" in t and "Volontario" in t  # come nella tabella della pagina
 
 
@@ -67,12 +70,13 @@ def test_statistiche_turni_con_i_volontari(client):
 
 def test_indisponibilita_in_pdf(client):
     anna = id_di(client, "Anna")
-    r = client.put(f"/api/settimane/{LUNEDI}/indisponibilita", json={
-        "persona_id": anna, "richieste": [{"data": "2026-10-24", "parti": ["mattina", "pomeriggio", "notte"]}]})
+    r = client.put("/api/settimane/2026-10-26/indisponibilita", json={  # la settimana confermata non si modifica
+        "persona_id": anna, "turni": [{"data": "2026-10-31", "parte": p} for p in ("mattina", "pomeriggio", "notte")]})
     assert r.status_code in (200, 204), r.text
-    t = testo(client.get("/api/statistiche/indisponibilita.pdf", params={"dal": "2026-10-01", "al": "2026-10-31"}))
+    t = leggi(client.get("/api/statistiche/indisponibilita.pdf", params={"dal": "2026-10-01", "al": "2026-10-31"}))
     assert "Indisponibilità per giorno" in t and "Anna" in t and "Sab" in t
-    assert "1/10/2026" in t or "01/10/2026" in t  # il periodo è nel sottotitolo
+    assert "01/10/2026" in t and "31/10/2026" in t  # il periodo è nel sottotitolo
+    assert "M1 P1 N1" in t  # il dettaglio per mattina, pomeriggio e notte, come nella pagina
     assert client.get("/api/statistiche/indisponibilita.pdf", params={"dal": "2026-10-31", "al": "2026-10-01"}).status_code == 400
 
 
@@ -81,7 +85,7 @@ def test_indisponibilita_in_pdf(client):
 def test_riepilogo_dipendente_in_pdf(client):
     anna = id_di(client, "Anna")
     r = client.get(f"/api/statistiche/persona/{anna}.pdf", params={"dal": LUNEDI, "al": "2026-10-25"})
-    t = testo(r)
+    t = leggi(r)
     assert "Riepilogo per dipendente" in t and "Anna" in t and "Riepilogo del periodo" in t
     assert all(x in t for x in ("Turni svolti", "Ore lavorate", "Ore totali", "Turni nel weekend"))
     assert "Lun" in t and "Dom" in t
@@ -98,16 +102,16 @@ def test_riepilogo_dipendente_errori(client):
 # --- Equità ------------------------------------------------------------------------------------
 
 def test_equita_in_pdf(client):
-    t = testo(client.get("/api/statistiche/equita.pdf"))
+    t = leggi(client.get("/api/statistiche/equita.pdf"))
     assert "Equità dei turni" in t and "Turni effettivi" in t
     assert all(x in t for x in ("Turni attesi", "Scarto", "Altri confronti", "Con chi si lavora"))
     assert "Weekend interi liberi" in t and "Sequenze pesanti" in t
-    assert "Turni generati" in testo(client.get("/api/statistiche/equita.pdf", params={"versione": "generati"}))
+    assert "Turni generati" in leggi(client.get("/api/statistiche/equita.pdf", params={"versione": "generati"}))
 
 
 def test_equita_senza_settimane(tmp_path):
     c = TestClient(create_app(str(tmp_path / "vuoto.db")))
-    assert "Nessuna settimana confermata" in testo(c.get("/api/statistiche/equita.pdf"))
+    assert "Nessuna settimana confermata" in leggi(c.get("/api/statistiche/equita.pdf"))
 
 
 # --- Festività: a chi tocca ----------------------------------------------------------------------
@@ -123,7 +127,7 @@ def prepara_natale(client):
 def test_festivita_in_pdf(client_festivi):
     prepara_natale(client_festivi)
     r = client_festivi.get("/api/festivita/prossime.pdf", params={"mesi": 24})
-    t = testo(r)
+    t = leggi(r)
     assert "Festività: a chi tocca" in t and "Natale" in t
     assert all(x in t for x in ("Volte negli ultimi 5 anni", "Ultima volta", "Vuole lavorarla", "Assenze registrate"))
     assert t.index("Bruno") < t.index("Anna")  # Anna l'ha fatto l'anno scorso: scende verso il fondo
@@ -131,13 +135,13 @@ def test_festivita_in_pdf(client_festivi):
     voce = client_festivi.get("/api/festivita/prossime", params={"mesi": 24}).json()[0]
     uno = client_festivi.get("/api/festivita/prossime.pdf", params={"mesi": 24, "data": voce["data"],
                                                                      "festivita_id": voce["festivita_id"]})
-    assert "Natale" in testo(uno)
+    assert "Natale" in leggi(uno)
     assert client_festivi.get("/api/festivita/prossime.pdf", params={"mesi": 24, "data": "2001-01-01",
                                                                       "festivita_id": voce["festivita_id"]}).status_code == 404
 
 
 def test_festivita_senza_festivita_attive(client_festivi):
-    assert "Nessuna festività a rotazione" in testo(client_festivi.get("/api/festivita/prossime.pdf", params={"mesi": 1}))
+    assert "Nessuna festività a rotazione" in leggi(client_festivi.get("/api/festivita/prossime.pdf", params={"mesi": 1}))
 
 
 # --- Sostituti ------------------------------------------------------------------------------------
@@ -160,13 +164,13 @@ def test_sostituti_in_pdf(client_sostituti):
     c = client_sostituti
     malato, aid = prenota(c, "Malato")
     c.post("/api/persone", json={"nome": "Libero", "tipo": "dipendente", "qualifica": "autista"})
-    c.post("/api/ferie", json={"persona_id": malato, "dal": "2026-10-20", "al": "2026-10-21", "motivo": "malattia"})
+    c.post("/api/ferie", json={"persona_id": malato, "dal": "2026-10-20", "al": "2026-10-21", "motivo": "ferie"})
     r = c.get(f"/api/settimane/{LUNEDI}/pdf-sostituti", params={"ids": str(aid)})
-    t = testo(r)
+    t = leggi(r)
     assert "Sostituzioni da organizzare" in t and "Turno da coprire" in t
-    assert "Malato" in t and "in malattia" in t
+    assert "Malato" in t and "in ferie" in t
     assert "Proposta consigliata" in t and "Chiamare Libero" in t
-    assert "ore extra" in t.lower()
+    assert "sostituzione sono extra" in t
     assert c.get(f"/api/settimane/{LUNEDI}/pdf-sostituti", params={"ids": "999999"}).status_code == 404
     assert c.get(f"/api/settimane/{LUNEDI}/pdf-sostituti", params={"ids": "abc"}).status_code == 422
 
@@ -186,25 +190,25 @@ def cand(nome, ore=24, dopo=36, regole=(), avvisi=()):
 SETTIMANA = {"inizio": LUNEDI, "fine": "2026-10-25", "giorni": [], "extra": []}
 
 
-def testo_pdf(pdf: bytes) -> str:
+def leggi_pdf(pdf: bytes) -> str:
     return " ".join(" ".join(p.extract_text() for p in PdfReader(BytesIO(pdf)).pages).split())
 
 
 def test_sostituti_alternative_e_fuori_regola():
     pdf = genera_sostituti(SETTIMANA, [esito([
         cand("Primo"), cand("Secondo", avvisi=["Secondo: 3 giorni di fila (eccezione)"]),
-        cand("Terzo", regole=["Terzo: solo 8h di riposo tra lunedì e martedì"])])], adesso=date(2026, 10, 19))
-    t = testo_pdf(pdf)
-    assert "Chiamare Primo" in t and "In alternativa" in t and "Secondo" in t
+        cand("Terzo", regole=["Terzo: solo 8h di riposo tra lunedì e martedì"])])], adesso=datetime(2026, 10, 19, 9, 0))
+    t = leggi_pdf(pdf)
+    assert "Chiamare Primo" in t and "in alternativa" in t and "Secondo" in t
     assert "Solo se non c'è altra soluzione" in t and "Terzo" in t
-    assert "(consentito)" in t and "solo 8 ore di riposo" in t
+    assert "(consentito)" in t and "Solo 8 ore di riposo" in t
 
 
 def test_sostituti_scambio_e_nessuno():
     catena = {"prende": cand("Bianchi", 24, 36), "copre": cand("Neri", 12, 24),
               "ceduto": {"id": 9, "data": "2026-10-22", "postazione": "Venarotta", "fascia": "notte",
                          "segmento": "intero", "ruolo": "autista", "ore": 12}}
-    t = testo_pdf(genera_sostituti(SETTIMANA, [esito(catene=[catena]), esito(assenza=None)]))
+    t = leggi_pdf(genera_sostituti(SETTIMANA, [esito(catene=[catena]), esito(assenza=None)]))
     assert "uno scambio" in t and "Bianchi" in t and "Neri" in t and "Venarotta" in t
     assert "Turno 1 di 2" in t and "Turno 2 di 2" in t
     assert "Nessun dipendente disponibile" in t and "serve un volontario" in t
