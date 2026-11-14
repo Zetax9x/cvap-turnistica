@@ -2,6 +2,7 @@
 // elenchi, tabelle, citazioni, grassetto, codice). Dopo ogni modifica alla guida, dalla cartella del progetto:
 //   node docs/crea-guida-docx.js
 // Serve il pacchetto npm "docx" (npm install -g docx). La data in copertina è quella della riga «aggiornata al …».
+// PDF: soffice --headless --convert-to pdf --outdir docs docs/CVAP-Turnistica-Guida-per-i-dipendenti.docx
 const fs = require("fs");
 const {
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, ImageRun, Footer, AlignmentType, PageNumber,
@@ -15,7 +16,8 @@ const [, , mdPath = path.join(RADICE, "docs/GUIDA-dipendenti.md"),
   outPath = path.join(RADICE, "docs/CVAP-Turnistica-Guida-per-i-dipendenti.docx")] = process.argv;
 const VERDE = "009541", VERDE_SCURO = "00672D", TESTO = "1B2330", MUTO = "5B6570";
 const RIGA_ALT = "F3F6F8", RIQUADRO = "E8F5EC", FONT = "Calibri";
-const LARGHEZZA = 9638; // A4 meno margini di 2 cm (11906 - 2 * 1134)
+const MARGINE = 1247; // 2,2 cm
+const LARGHEZZA = 11906 - 2 * MARGINE; // A4 meno i margini laterali
 
 /** Testo con **grassetto** e `codice` in TextRun. */
 function runs(testo, base = {}) {
@@ -48,10 +50,10 @@ function tabella(righe) {
   const bordi = { top: bordo, bottom: bordo, left: bordo, right: bordo };
   const cella = (testo, i, intestazione, alterna) => new TableCell({
     width: { size: larghezze[i], type: WidthType.DXA }, borders: bordi,
-    margins: { top: 60, bottom: 60, left: 100, right: 100 },
+    margins: { top: 90, bottom: 90, left: 130, right: 130 },
     shading: intestazione ? { fill: VERDE, type: ShadingType.CLEAR, color: "auto" }
       : alterna ? { fill: RIGA_ALT, type: ShadingType.CLEAR, color: "auto" } : undefined,
-    children: [new Paragraph({ spacing: { before: 0, after: 0 },
+    children: [new Paragraph({ spacing: { before: 0, after: 0, line: 264, lineRule: LineRuleType.AUTO },
       children: runs(testo, intestazione ? { bold: true, color: "FFFFFF", size: 20 } : { size: 20 }) })],
   });
   return new Table({
@@ -72,12 +74,12 @@ function corpoDocumento(md) {
   while (i < righe.length) {
     let r = righe[i];
     if (!r.trim()) { i++; continue; }
-    if (r.includes('break-before: page')) { out.push(new Paragraph({ children: [new PageBreak()] })); i++; continue; }
+    if (r.includes('break-before: page')) { i++; continue; }  // la pagina nuova la decide il generatore
     if (r.trim() === "---") { i++; continue; }
     if (r.startsWith("|")) {
       const blocco = [];
       while (i < righe.length && righe[i].startsWith("|")) blocco.push(righe[i++]);
-      out.push(tabella(blocco), new Paragraph({ spacing: { after: 60 }, children: [] }));
+      out.push(tabella(blocco), new Paragraph({ spacing: { before: 0, after: 80, line: 200, lineRule: LineRuleType.AUTO }, children: [] }));
       continue;
     }
     if (r.startsWith("# ")) {
@@ -86,13 +88,17 @@ function corpoDocumento(md) {
       out.push(new Paragraph({ heading: HeadingLevel.TITLE, children: [new TextRun(r.slice(2))] }));
       i++; continue;
     }
-    if (r.startsWith("## ")) { out.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: runs(r.slice(3)) })); i++; continue; }
+    if (r.startsWith("## ")) {
+      out.push(new Paragraph({ heading: HeadingLevel.HEADING_1, pageBreakBefore: /regole in una pagina/i.test(r),
+        children: runs(r.slice(3)) }));
+      i++; continue;
+    }
     if (r.startsWith("### ")) { out.push(new Paragraph({ heading: HeadingLevel.HEADING_2, children: runs(r.slice(4)) })); i++; continue; }
     if (r.startsWith("> ")) {
       out.push(new Paragraph({
         shading: { fill: RIQUADRO, type: ShadingType.CLEAR, color: "auto" }, indent: { left: 200, right: 200 },
         border: { left: { style: BorderStyle.SINGLE, size: 18, color: VERDE, space: 8 } },
-        spacing: { before: 60, after: 120 }, children: runs(pulisci(r.slice(2))),
+        spacing: { before: 120, after: 200 }, children: runs(pulisci(r.slice(2))),
       }));
       i++; continue;
     }
@@ -102,9 +108,9 @@ function corpoDocumento(md) {
       i++;
       while (i < righe.length && /^ {2,}\S/.test(righe[i])) testo += " " + righe[i++].trim();
       if (numerato && numerato[1] === "1") numeroLista++;
-      out.push(new Paragraph({
+      out.push(new Paragraph({  // ogni voce resta intera (keepLines); l'elenco può continuare nella pagina dopo
         numbering: elenco ? { reference: "punti", level: 0 } : { reference: `numeri-${numeroLista}`, level: 0 },
-        spacing: { after: 60 }, children: runs(pulisci(testo)),
+        keepLines: true, spacing: { after: 100 }, children: runs(pulisci(testo)),
       }));
       continue;
     }
@@ -112,7 +118,14 @@ function corpoDocumento(md) {
     let testo = r.trim();
     i++;
     while (i < righe.length && righe[i].trim() && !/^(#|\||- |\d+\. |> |<div)/.test(righe[i])) testo += " " + righe[i++].trim();
-    out.push(new Paragraph({ spacing: { after: 120 }, children: runs(pulisci(testo)) }));
+    const domanda = testo.match(/^\*\*([^*]+\?)\*\*$/);
+    if (domanda) {
+      out.push(new Paragraph({ keepNext: true, keepLines: true, spacing: { before: 170, after: 40 },
+        children: [new TextRun({ text: domanda[1], bold: true, color: VERDE_SCURO })] }));
+    } else {
+      // un paragrafo che introduce un elenco o una tabella (finisce con ":") resta con ciò che segue
+      out.push(new Paragraph({ keepNext: testo.endsWith(":"), spacing: { after: 140 }, children: runs(pulisci(testo)) }));
+    }
   }
   return out;
 }
@@ -129,45 +142,52 @@ function introduzione(testo) {
 }
 const logo = fs.readFileSync(logoPath);
 const copertina = [
-  new Paragraph({ spacing: { before: 1200, after: 360, line: 240, lineRule: LineRuleType.AUTO },
-    children: [new ImageRun({ type: "png", data: logo, transformation: { width: 236, height: 104 } })] }),
-  new Paragraph({ spacing: { after: 60 }, children: [new TextRun({ text: "Come funzionano i turni", bold: true, size: 56, color: VERDE, font: FONT })] }),
-  new Paragraph({ spacing: { after: 240 }, border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: TESTO, space: 8 } },
-    children: [new TextRun({ text: "Regolamento e guida per i dipendenti", size: 32, color: TESTO, font: FONT })] }),
-  new Paragraph({ spacing: { before: 240, after: 80 }, children: [new TextRun({ text: "Croce Verde Ascoli Piceno", bold: true, size: 22 })] }),
-  new Paragraph({ spacing: { after: 80 }, children: [new TextRun({ text: "Regole e funzionamento del programma dei turni", size: 20, color: MUTO })] }),
-  new Paragraph({ spacing: { after: 80 }, children: [new TextRun({ text: `Aggiornata al ${data}`, size: 20, color: MUTO })] }),
-  new Paragraph({ spacing: { before: 600, after: 120 }, children: runs(introduzione(md)) }),
+  new Paragraph({ spacing: { before: 1700, after: 600, line: 240, lineRule: LineRuleType.AUTO },
+    children: [new ImageRun({ type: "png", data: logo, transformation: { width: 295, height: 130 } })] }),
+  new Paragraph({ spacing: { after: 120 }, children: [new TextRun({ text: "Come funzionano i turni", bold: true, size: 68, color: VERDE, font: FONT })] }),
+  new Paragraph({ spacing: { after: 360 }, border: { bottom: { style: BorderStyle.SINGLE, size: 12, color: VERDE, space: 12 } },
+    children: [new TextRun({ text: "Regolamento e guida per i dipendenti", size: 36, color: TESTO, font: FONT })] }),
+  new Paragraph({ spacing: { before: 360, after: 100 }, children: [new TextRun({ text: "Croce Verde Ascoli Piceno", bold: true, size: 26 })] }),
+  new Paragraph({ spacing: { after: 100 }, children: [new TextRun({ text: "Regole e funzionamento del programma dei turni", size: 22, color: MUTO })] }),
+  new Paragraph({ spacing: { after: 100 }, children: [new TextRun({ text: `Aggiornata al ${data}`, size: 22, color: MUTO })] }),
+  new Paragraph({ spacing: { before: 1400, after: 120, line: 300, lineRule: LineRuleType.AUTO },
+    shading: { fill: RIQUADRO, type: ShadingType.CLEAR, color: "auto" }, indent: { left: 120, right: 120 },
+    border: { left: { style: BorderStyle.SINGLE, size: 24, color: VERDE, space: 10 } },
+    children: runs(introduzione(md), { size: 23 }) }),
   new Paragraph({ children: [new PageBreak()] }),
 ];
 
 const liste = [{ reference: "punti", levels: [{ level: 0, format: LevelFormat.BULLET, text: "•", alignment: AlignmentType.LEFT,
-  style: { paragraph: { indent: { left: 500, hanging: 280 } } } }] }];
+  style: { paragraph: { indent: { left: 560, hanging: 300 } } } }] }];
 for (let k = 1; k <= 20; k++) {
   liste.push({ reference: `numeri-${k}`, levels: [{ level: 0, format: LevelFormat.DECIMAL, text: "%1.", alignment: AlignmentType.LEFT,
-    style: { paragraph: { indent: { left: 500, hanging: 320 } } } }] });
+    style: { paragraph: { indent: { left: 560, hanging: 340 } } } }] });
 }
 
 const doc = new Document({
   creator: "Croce Verde Ascoli Piceno", title: "Come funzionano i turni: regolamento e guida per i dipendenti",
   styles: {
-    default: { document: { run: { font: FONT, size: 22, color: TESTO }, paragraph: { spacing: { line: 276, lineRule: LineRuleType.AUTO } } } },
+    default: { document: { run: { font: FONT, size: 22, color: TESTO }, paragraph: { spacing: { line: 288, lineRule: LineRuleType.AUTO } } } },
     paragraphStyles: [
-      { id: "Title", name: "Title", basedOn: "Normal", next: "Normal", run: { font: FONT, size: 40, bold: true, color: VERDE },
+      { id: "Title", name: "Title", basedOn: "Normal", next: "Normal", run: { font: FONT, size: 48, bold: true, color: VERDE },
         paragraph: { spacing: { before: 0, after: 240 }, keepNext: true,
           border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: VERDE, space: 6 } } } },
       { id: "Heading1", name: "Heading 1", basedOn: "Normal", next: "Normal", quickFormat: true,
-        run: { font: FONT, size: 30, bold: true, color: VERDE }, paragraph: { spacing: { before: 360, after: 140 }, keepNext: true, outlineLevel: 0 } },
+        run: { font: FONT, size: 30, bold: true, color: VERDE },
+        paragraph: { spacing: { before: 320, after: 120 }, keepNext: true, keepLines: true, outlineLevel: 0,
+          border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: "CFE8D8", space: 4 } } } },
       { id: "Heading2", name: "Heading 2", basedOn: "Normal", next: "Normal", quickFormat: true,
-        run: { font: FONT, size: 25, bold: true, color: VERDE_SCURO }, paragraph: { spacing: { before: 240, after: 100 }, keepNext: true, outlineLevel: 1 } },
+        run: { font: FONT, size: 25, bold: true, color: VERDE_SCURO },
+        paragraph: { spacing: { before: 320, after: 120 }, keepNext: true, keepLines: true, outlineLevel: 1 } },
     ],
   },
   numbering: { config: liste },
   sections: [{
-    properties: { page: { size: { width: 11906, height: 16838 }, margin: { top: 1134, bottom: 1134, left: 1134, right: 1134 } },
+    properties: { page: { size: { width: 11906, height: 16838 }, margin: { top: MARGINE, bottom: 1134, left: MARGINE, right: MARGINE } },
       titlePage: true },
     footers: {
-      default: new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [
+      default: new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER,
+        border: { top: { style: BorderStyle.SINGLE, size: 4, color: "D5DCE3", space: 6 } }, children: [
         new TextRun({ text: "Croce Verde Ascoli Piceno · Come funzionano i turni · pagina ", size: 18, color: MUTO }),
         new TextRun({ children: [PageNumber.CURRENT], size: 18, color: MUTO })] })] }),
       first: new Footer({ children: [new Paragraph({ children: [] })] }),
