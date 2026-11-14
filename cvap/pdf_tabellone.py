@@ -13,9 +13,9 @@ from . import email_turni as et
 from . import pdf_stile as st
 from .modello import EXTRA
 
-_PICCOLO = st.CELLA
-_CENTRO = st.TESTA_CENTRO
-_NOTA = st.NOTA
+_PICCOLO = st.CELLA_GRANDE
+_CENTRO = st.TESTA_GRANDE
+_NOTA = st.NOTA_GRANDE
 
 
 def _c(hex_: str):
@@ -52,10 +52,10 @@ def _voci(persone: list[dict], scoperte: list[str]) -> list[Paragraph]:
     return out or [Paragraph("—", _PICCOLO)]
 
 
-def _tabella(righe: list[list], regole: list, larghezza: float) -> Table:
-    colonne = [80] + [(larghezza - 80) / 7] * 7
+def _tabella(righe: list[list], regole: list, larghezza: float, centrata: bool = True) -> Table:
+    colonne = [92] + [(larghezza - 92) / 7] * 7
     t = Table(righe, colWidths=colonne, repeatRows=1)
-    t.setStyle(st.stile_griglia(regole))
+    t.setStyle(st.stile_griglia(regole, centrata=centrata))
     return t
 
 
@@ -91,22 +91,21 @@ def blocchi_tabellone(s: dict) -> list:
         blocchi.append(KeepTogether([Paragraph(EXTRA, st.H3),
                                      _tabella([[Paragraph("Richieste", _CENTRO), *testa], [Paragraph("Assistenze<br/>ed Extra", _PICCOLO), *celle]],
                                               regole_testa, larghezza)]))
-    blocchi.append(_legenda())
     return blocchi
 
 
-def _legenda() -> Paragraph:
-    return Paragraph(
-        f'<font backColor="{et.GIORNO_BG}">&nbsp;Giorno&nbsp;</font> &nbsp; '
-        f'<font backColor="{et.NOTTE_BG}">&nbsp;Notte&nbsp;</font> &nbsp; '
-        f'<font backColor="{et.VOL_BG}" color="{et.VOL_TESTO}">&nbsp;<b>Volontario</b>&nbsp;</font> &nbsp; '
-        f'<font color="{et.ROSSO}"><b>scoperto</b></font> = posto senza nessuno · '
-        "accanto al nome l'orario, se fa solo una parte del turno.", st.NOTA)
+# in fondo a ogni pagina del tabellone (pdf_stile.documento): i colori e i segni usati
+LEGENDA = (f'<font backColor="{et.GIORNO_BG}">&nbsp;Giorno&nbsp;</font> &nbsp; '
+           f'<font backColor="{et.NOTTE_BG}">&nbsp;Notte&nbsp;</font> &nbsp; '
+           f'<font backColor="{et.VOL_BG}" color="{et.VOL_TESTO}">&nbsp;<b>Volontario</b>&nbsp;</font> &nbsp; '
+           f'<font color="{et.ROSSO}"><b>scoperto</b></font> = posto senza nessuno · '
+           "accanto al nome l'orario, se fa solo una parte del turno.")
 
 
 def genera_tabellone(s: dict, avviso: str | None = None) -> bytes:
     """Il tabellone di una settimana. `avviso`: es. "Aggiornato con i cambi turno" (email dei cambi turno)."""
-    return st.documento("Tabellone dei turni", _periodo(s) + _versione(s), blocchi_tabellone(s), avviso=avviso)
+    return st.documento("Tabellone dei turni", _periodo(s) + _versione(s), blocchi_tabellone(s), avviso=avviso,
+                        legenda=LEGENDA)
 
 
 def genera_tabelloni(settimane: list[dict], avviso: str | None = None) -> bytes:
@@ -120,7 +119,7 @@ def genera_tabelloni(settimane: list[dict], avviso: str | None = None) -> bytes:
         blocchi += blocchi_tabellone(s)
     sottotitolo = _periodo(settimane[0]) if len(settimane) == 1 else (
         f"Dal {et._dmy(settimane[0]['inizio'])} al {et._dmy(settimane[-1]['fine'])}")
-    return st.documento("Tabellone dei turni", sottotitolo, blocchi, avviso=avviso)
+    return st.documento("Tabellone dei turni", sottotitolo, blocchi, avviso=avviso, legenda=LEGENDA)
 
 
 def _versione(s: dict) -> str:
@@ -142,9 +141,9 @@ def genera_liberi(s: dict) -> bytes:
                 if x.get("motivo"):
                     note.append("malattia" if x["motivo"] == "malattia" else "ferie")
                 nota = ", ".join(n for n in note if n)
-                voci.append(Paragraph(f"<b>{escape(x['nome'])}</b>" + (f" <i>({escape(nota)})</i>" if nota else ""), _PICCOLO))
-            celle.append(voci or [Paragraph("—", _PICCOLO)])
-        righe.append([Paragraph(f"<b>{titolo}</b>", _PICCOLO), *celle])
+                voci.append(Paragraph(f"<b>{escape(x['nome'])}</b>" + (f" <i>({escape(nota)})</i>" if nota else ""), st.CELLA))
+            celle.append(voci or [Paragraph("—", st.CELLA)])
+        righe.append([Paragraph(f"<b>{titolo}</b>", st.CELLA), *celle])
         regole.append(("BACKGROUND", (0, len(righe) - 1), (0, len(righe) - 1), _c(bg)))
-    nota = Paragraph("Smonto notte = ha fatto la notte il giorno prima (finisce alle 8) · notte = fa la notte quella sera.", _NOTA)
-    return st.documento("Dipendenti liberi", _periodo(s), [_tabella(righe, regole, larghezza), Spacer(1, 6), nota])
+    nota = Paragraph("Smonto notte = ha fatto la notte il giorno prima (finisce alle 8) · notte = fa la notte quella sera.", st.NOTA)
+    return st.documento("Dipendenti liberi", _periodo(s), [_tabella(righe, regole, larghezza, centrata=False), Spacer(1, 6), nota])

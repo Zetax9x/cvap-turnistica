@@ -10,8 +10,8 @@ from reportlab.platypus import Paragraph, Spacer, Table
 from . import email_turni
 from . import pdf_stile as st
 
-_TURNO = ParagraphStyle("turno", parent=st.CELLA, fontSize=11.5, leading=15, alignment=1, spaceAfter=7)
-_GIORNO = ParagraphStyle("giorno", parent=_TURNO, fontName="Helvetica-Bold", spaceAfter=0)
+_TURNO = ParagraphStyle("turno", parent=st.CELLA_GRANDE, fontSize=15, leading=20, spaceAfter=12)
+_GIORNO = ParagraphStyle("giorno", parent=_TURNO, fontName="Helvetica-Bold", fontSize=14, leading=18, spaceAfter=0)
 _RIPOSO = ParagraphStyle("riposo", parent=_TURNO, textColor=colors.HexColor(st.MUTO))
 
 
@@ -34,7 +34,7 @@ def genera(settimana: dict, persona: dict) -> bytes:
             contenuto.append(Paragraph(
                 f"<b>{escape(t['orario'])}</b><br/>{escape(t['postazione'])}<br/>"
                 f"<font color=\"{st.MUTO}\">{escape(t['ruolo'])}</font>"
-                + (f"<br/><font size=\"10\">Con {escape(t['colleghi'])}</font>" if t['colleghi'] else ''), _TURNO))
+                + (f"<br/><font size=\"12.5\">Con {escape(t['colleghi'])}</font>" if t['colleghi'] else ''), _TURNO))
         if not contenuto:
             contenuto.append(Paragraph(escape(email_turni.stato_giorno(settimana, persona['id'], g)), _RIPOSO))
         celle.append(contenuto)
@@ -44,8 +44,9 @@ def genera(settimana: dict, persona: dict) -> bytes:
             regole.append(('BACKGROUND', (i, 1), (i, 1), colors.HexColor(email_turni.GIORNO_BG)))
     larghezza = st.larghezza()
     tabella = Table([titoli, celle], colWidths=[larghezza / len(giorni)] * len(giorni), repeatRows=1)
-    tabella.setStyle(st.stile_griglia([('TOPPADDING', (0, 0), (-1, -1), 8), ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-                                       *regole]))
+    tabella.setStyle(st.stile_griglia([('TOPPADDING', (0, 0), (-1, 0), 12), ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                                       ('TOPPADDING', (0, 1), (-1, -1), 40), ('BOTTOMPADDING', (0, 1), (-1, -1), 40),
+                                       *regole], centrata=True))
     periodo = f"Settimana dal {email_turni._dmy(settimana['inizio'])} al {email_turni._dmy(settimana['fine'])}"
     legenda = Paragraph(f'<font backColor="{email_turni.GIORNO_BG}">&nbsp;Turno di giorno&nbsp;</font> &nbsp; '
                         f'<font backColor="{email_turni.NOTTE_BG}">&nbsp;Turno di notte&nbsp;</font> &nbsp; '
