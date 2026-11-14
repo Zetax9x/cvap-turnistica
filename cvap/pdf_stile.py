@@ -67,16 +67,23 @@ def larghezza(verticale: bool = False) -> float:
 
 
 def tabella(intestazioni: list[str], righe: list[list], larghezze: list[float], destra=frozenset(), *,
-            totale: float | None = None, alternata: bool = True, regole=()) -> Table:
+            centro=frozenset(), totale: float | None = None, alternata: bool = True, regole=()) -> Table:
     """Tabella standard: intestazione in verde chiaro ripetuta a ogni pagina, righe alternate, griglia leggera.
-    `larghezze` sono proporzioni, scalate su `totale` (di norma la larghezza utile della pagina orizzontale)."""
+    `larghezze` sono proporzioni, scalate su `totale` (di norma la larghezza utile della pagina orizzontale);
+    `destra` e `centro`: indici delle colonne allineate a destra o al centro (intestazione compresa)."""
     totale = totale or larghezza()
-    dati = [[p(t, TESTA_DESTRA if i in destra else TESTA) for i, t in enumerate(intestazioni)]]
+
+    def stile(i: int, testa: bool) -> ParagraphStyle:
+        if i in centro:
+            return TESTA_CENTRO if testa else CELLA_CENTRO
+        if i in destra:
+            return TESTA_DESTRA if testa else CELLA_DESTRA
+        return TESTA if testa else CELLA
+    dati = [[p(t, stile(i, True)) for i, t in enumerate(intestazioni)]]
     for riga in righe:
-        dati.append([c if isinstance(c, (Paragraph, list)) else p(c, CELLA_DESTRA if i in destra else CELLA)
-                     for i, c in enumerate(riga)])
+        dati.append([c if isinstance(c, (Paragraph, list)) else p(c, stile(i, False)) for i, c in enumerate(riga)])
     somma = sum(larghezze)
-    t = Table(dati, colWidths=[w * totale / somma for w in larghezze], repeatRows=1)
+    t = Table(dati, colWidths=[w * totale / somma for w in larghezze], repeatRows=1, hAlign="LEFT")
     stile = [("GRID", (0, 0), (-1, -1), 0.4, GRIGLIA), ("VALIGN", (0, 0), (-1, -1), "TOP"),
              ("BACKGROUND", (0, 0), (-1, 0), TESTA_BG),
              ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),

@@ -3,7 +3,7 @@
 import { api } from "./api.js";
 import { apriInvio, apriProva } from "./email.js";
 import {
-  renderTurniDaCoprire, avvisoTurniDaCoprire, renderSostituti, azzeraSostituti, stampaSostituti, annullaStampaSostituti,
+  renderTurniDaCoprire, avvisoTurniDaCoprire, renderSostituti, azzeraSostituti, stampaSostituti,
 } from "./sostituti.js";
 import {
   el, clear, toast, toastErrore, chiediConferma, addDays, mondayOf, todayISO, ddmm, dataLunga,
@@ -11,7 +11,7 @@ import {
   PARTI_TURNO, SCELTE_INDISPONIBILITA, partiTurno, valoreParti, etichettaParti, badgeAssenza,
   EXTRA, leggiExtra,
 } from "./util.js";
-import { scaricaPdf, scaricaPdfServer } from "./pdf.js";
+import { scaricaPdfServer } from "./pdf.js";
 
 const FASCE = ["giorno", "notte"];
 const RUOLI = ["autista", "soccorritore"];
@@ -1427,13 +1427,11 @@ function renderStampaLiberi(s) {
 
 // Tabellone e liberi: lo stesso PDF del server che si scarica dall'app e che arriva con i cambi turno
 function stampaGriglia() {
-  annullaStampaSostituti();
   const inizio = stato.settimana.inizio;
   scaricaPdfServer(`/api/settimane/${inizio}/pdf-tabellone`, `tabellone-${inizio}`).catch(toastErrore);
 }
 
 function stampaLiberi() {
-  annullaStampaSostituti();
   const inizio = stato.settimana.inizio;
   scaricaPdfServer(`/api/settimane/${inizio}/pdf-liberi`, `liberi-${inizio}`).catch(toastErrore);
 }

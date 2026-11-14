@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field, model_validator
 
 from . import db, db_festivi_disponibili, db_festivita, db_storico_festivi, prossime_festivita
-from .api_comune import DataValida, Id, IdPath, Nome, errore
+from .api_comune import DataValida, Id, IdPath, Nome, errore, risposta_pdf
 from .festivita import OFFSET_PASQUA_MAX, PESO_MAX, PESO_MIN, anteprima, date_festive, errore_regola
 from .prossime_festivita import MESI_MAX, MESI_MIN
 from .rotazione_festivi import fasce_valide
@@ -115,6 +115,21 @@ def crea_router(connessione: Callable) -> APIRouter:
                  versione: Literal["generati", "effettivi"] = "effettivi"):
         # date.today(): l'oggi del server, come nel resto delle API (nel progetto non c'è una funzione comune)
         return prossime_festivita.prossime(conn, date.today(), mesi, versione=versione)
+
+    @router.get("/api/festivita/prossime.pdf")
+    def prossime_pdf(conn: Conn, mesi: Annotated[int, Query(ge=MESI_MIN, le=MESI_MAX)] = 12,
+                     versione: Literal["generati", "effettivi"] = "effettivi",
+                     data: DataValida | None = None, festivita_id: Id | None = None):
+        """«A chi tocca» in PDF (cvap/pdf_statistiche.py): tutte le festività dei prossimi mesi, o una sola (`data`
+        e `festivita_id`, come il pulsante della singola festività)."""
+        from .pdf_statistiche import genera_festivita
+        voci = prossime_festivita.prossime(conn, date.today(), mesi, versione=versione)
+        if data is not None or festivita_id is not None:
+            voci = [v for v in voci if (data is None or v["data"] == data.isoformat())
+                    and (festivita_id is None or v["festivita_id"] == festivita_id)]
+            if not voci:
+                raise HTTPException(404, "Festività non trovata")
+        return risposta_pdf(genera_festivita(voci, mesi, versione), f"festivita-a-chi-tocca-{versione}.pdf")
 
     @router.get("/api/festivita/lavorate")
     def lavorate(conn: Conn, anno: Annotated[int, Query(ge=ANNO_MIN, le=ANNO_MAX)],

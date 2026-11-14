@@ -1044,10 +1044,6 @@ a.btn { text-decoration: none; }
   .stampa-liberi { display: none !important; }
   .giorno-btn { text-decoration: none; padding: 0; margin: 0; }
 
-  /* "Stampa liberi": solo intestazione della settimana e riepilogo dei liberi */
-  body.stampa-liberi-attiva .griglie, body.stampa-liberi-attiva .week-postazioni,
-  body.stampa-liberi-attiva .legenda { display: none !important; }
-  body.stampa-liberi-attiva .stampa-liberi { display: block !important; }
   .stampa-liberi h2 { font-size: 12pt; margin: 0 0 3mm; }
   .tabella-liberi { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 8.5pt; }
   .tabella-liberi th, .tabella-liberi td { border: 1px solid #777; padding: 1.2mm; vertical-align: top; text-align: left; }
@@ -1142,28 +1138,6 @@ a.btn { text-decoration: none; }
   .festivita-prossima { break-inside: avoid; }
   .festivita-storico { break-before: page; }
   .tabella-ordine-festivita, .tabella-festivi-anno { font-size: 9pt; }
-  body.stampa-festivita .view:not(#view-statistiche),
-  body.stampa-festivita #view-statistiche > :not(.festivita-da-stampare) { display: none !important; }
-  body.stampa-festivita .festivita-da-stampare {
-    display: block !important; margin: 0; border: 0; break-inside: auto;
-  }
-  body.stampa-tutte-festivita .festivita-da-stampare + .festivita-da-stampare {
-    break-before: page; page-break-before: always;
-  }
-  body.stampa-festivita .festivita-da-stampare > summary {
-    display: block; padding: 0 0 3mm;
-  }
-  body.stampa-festivita .festivita-da-stampare > summary h2 { font-size: 13pt; }
-  body.stampa-festivita .festivita-da-stampare summary::before { display: none; }
-  body.stampa-festivita .festivita-contenuto { padding: 0; }
-  body.stampa-festivita .festivita-fasce { display: block; }
-  body.stampa-festivita .festivita-fascia { margin: 0 0 3mm; break-inside: auto; }
-  body.stampa-festivita .festivita-fascia > summary { display: block; padding: 2mm; }
-  body.stampa-festivita .festivita-fascia-contenuto { padding: 0; }
-  body.stampa-festivita .tabella-ordine-festivita { width: 100%; font-size: 8pt; }
-  body.stampa-festivita .tabella-ordine-festivita th,
-  body.stampa-festivita .tabella-ordine-festivita td { padding: 1.1mm 1.5mm; }
-  body.stampa-festivita .tabella-ordine-festivita tr { break-inside: avoid; }
   .tabella-ordine-festivita .col-voglia,
   .tabella-ordine-festivita .col-assenze { display: none !important; }
 }
@@ -1494,65 +1468,7 @@ a.btn { text-decoration: none; }
   .eq-tend, .eq-barra, .eq-barra-valore, .eq-grafico { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 
-/* ---------- Stampa "Chi può sostituire": foglio a parte, si vede solo in stampa ---------- */
-.stampa-sostituti { display: none; }
-
-/* Area temporanea catturata dal generatore PDF: resta fuori dallo schermo e non altera la vista corrente. */
-.pdf-esportazione {
-  position: fixed; left: 0; top: 0; z-index: -1;
-  width: 820px; padding: 24px; background: #fff; color: #111;
-}
-.pdf-esportazione-landscape { width: 1120px; }
-.pdf-esportazione .stampa-liberi,
-.pdf-esportazione .stampa-sostituti { display: block !important; }
-.pdf-esportazione .stampa-sostituti { padding: 0; background: #fff; color: #111; }
 .coprire-azioni { margin: 0 0 .75rem; }
-
-@page verticale { size: A4 portrait; margin: 12mm 13mm; }
-@media print {
-  body.stampa-sostituti-attiva > *:not(#stampa-sostituti) { display: none !important; }
-  body.stampa-sostituti-attiva .stampa-sostituti {
-    display: block !important; page: verticale; color: #111; font-size: 11pt; line-height: 1.4;
-    -webkit-print-color-adjust: exact; print-color-adjust: exact;
-  }
-  .sost-testata { border-bottom: 3px solid #009541; padding-bottom: 2mm; margin-bottom: 3mm; }
-  .sost-testata h1 { font-size: 18pt; margin: 0; color: var(--ok-soft-testo); }
-  .sost-periodo { margin: .5mm 0 0; font-size: 10.5pt; color: #374151; }
-  .sost-intro { margin: 0 0 4mm; font-size: 10.5pt; }
-  .sost-blocco {
-    break-inside: avoid; page-break-inside: avoid; margin: 0 0 5mm; padding: 3mm 4mm;
-    border: 1px solid #9aa3af; border-radius: 2mm; background: #fff;
-  }
-  .sost-numero { margin: 0; font-size: 9pt; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #6b7280; }
-  .sost-blocco h2 { font-size: 14pt; margin: .5mm 0 0; }
-  .sost-dove { margin: 0; font-size: 11.5pt; font-weight: 600; }
-  .sost-assente { margin: 1mm 0 3mm; }
-  .sost-proposta { margin: 0 0 3mm; padding: 2.5mm 3.5mm; border-radius: 1.5mm; background: var(--ok-soft-bg); border-left: 5px solid #009541; }
-  .sost-proposta-nessuna { background: #ffeec2; border-left-color: var(--eccezione-bordo); }
-  .sost-etichetta { margin: 0 0 .5mm; font-size: 9pt; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--ok-soft-testo); }
-  .sost-proposta-nessuna .sost-etichetta { color: #7a4a00; }
-  .sost-scelta { margin: 0; font-size: 13pt; }
-  .sost-dettaglio { margin: .8mm 0 0; font-size: 10.5pt; }
-  .sost-passi { margin: 1.5mm 0 0; padding-left: 6mm; font-size: 11.5pt; }
-  .sost-passi li { margin-bottom: 1mm; }
-  .sost-piccolo { font-size: 10pt; color: #374151; }
-  .sost-alternative { margin-top: 2mm; }
-  .sost-titoletto { margin: 0 0 1mm; font-weight: 700; font-size: 10.5pt; }
-  .sost-alternative-fuori .sost-titoletto { color: var(--eccezione-testo-lieve); }
-  .sost-tabella { width: 100%; border-collapse: collapse; font-size: 10pt; }
-  .sost-tabella th { text-align: left; font-size: 9pt; color: #374151; border-bottom: 1.5px solid #6b7280; padding: .8mm 1.5mm; }
-  .sost-tabella td { border-bottom: 1px solid #d1d5db; padding: 1mm 1.5mm; vertical-align: top; }
-  .sost-tabella tr { break-inside: avoid; }
-  .sost-alternative-fuori .sost-tabella td { background: #fff4e5; }
-  .sost-col-n { width: 7mm; color: #6b7280; }
-  .sost-tabella { table-layout: fixed; }
-  .sost-tabella th:nth-child(2) { width: 30mm; }
-  .sost-tabella th:nth-child(3) { width: 34mm; }
-  .sost-col-ore { white-space: nowrap; }
-  .sost-errore { margin: 0; color: #b3121f; font-weight: 700; }
-  .sost-nota { margin-top: 4mm; padding: 2mm 3mm; font-size: 9.5pt; background: #f3f4f6; border-left: 4px solid #9aa3af; }
-  .sost-nota p { margin: 0 0 .8mm; }
-}
 
 /* ---------- Scambio a catena: B prende il turno, C prende quello di B (ore extra) ---------- */
 .catene { margin-bottom: .6rem; padding: .5rem .6rem; border-radius: var(--radius-sm); background: var(--ok-soft-bg); border: 1px solid #7cc39a; }

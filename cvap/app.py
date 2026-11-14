@@ -25,7 +25,8 @@ from pydantic import BaseModel, BeforeValidator, Field, StringConstraints, model
 
 from . import (accesso, api_push, push, api_calendari, api_cambi_turno, api_equita, api_festivita, api_storico_festivi,
                dati_festivi, db, db_festivita, email_turni, registro)
-from .api_comune import DATA_MAX, DATA_MIN, DataValida, Id, IdPath, Nome, errore as _errore
+from .api_comune import (DATA_MAX, DATA_MIN, DataValida, Id, IdPath, Nome, descrivi_periodo, errore as _errore,
+                         risposta_pdf)
 from .posta import PostinoBloccato, PostinoSmtp
 from .calendario import giorni_settimana, lunedi, postazioni_attive, tipo_settimana
 from .festivita import festivi_periodo
@@ -1090,6 +1091,17 @@ def create_app(db_path: str, password: str | None = None, postino=None,
                        for k in catene],
         }
 
+    @app.get("/api/settimane/{data}/pdf-sostituti")
+    def pdf_sostituti(data: str, conn: Conn, ids: Annotated[str, Query(pattern=r"^\d+(,\d+)*$", max_length=600)]):
+        """«Sostituzioni da organizzare» in PDF: per ogni turno indicato in `ids` (separati da virgola) la proposta
+        consigliata, le alternative e chi non rispetta le regole (gli stessi suggerimenti di `sostituti`)."""
+        from .pdf_statistiche import genera_sostituti
+        inizio = lunedi(_data(data))
+        esiti = [sostituti(int(x), conn) for x in dict.fromkeys(ids.split(","))]
+        if any(lunedi(date.fromisoformat(e["turno"]["data"])) != inizio for e in esiti):
+            raise _errore("Un turno non appartiene a questa settimana")
+        return risposta_pdf(genera_sostituti(payload_settimana(conn, inizio), esiti), f"sostituti-{inizio.isoformat()}.pdf")
+
     @app.post("/api/assegnazioni/{assegnazione_id}/catena")
     def fai_catena(assegnazione_id: IdPath, body: CatenaIn, conn: Conn):
         """B prende il turno (ore normali) e cede il suo turno `ceduto_id` a C (sostituzione, ore extra)."""
@@ -1666,6 +1678,13 @@ def create_app(db_path: str, password: str | None = None, postino=None,
         out.sort(key=lambda r: (r["tipo"] != "dipendente", r["nome"].lower(), r["persona_id"]))
         return out
 
+    @app.get("/api/statistiche/turni.pdf")
+    def pdf_statistiche_turni(conn: Conn, versione: Literal["generati", "effettivi"] = "effettivi"):
+        """Statistiche → Turni in PDF (cvap/pdf_statistiche.py), per la versione scelta."""
+        from .pdf_statistiche import genera_statistiche
+        return risposta_pdf(genera_statistiche(statistiche(conn, versione), versione),
+                            f"statistiche-turni-{versione}.pdf")
+
     @app.get("/api/statistiche/festivi")
     def statistiche_festivi(conn: Conn, versione: Literal["generati", "effettivi"] = "effettivi"):
         """Turni festivi di chi non è nella tabella delle statistiche (es. ex dipendenti dello storico importato)."""
@@ -1688,6 +1707,24 @@ def create_app(db_path: str, password: str | None = None, postino=None,
         return [{"persona_id": p["id"], "nome": p["nome"], "attivo": p["attivo"],
                  "totale": len({d for d, _ in richieste.get(p["id"], ())}),
                  "giorni": indisponibilita_per_giorno(richieste.get(p["id"], set()))} for p in dipendenti]
+
+    @app.get("/api/statistiche/indisponibilita.pdf")
+    def pdf_statistiche_indisponibilita(conn: Conn, dal: DataValida | None = None, al: DataValida | None = None):
+        """Indisponibilità per giorno in PDF (stesso periodo della pagina)."""
+        from .pdf_statistiche import genera_indisponibilita
+        righe = statistiche_indisponibilita(conn, dal, al)
+        return risposta_pdf(genera_indisponibilita(righe, descrivi_periodo(dal, al, "Tutte le indisponibilità registrate")),
+                            "indisponibilita.pdf")
+
+    # il PDF va dichiarato prima: «5.pdf» altrimenti sarebbe preso per l'id della route sotto
+    @app.get("/api/statistiche/persona/{persona_id}.pdf")
+    def pdf_statistiche_persona(persona_id: IdPath, conn: Conn, dal: DataValida, al: DataValida,
+                                versione: Literal["generati", "effettivi"] = "effettivi"):
+        """Riepilogo per dipendente in PDF: gli stessi dati della pagina (`statistiche_persona`)."""
+        from .calendario_ics import slug
+        from .pdf_statistiche import genera_riepilogo
+        d = statistiche_persona(persona_id, conn, dal, al, versione)
+        return risposta_pdf(genera_riepilogo(d, versione), f"riepilogo-{slug(d['nome'])}-{dal.isoformat()}.pdf")
 
     @app.get("/api/statistiche/persona/{persona_id}")
     def statistiche_persona(persona_id: IdPath, conn: Conn, dal: DataValida, al: DataValida,

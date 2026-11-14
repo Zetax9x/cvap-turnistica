@@ -1,8 +1,8 @@
 // Vista "Statistiche": storico cumulato per persona, colonne ordinabili; scheda "Indisponibilità" a parte.
 
 import { api } from "./api.js";
-import { el, clear, etichetta, formatOre, formatSaldo } from "./util.js";
-import { scaricaPdf } from "./pdf.js";
+import { el, clear, etichetta, formatOre, formatSaldo, toastErrore } from "./util.js";
+import { scaricaPdfServer } from "./pdf.js";
 import * as indisponibilita from "./statistiche-indisponibilita.js";
 import * as perDipendente from "./statistiche-dipendente.js";
 import * as equita from "./statistiche-equita.js";
@@ -83,10 +83,16 @@ export function renderSchede(attiva) {
   return el("div", {}, schede, scelta, el("p", { class: "muted no-print" }, nota));
 }
 
-export function bottoneStampa(titolo = "Statistiche") {
+/** Il pulsante «Scarica PDF» di ogni scheda: il PDF lo prepara il server (stesso stile di tutti gli altri fogli),
+ * per la versione dei turni scelta e per il periodo della pagina. `percorso`: funzione che dà l'indirizzo. */
+export function bottoneStampa(percorso, nome) {
   return el("button", {
-    type: "button", class: "btn btn-ghost",
-    onclick: () => scaricaPdf(document.getElementById("view-statistiche"), titoloVersione(titolo), { orientamento: "landscape" }),
+    type: "button", class: "btn btn-ghost", title: "Scarica questa pagina in PDF",
+    onclick: (e) => {
+      const b = e.currentTarget;
+      b.disabled = true;
+      scaricaPdfServer(percorso(), `${nome}-${versioneStatistiche()}`).catch(toastErrore).finally(() => { b.disabled = false; });
+    },
   }, "Scarica PDF");
 }
 
@@ -154,7 +160,8 @@ function ordina(righe) {
 function render() {
   const root = clear(stato.root);
   root.append(renderSchede(""), el("header", { class: "view-header" },
-    el("div", { class: "view-header-riga" }, el("h1", {}, titoloVersione("Statistiche")), bottoneStampa()),
+    el("div", { class: "view-header-riga" }, el("h1", {}, titoloVersione("Statistiche")),
+      bottoneStampa(() => `/api/statistiche/turni.pdf?versione=${versioneStatistiche()}`, "statistiche-turni")),
     el("p", { class: "muted" },
       "Contano solo le settimane generate e confermate: le bozze e le settimane compilate solo a mano sono escluse. Il saldo ore confronta le ore lavorate con la media dei dipendenti, settimana per settimana, come fa il generatore: le settimane con ferie o malattia, anche per un solo giorno, non lo cambiano, così chi è stato assente non risulta indietro. Nelle ore totali ogni giorno di assenza conta 6 ore; chi è assente tutta la settimana è escluso dal conteggio. Un saldo positivo (+) indica ore in più, negativo (−) ore in meno. Per chi ha un limite di ore, il riferimento non supera quel limite; per i volontari il saldo è sempre 0.")));
 
