@@ -244,7 +244,8 @@ def dettagli_esito(metodo: str, percorso: str, codice: int, risposta) -> list[tu
 def da_registrare(metodo: str, percorso: str) -> bool:
     """Le modifiche alle API; non le letture, le anteprime e l'accesso (lo registra l'endpoint)."""
     return (metodo in ("POST", "PUT", "PATCH", "DELETE") and percorso.startswith("/api/")
-            and percorso != "/api/accesso" and not _SOLO_LETTURA.search(percorso))
+            and percorso != "/api/accesso" and not _SOLO_LETTURA.search(percorso)
+            and not percorso.startswith("/api/schede-ore/"))  # le correzioni del dipendente: la conferma si scrive da sé
 
 
 def prepara(conn, metodo: str, percorso: str, corpo=None) -> tuple[str, list[tuple[str, str]]]:
