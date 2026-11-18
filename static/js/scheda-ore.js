@@ -13,8 +13,6 @@ const STATI_MESE = { non_aperta: "Non ancora aperta", bozza: "In revisione", con
 const MAX_NOTE_GIORNO = 200, MAX_NOTE_FINALI = 1000, MAX_CAUSALE = 100;
 
 const sessione = { mese: null, scheda: null, vista: null };
-const carte = new Map();       // giorno -> { radice, corpo, errore }
-let totali = null;
 let coda = Promise.resolve();  // i salvataggi vanno al server uno alla volta, nell'ordine in cui si fanno
 let timerStato = 0;
 
@@ -77,7 +75,6 @@ function scrivi(box, testo) { box.hidden = !testo; box.textContent = testo || ""
 // ---------------------------------------------------------------- accesso
 
 async function vistaAccesso(messaggio = "") {
-  carte.clear();
   const errore = boxErrore();
   const nome = el("select", { id: "so-nome", required: true });
   const codice = el("input", { id: "so-codice", type: "password", autocomplete: "off", required: true, maxlength: 100 });
@@ -148,6 +145,36 @@ async function vistaScheda(mese) {
 const confermata = () => sessione.scheda.stato === "confermata";
 const datiGiorno = (giorno) => sessione.scheda.giorni[giorno - 1];
 const orePair = (coppia) => (coppia ? [formatta(coppia[0]), formatta(coppia[1])] : null);
+const NOMI_GIORNO = ["Domenica", "Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato"];
+const LETTERE = ["D", "L", "M", "M", "G", "V", "S"];
+const titoloGiorno = (g) => `${NOMI_GIORNO[giornoSettimana(g)]} ${g} ${MESI[Number(sessione.mese.slice(5)) - 1].toLowerCase()}`;
+
+// ---------------------------------------------------------------- giorni controllati (solo in questo browser)
+
+let controllati = new Set();
+const chiaveControlli = () => `cvap-scheda-${sessione.scheda.persona.id ?? sessione.scheda.persona.nome}-${sessione.mese}`;
+
+function leggiControllati() {
+  try { return new Set(JSON.parse(localStorage.getItem(chiaveControlli()) || "[]")); } catch { return new Set(); }
+}
+function salvaControllati() {
+  try { localStorage.setItem(chiaveControlli(), JSON.stringify([...controllati])); } catch { /* memoria del browser non disponibile */ }
+}
+const eControllato = (g) => controllati.has(g.giorno) || Boolean(g.corretto);
+const daRivedere = (g) => Boolean(g.da_rivedere || g.turni_cambiati);
+
+/** L'ultimo giorno da controllare: oggi nel mese in corso, altrimenti tutto il mese. */
+function ultimoDaControllare() {
+  const oggi = new Date(), [anno, mese] = sessione.mese.split("-").map(Number);
+  return oggi.getFullYear() === anno && oggi.getMonth() + 1 === mese ? oggi.getDate() : sessione.scheda.giorni.length;
+}
+const nonControllati = () => sessione.scheda.giorni.filter((g) => g.giorno <= ultimoDaControllare() && !eControllato(g));
+
+// ---------------------------------------------------------------- salvataggi
+
+let erroreCorrente = null;   // la casella d'errore della schermata aperta
+let modo = null;             // null | "correggi" | "aggiungi": cosa sta facendo il dipendente nel giorno aperto
+const contenitori = {};
 
 /** Il corpo della richiesta di salvataggio: il giorno com'è adesso, con le sole modifiche indicate. */
 function corpoDa(g, modifiche = {}) {
@@ -161,47 +188,47 @@ function corpoDa(g, modifiche = {}) {
   };
 }
 
-async function dopoErrore(err, carta) {
+async function dopoErrore(err) {
   if (err.status === 401) return sessioneScaduta();
   if (err.status === 409) { await vistaScheda(sessione.mese); return segnala("La scheda è confermata"); }
-  scrivi(carta.errore, err.message);
+  scrivi(erroreCorrente, err.message);
 }
 
-/** Salva un giorno (i salvataggi vanno uno alla volta) e lo ridisegna. Dà true se è andato a buon fine. */
+/** Salva un giorno (i salvataggi vanno uno alla volta). Dà true se è andato a buon fine. */
 function invia(giorno, modifiche) {
-  const carta = carte.get(giorno);
   coda = coda.then(async () => {
     try {
       sessione.scheda = await chiama("PUT", `/${sessione.mese}/giorni/${giorno}`, corpoDa(datiGiorno(giorno), modifiche));
-      disegnaGiorno(giorno);
-      aggiornaTotali();
+      controllati.add(giorno);
+      salvaControllati();
+      modo = null;
+      aggiorna();
       segnala("Salvato");
       return true;
-    } catch (err) { await dopoErrore(err, carta); return false; }
+    } catch (err) { await dopoErrore(err); return false; }
   });
   return coda;
 }
 
 function ripristina(giorno) {
-  const carta = carte.get(giorno);
   coda = coda.then(async () => {
     try {
       sessione.scheda = await chiama("DELETE", `/${sessione.mese}/giorni/${giorno}`);
-      for (const g of sessione.scheda.giorni) if (carte.has(g.giorno)) disegnaGiorno(g.giorno);
-      aggiornaTotali();
+      modo = null;
+      aggiorna();
       segnala("Giorno ripristinato dai turni");
-    } catch (err) { await dopoErrore(err, carta); }
+    } catch (err) { await dopoErrore(err); }
   });
 }
 
 function aggiornaTotali() {
   const t = sessione.scheda.totali;
-  totali.replaceChildren(...[["Giorni di ferie", t.giorni_ferie], ["Ore postazioni", t.ore_postazioni],
+  contenitori.totali.replaceChildren(...[["Giorni di ferie", t.giorni_ferie], ["Ore postazioni", t.ore_postazioni],
     ["Ore secondari", t.ore_secondari], ["Totale mese", t.totale_mese], ["Ore disponibilità aggiuntive", t.ore_disponibilita]]
     .map(([nome, valore]) => el("span", {}, `${nome}: `, el("strong", {}, String(valore)))));
 }
 
-// ---------------------------------------------------------------- un giorno
+// ---------------------------------------------------------------- moduli del giorno
 
 const campoOra = (etichetta, valore) => {
   const input = el("input", { type: "text", inputmode: "numeric", autocomplete: "off", maxlength: 5, placeholder: "8:30", value: valore });
@@ -210,7 +237,7 @@ const campoOra = (etichetta, valore) => {
 
 /** Il modulo per scrivere un turno: nuovo (colonna assente, si sceglie il tipo) o da modificare. */
 function formTurno(giorno, colonna, chiudi) {
-  const g = datiGiorno(giorno), carta = carte.get(giorno);
+  const g = datiGiorno(giorno);
   const attuale = colonna ? orePair(g.colonne[colonna]) : null;
   const scelta = colonna ? null : el("select", { "aria-label": "Tipo di turno" },
     COLONNE.filter(([c]) => !g.colonne[c]).map(([c, nome]) => el("option", { value: c }, nome)));
@@ -218,7 +245,7 @@ function formTurno(giorno, colonna, chiudi) {
   const salva = el("button", { type: "submit", class: "so-piccolo" }, "Salva");
   return el("form", { class: "so-turno-form", onsubmit: async (e) => {
     e.preventDefault();
-    if (!inizio.input.value.trim() || !fine.input.value.trim()) { scrivi(carta.errore, "Scrivi l'ora di inizio e di fine, per esempio 8 oppure 8:30."); return; }
+    if (!inizio.input.value.trim() || !fine.input.value.trim()) { scrivi(erroreCorrente, "Scrivi l'ora di inizio e di fine, per esempio 8 oppure 8:30."); return; }
     salva.disabled = true;
     const tipo = colonna || scelta.value;
     const colonne = { ...corpoDa(datiGiorno(giorno)).colonne, [tipo]: [inizio.input.value.trim(), fine.input.value.trim()] };
@@ -227,30 +254,22 @@ function formTurno(giorno, colonna, chiudi) {
   el("button", { type: "button", class: "so-secondario so-piccolo", onclick: chiudi }, "Annulla"));
 }
 
-function voceTurno(giorno, colonna, nome, coppia, bloccata) {
+/** Un turno con Modifica ed Elimina (si vede dopo «Correggi gli orari»). */
+function voceTurno(giorno, colonna, nome, coppia) {
   const li = el("li", { class: "so-turno" });
   const vista = () => li.replaceChildren(
-    el("span", { class: "so-turno-nome" }, nome), el("span", { class: "so-turno-ore" }, `${formatta(coppia[0])}–${formatta(coppia[1])}`),
-    ...(bloccata ? [] : [
-      el("button", { type: "button", class: "so-secondario so-piccolo", "aria-label": `Modifica ${nome}`,
-        onclick: () => li.replaceChildren(formTurno(giorno, colonna, vista)) }, "Modifica"),
-      el("button", { type: "button", class: "so-secondario so-piccolo", "aria-label": `Elimina ${nome}`,
-        onclick: () => invia(giorno, { colonne: { ...corpoDa(datiGiorno(giorno)).colonne, [colonna]: null } }) }, "Elimina")]));
+    el("span", { class: `so-chip so-${colonna}` }, nome), el("span", { class: "so-turno-ore" }, `${formatta(coppia[0])} – ${formatta(coppia[1])}`),
+    el("button", { type: "button", class: "so-secondario so-piccolo", "aria-label": `Modifica ${nome}`,
+      onclick: () => li.replaceChildren(formTurno(giorno, colonna, vista)) }, "Modifica"),
+    el("button", { type: "button", class: "so-secondario so-piccolo", "aria-label": `Elimina ${nome}`,
+      onclick: () => invia(giorno, { colonne: { ...corpoDa(datiGiorno(giorno)).colonne, [colonna]: null } }) }, "Elimina"));
   vista();
   return li;
 }
 
-function bloccoAggiungi(giorno) {
-  const riquadro = el("div", { class: "so-aggiungi" });
-  const bottone = () => riquadro.replaceChildren(el("button", { type: "button", class: "so-secondario so-piccolo",
-    onclick: () => riquadro.replaceChildren(formTurno(giorno, null, bottone)) }, "+ Aggiungi turno"));
-  bottone();
-  return riquadro;
-}
-
-/** Nota del giorno e disponibilità aggiuntiva: un solo modulo con un solo pulsante. */
+/** Nota del giorno e disponibilità aggiuntiva (sempre visibili): un solo modulo con un solo pulsante. */
 function formExtra(giorno, bloccata) {
-  const g = datiGiorno(giorno), d = g.disponibilita, carta = carte.get(giorno);
+  const g = datiGiorno(giorno), d = g.disponibilita;
   const nota = el("input", { type: "text", autocomplete: "off", maxlength: MAX_NOTE_GIORNO, value: g.note, disabled: bloccata });
   const dal = campoOra("Dalle", d ? formatta(d.inizio) : ""), al = campoOra("Alle", d ? formatta(d.fine) : "");
   const motivo = el("input", { type: "text", autocomplete: "off", maxlength: MAX_CAUSALE, value: d ? d.causale : "", disabled: bloccata });
@@ -259,7 +278,7 @@ function formExtra(giorno, bloccata) {
   return el("form", { class: "so-extra", onsubmit: async (e) => {
     e.preventDefault();
     const disp = [dal.input.value.trim(), al.input.value.trim(), motivo.value.trim()];
-    if (disp.some(Boolean) && (!disp[0] || !disp[1])) { scrivi(carta.errore, "Per la disponibilità aggiuntiva scrivi sia da che ora a che ora."); return; }
+    if (disp.some(Boolean) && (!disp[0] || !disp[1])) { scrivi(erroreCorrente, "Per la disponibilità aggiuntiva scrivi sia da che ora a che ora."); return; }
     salva.disabled = true;
     const ok = await invia(giorno, { note: nota.value.trim(), disponibilita: disp.some(Boolean) ? { inizio: disp[0], fine: disp[1], causale: disp[2] } : null });
     if (!ok) salva.disabled = false;
@@ -270,40 +289,84 @@ function formExtra(giorno, bloccata) {
   ...(bloccata ? [] : [salva]));
 }
 
-function intestazioneGiorno(g, bloccata) {
-  const segni = [];
-  if (g.corretto) {
-    segni.push(el("span", { class: "so-etichetta so-bozza" }, "Corretto"));
-    if (!bloccata) segni.push(el("button", { type: "button", class: "so-secondario so-piccolo", onclick: () => ripristina(g.giorno) }, "Ripristina dai turni"));
-  }
-  if (g.da_rivedere) segni.push(el("span", { class: "so-etichetta so-bozza", title: "Due turni nella stessa colonna: controlla gli orari e le note" }, "Da rivedere"));
-  const ferie = bloccata
-    ? (g.ferie ? [el("span", { class: "so-etichetta" }, "Ferie")] : [])
-    : [el("button", { type: "button", class: "so-ferie-bottone so-secondario so-piccolo", "aria-pressed": g.ferie ? "true" : "false",
-      onclick: () => invia(g.giorno, { ferie: g.ferie ? 0 : 1 }) }, g.ferie ? "Ferie ✓" : "Ferie")];
-  return el("div", { class: "so-giorno-testa" }, el("h3", {}, etichettaGiorno(g.giorno)), el("div", { class: "so-segnali" }, ...segni, ...ferie));
+// ---------------------------------------------------------------- schermata del giorno
+
+const segnaliGiorno = (g, bloccata) => [
+  ...(g.corretto ? [el("p", { class: "so-etichetta so-bozza" }, "Corretto da te"),
+    ...(bloccata ? [] : [el("button", { type: "button", class: "so-secondario so-piccolo", onclick: () => ripristina(g.giorno) }, "Ripristina dai turni")])] : []),
+  ...(g.da_rivedere ? [el("p", { class: "so-avviso" }, "Due turni nella stessa colonna: controlla gli orari e le note.")] : []),
+  ...(g.turni_cambiati ? [el("p", { class: "so-avviso" }, "I turni sono cambiati dopo la tua correzione: controlla.")] : []),
+  ...(g.giorno > ultimoDaControllare() ? [el("p", { class: "so-tenue" }, "Questo giorno non è ancora passato: non serve controllarlo adesso.")] : []),
+];
+
+function elencoTurni(g) {
+  const turni = COLONNE.filter(([c]) => g.colonne[c]);
+  if (modo === "correggi") return el("ul", { class: "so-turni" }, turni.map(([c, nome]) => voceTurno(g.giorno, c, nome, g.colonne[c])));
+  if (!turni.length) return el("p", { class: "so-tenue" }, g.ferie ? "Hai segnato questo giorno come ferie." : "Il programma non ha trovato turni per questo giorno.");
+  return el("div", { class: "so-grandi" }, turni.map(([c, nome]) => el("div", {},
+    el("span", { class: `so-chip so-${c}` }, nome), ` ${formatta(g.colonne[c][0])} – ${formatta(g.colonne[c][1])}`)));
 }
 
-function disegnaGiorno(giorno) {
-  const carta = carte.get(giorno), g = datiGiorno(giorno), bloccata = confermata();
-  const turni = COLONNE.filter(([c]) => g.colonne[c]).map(([c, nome]) => voceTurno(giorno, c, nome, g.colonne[c], bloccata));
-  const piene = COLONNE.every(([c]) => g.colonne[c]);
-  carta.radice.classList.toggle("so-con-ferie", Boolean(g.ferie));
-  carta.corpo.replaceChildren(intestazioneGiorno(g, bloccata),
-    ...(g.turni_cambiati ? [el("p", { class: "so-avviso" }, "I turni sono cambiati dopo la tua correzione.")] : []),
-    turni.length ? el("ul", { class: "so-turni" }, turni) : el("p", { class: "so-tenue so-vuoto" }, g.ferie ? "Giorno di ferie." : "Nessun turno."),
-    ...(bloccata || piene ? [] : [bloccoAggiungi(giorno)]), formExtra(giorno, bloccata));
-  scrivi(carta.errore, "");
+function azioniGiorno(g) {
+  const giorno = g.giorno, ha = COLONNE.some(([c]) => g.colonne[c]), piene = COLONNE.every(([c]) => g.colonne[c]);
+  const cambia = (valore) => { modo = modo === valore ? null : valore; aggiorna(); };
+  return el("div", { class: "so-azioni-giorno" },
+    el("button", { type: "button", class: "so-grande", onclick: () => {
+      controllati.add(giorno); salvaControllati(); vaiA(giorno < sessione.scheda.giorni.length ? giorno + 1 : "riepilogo");
+    } }, ha || g.ferie ? "✓ Sì, è giusto" : "✓ Sì, nessun turno"),
+    ...(ha ? [el("button", { type: "button", class: "so-secondario so-grande", "aria-pressed": String(modo === "correggi"), onclick: () => cambia("correggi") }, "Correggi gli orari")] : []),
+    ...(piene ? [] : [el("button", { type: "button", class: "so-secondario so-grande", "aria-pressed": String(modo === "aggiungi"), onclick: () => cambia("aggiungi") }, "Manca un turno")]),
+    el("button", { type: "button", class: "so-secondario so-grande", "aria-pressed": g.ferie ? "true" : "false",
+      onclick: () => invia(giorno, { ferie: g.ferie ? 0 : 1 }) }, g.ferie ? "Ero in ferie ✓ (tocca per togliere)" : "Ero in ferie"));
 }
 
-function cartaGiorno(giorno) {
-  const corpo = el("div"), errore = boxErrore();
-  const radice = el("article", { class: `so-giorno${eWeekend(giorno) ? " so-weekend" : ""}` }, corpo, errore);
-  carte.set(giorno, { radice, corpo, errore });
-  disegnaGiorno(giorno);
-  return radice;
+function schermataGiorno() {
+  const giorno = sessione.giorno, g = datiGiorno(giorno), bloccata = confermata();
+  erroreCorrente = boxErrore();
+  return [el("section", { class: `so-domanda${eWeekend(giorno) ? " so-weekend" : ""}`, "aria-label": titoloGiorno(giorno) },
+    el("h2", { tabindex: -1 }, titoloGiorno(giorno)),
+    ...(bloccata ? [] : [el("p", { class: "so-tenue" }, "Il programma dice che hai fatto:")]),
+    elencoTurni(g), ...segnaliGiorno(g, bloccata),
+    ...(modo === "aggiungi" && !bloccata ? [formTurno(giorno, null, () => { modo = null; aggiorna(); })] : []),
+    ...(bloccata ? [] : [azioniGiorno(g)]), erroreCorrente),
+  el("section", { class: "so-extra-box" }, formExtra(giorno, bloccata)),
+  el("div", { class: "so-azioni so-passi" },
+    el("button", { type: "button", class: "so-secondario", disabled: giorno <= 1, onclick: () => vaiA(giorno - 1) }, "‹ Giorno prima"),
+    el("button", { type: "button", class: "so-secondario", onclick: () => vaiA(giorno < sessione.scheda.giorni.length ? giorno + 1 : "riepilogo") },
+      giorno < sessione.scheda.giorni.length ? "Salta ›" : "Vai al riepilogo ›"))];
 }
 
+// ---------------------------------------------------------------- striscia della settimana e avanzamento
+
+function disegnaStriscia() {
+  const n = sessione.scheda.giorni.length, scost = (giornoSettimana(1) + 6) % 7;   // lunedì = 0
+  const idx = Math.floor((sessione.visto - 1 + scost) / 7), primo = idx * 7 - scost + 1;
+  const celle = Array.from({ length: 7 }, (_, k) => {
+    const giorno = primo + k;
+    if (giorno < 1 || giorno > n) return el("span", { class: "so-cella so-vuota", "aria-hidden": "true" });
+    const g = datiGiorno(giorno), fatto = !confermata() && eControllato(g);
+    return el("button", { type: "button", class: `so-cella${giorno === sessione.giorno ? " so-attiva" : ""}${giorno > ultimoDaControllare() ? " so-futuro" : ""}`,
+      "aria-label": `${titoloGiorno(giorno)}${fatto ? ", controllato" : ""}`, "aria-current": giorno === sessione.giorno ? "true" : "false",
+      onclick: () => vaiA(giorno) }, el("small", {}, LETTERE[giornoSettimana(giorno)]), el("strong", {}, String(giorno)), el("i", { class: fatto ? "so-pallino" : "" }));
+  });
+  const primoValido = Math.max(1, primo), ultimoValido = Math.min(n, primo + 6);
+  return [el("div", { class: "so-settimana-nav" },
+    el("button", { type: "button", class: "so-secondario so-piccolo", disabled: primo <= 1, onclick: () => vaiA(Math.max(1, primo - 7)) }, "‹ Prima"),
+    el("strong", {}, `Dal ${primoValido} al ${ultimoValido}`),
+    el("button", { type: "button", class: "so-secondario so-piccolo", disabled: primo + 7 > n, onclick: () => vaiA(primo + 7) }, "Dopo ›")),
+  el("div", { class: "so-striscia" }, celle)];
+}
+
+function disegnaAvanzamento() {
+  if (confermata()) return [];
+  const fine = ultimoDaControllare(), fatti = sessione.scheda.giorni.filter((g) => g.giorno <= fine && eControllato(g)).length;
+  return [el("div", { class: "so-avanza" },
+    el("span", {}, `Controllati ${fatti} su ${fine}`),
+    el("button", { type: "button", class: "so-secondario so-piccolo", onclick: () => vaiA("riepilogo") }, "Riepilogo")),
+  el("progress", { value: fatti, max: fine, "aria-label": "Giorni controllati" })];
+}
+
+// ---------------------------------------------------------------- riepilogo, conferma, note finali
 
 function chiediConferma() {
   return new Promise((risolvi) => {
@@ -333,34 +396,73 @@ async function conferma() {
   }
 }
 
-function disegnaScheda() {
-  carte.clear();
-  const s = sessione.scheda, bloccata = confermata();
-  const erroreNote = boxErrore();
-  const note = el("textarea", { id: "so-note", rows: 4, maxlength: MAX_NOTE_FINALI, disabled: bloccata, value: s.note,
+function campoNoteFinali(bloccata) {
+  const errore = boxErrore();
+  const note = el("textarea", { id: "so-note", rows: 4, maxlength: MAX_NOTE_FINALI, disabled: bloccata, value: sessione.scheda.note,
     onchange: () => {
       coda = coda.then(async () => {
-        try { sessione.scheda = await chiama("PUT", `/${sessione.mese}/note`, { note: note.value }); scrivi(erroreNote, ""); segnala("Salvato"); }
-        catch (err) { if (err.status === 401) return sessioneScaduta(); scrivi(erroreNote, err.message); }
+        try { sessione.scheda = await chiama("PUT", `/${sessione.mese}/note`, { note: note.value }); scrivi(errore, ""); segnala("Salvato"); }
+        catch (err) { if (err.status === 401) return sessioneScaduta(); scrivi(errore, err.message); }
       });
     } });
-  totali = el("div", { class: "so-totali", role: "group", "aria-label": "Totali del mese" });
+  return [el("h3", {}, el("label", { for: "so-note" }, "Note finali")), note, errore];
+}
+
+function elencoDaVedere(giorni, testo) {
+  return giorni.length ? el("ul", { class: "so-da-vedere" }, giorni.map((g) => el("li", {},
+    el("button", { type: "button", class: "so-secondario", onclick: () => vaiA(g.giorno) }, titoloGiorno(g.giorno), el("span", { class: "so-etichetta so-bozza" }, testo(g)))))) : null;
+}
+
+function schermataRiepilogo() {
+  const bloccata = confermata(), mancano = nonControllati(), dubbi = sessione.scheda.giorni.filter((g) => daRivedere(g) && !mancano.includes(g));
+  erroreCorrente = boxErrore();
+  return [el("section", { class: "so-domanda" }, el("h2", { tabindex: -1 }, "Riepilogo del mese"),
+    ...(bloccata ? [el("p", { class: "so-ok" }, `Scheda confermata il ${new Date(sessione.scheda.confermata_il).toLocaleString("it-IT")}. Puoi scaricarla in Excel.`)]
+      : [mancano.length || dubbi.length
+        ? el("p", {}, "Prima di finire guarda questi giorni:") : el("p", { class: "so-ok" }, "Hai controllato tutti i giorni.")]),
+    ...(bloccata ? [] : [elencoDaVedere(mancano, () => "Da controllare"), elencoDaVedere(dubbi, (g) => (g.turni_cambiati ? "Turni cambiati" : "Da rivedere"))].filter(Boolean)),
+    ...campoNoteFinali(bloccata),
+    el("div", { class: "so-azioni" }, bloccata
+      ? el("a", { class: "so-pulsante", href: `/api/schede-ore/${sessione.mese}.xlsx`, download: "" }, "Scarica Excel")
+      : el("button", { type: "button", class: "so-grande", onclick: conferma }, "Ho finito la revisione")),
+    ...(bloccata ? [] : [el("p", { class: "so-tenue" }, "Dopo la conferma la scheda non si può più modificare.")]))];
+}
+
+// ---------------------------------------------------------------- pagina
+
+function aggiorna(portaFocus = false) {
+  if (typeof sessione.giorno === "number") sessione.visto = sessione.giorno;
+  contenitori.avanzamento.replaceChildren(...disegnaAvanzamento());
+  contenitori.striscia.replaceChildren(...disegnaStriscia());
+  contenitori.schermata.replaceChildren(...(sessione.giorno === "riepilogo" ? schermataRiepilogo() : schermataGiorno()));
+  aggiornaTotali();
+  if (portaFocus) contenitori.schermata.querySelector("h2").focus();
+}
+
+function vaiA(giorno) {
+  sessione.giorno = giorno;
+  modo = null;
+  aggiorna(true);
+}
+
+function disegnaScheda() {
+  const s = sessione.scheda, bloccata = confermata();
+  controllati = leggiControllati();
+  modo = null;
+  const primo = nonControllati()[0];
+  sessione.giorno = bloccata || !primo ? "riepilogo" : primo.giorno;
+  sessione.visto = typeof sessione.giorno === "number" ? sessione.giorno : 1;
+  for (const nome of ["avanzamento", "striscia", "schermata"]) contenitori[nome] = el("div", { class: `so-${nome}-box` });
+  contenitori.totali = el("div", { class: "so-totali", role: "group", "aria-label": "Totali del mese" });
   mostra("scheda",
     el("div", { class: "so-testa-scheda" },
       el("h2", {}, `${nomeMese(sessione.mese)} · ${s.persona.nome} `, el("span", { class: `so-etichetta so-${s.stato}` }, bloccata ? "Confermata" : "In revisione")),
       el("div", { class: "so-azioni" },
         el("button", { type: "button", class: "so-secondario", onclick: () => vistaMesi() }, "‹ Mesi"),
         el("button", { type: "button", class: "so-secondario", onclick: esci }, "Esci"))),
-    bloccata
-      ? el("p", { class: "so-ok" }, `Scheda confermata il ${new Date(s.confermata_il).toLocaleString("it-IT")}. Puoi scaricarla in Excel.`)
-      : el("p", { class: "so-tenue" }, "I turni sono già compilati dal programma. Controlla ogni giorno: se un orario non è giusto premi Modifica, se manca un turno premi «+ Aggiungi turno», se eri in ferie premi Ferie. Gli orari si scrivono come 8 oppure 8:30. Quando hai finito premi «Ho finito la revisione» in fondo."),
-    el("div", { class: "so-giorni" }, s.giorni.map((g) => cartaGiorno(g.giorno))),
-    el("h3", {}, el("label", { for: "so-note" }, "Note finali")), note, erroreNote,
-    el("div", { class: "so-azioni" }, bloccata
-      ? el("a", { class: "so-pulsante", href: `/api/schede-ore/${sessione.mese}.xlsx`, download: "" }, "Scarica Excel")
-      : el("button", { type: "button", onclick: conferma }, "Ho finito la revisione")),
-    totali);
-  aggiornaTotali();
+    ...(bloccata ? [] : [el("p", { class: "so-tenue" }, "Controlla un giorno alla volta: se è giusto premi «Sì, è giusto», altrimenti correggi. Gli orari si scrivono come 8 oppure 8:30.")]),
+    contenitori.avanzamento, contenitori.striscia, contenitori.schermata, contenitori.totali);
+  aggiorna();
 }
 
 vistaMesi().catch((err) => { root.replaceChildren(el("p", { class: "so-errore", role: "alert" }, err.message)); });
