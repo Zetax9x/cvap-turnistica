@@ -267,6 +267,12 @@ def crea_router_gestione(connessione: Callable) -> APIRouter:
             raise HTTPException(409, "La scheda non è confermata")
         return Response(status_code=204)
 
+    @router.get("/{mese}/{persona_id}/differenze")
+    def differenze(mese: Mese, persona_id: IdPath, conn: Conn):
+        """Cosa ha scritto il dipendente di diverso da quanto proponeva il programma, giorno per giorno."""
+        dipendente(conn, persona_id)
+        return servizio_schede_ore.differenze(conn, persona_id, mese)
+
     @router.get("/{mese}")
     def elenco(mese: Mese, conn: Conn):
         return db_schede_ore.elenco_mese(conn, mese)

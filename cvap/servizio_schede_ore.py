@@ -40,6 +40,28 @@ def scheda_del_mese(conn: sqlite3.Connection, persona_id: int, mese: str) -> dic
             "aggiornata_il": salvata["aggiornata_il"] if salvata else None}
 
 
+def differenze(conn: sqlite3.Connection, persona_id: int, mese: str) -> dict:
+    """Per la master: i giorni in cui il dipendente ha scritto qualcosa di diverso da quanto proponeva il programma.
+
+    Il «proposto» è il giorno calcolato quando il dipendente ha salvato la correzione (`_base`); `turni_cambiati` dice
+    che da allora il programma lo calcola diversamente (cambio turno, malattia…). Valgono anche per la scheda confermata:
+    le correzioni restano sempre salvate."""
+    persona = db.get_persona(conn, persona_id)
+    correzioni = db_schede_ore.get_correzioni(conn, persona_id, mese)
+    calcolate = _calcolate(conn, persona_id, mese) if correzioni else {}
+    giorni = []
+    for giorno, scelto in sorted(correzioni.items()):
+        base = scelto.get("_base")
+        modifiche = scheda_ore.confronta_giorno(base or calcolate[giorno], scelto)
+        if modifiche:
+            giorni.append({"giorno": giorno, "modifiche": modifiche,
+                           "turni_cambiati": base is not None and base != calcolate[giorno]})
+    salvata = db_schede_ore.get_scheda(conn, persona_id, mese)
+    return {"persona": {"id": persona_id, "nome": persona["nome"]}, "mese": mese,
+            "stato": salvata["stato"] if salvata else "non_aperta", "note_finali": salvata["note"] if salvata else "",
+            "giorni": giorni}
+
+
 def congela(conn: sqlite3.Connection, persona_id: int, mese: str) -> dict:
     """La scheda mostrata ora (righe e totali), da salvare con `db_schede_ore.conferma`."""
     scheda = scheda_del_mese(conn, persona_id, mese)

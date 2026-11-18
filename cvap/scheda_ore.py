@@ -196,6 +196,33 @@ def valida_correzione(dati: dict, mese: str, giorno: int) -> dict:
             "note": note.strip(), "disponibilita": _disponibilita(dati.get("disponibilita"))}
 
 
+def _testo_coppia(coppia) -> str:
+    if not coppia or None in coppia:
+        return "—"
+    return f"{formatta_orario(coppia[0] % 24)}–{formatta_orario(coppia[1] % 24)}"
+
+
+def _testo_disponibilita(valore) -> str:
+    if not valore:
+        return "—"
+    orari = _testo_coppia([valore["inizio"], valore["fine"]])
+    return f"{orari} ({valore['causale']})" if valore.get("causale") else orari
+
+
+def confronta_giorno(proposto: dict, scelto: dict) -> list[dict]:
+    """Le differenze tra il giorno proposto dal programma e quello scritto dal dipendente: `[{voce, prima, dopo}]`.
+
+    Vuota se il dipendente ha lasciato il giorno com'era. Gli orari sono confrontati come li vede chi legge
+    («8:30–14»), quindi una differenza invisibile non compare."""
+    voci = [("Ferie", "Sì" if proposto.get("ferie") else "—", "Sì" if scelto.get("ferie") else "—")]
+    voci += [(ETICHETTE[c], _testo_coppia(proposto["colonne"].get(c)), _testo_coppia(scelto["colonne"].get(c)))
+             for c in COLONNE]
+    voci.append(("Note", proposto.get("note") or "—", scelto.get("note") or "—"))
+    voci.append(("Disponibilità aggiuntiva", _testo_disponibilita(proposto.get("disponibilita")),
+                 _testo_disponibilita(scelto.get("disponibilita"))))
+    return [{"voce": voce, "prima": prima, "dopo": dopo} for voce, prima, dopo in voci if prima != dopo]
+
+
 def applica_correzioni(calcolate: dict[int, dict], correzioni: dict[int, dict]) -> list[dict]:
     """I giorni del mese, quelli corretti dal dipendente al posto di quelli calcolati.
 

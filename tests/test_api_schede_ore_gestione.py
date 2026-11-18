@@ -146,6 +146,53 @@ def test_riapri_rimette_in_bozza_e_il_dipendente_puo_modificare(client, mario):
     assert s["stato"] == "bozza" and s["giorni"][2]["corretto"] is True               # le correzioni restano
 
 
+# --- differenze rispetto alla proposta del programma -------------------------------------
+
+def test_differenze_mostrano_cosa_ha_cambiato_il_dipendente(client, mario):
+    client.put(f"{GESTIONE}/codici/{mario}", json={"codice": "123456"})
+    entra(client, mario, "123456")
+    client.put(f"{PUBBLICA}/{MESE}/giorni/3", json=GIORNO_OK)                       # il programma non proponeva turni
+    client.put(f"{PUBBLICA}/{MESE}/giorni/4", json={"ferie": 0, "colonne": {}, "note": "", "disponibilita": None})
+    client.put(f"{PUBBLICA}/{MESE}/giorni/5", json={"ferie": 1, "colonne": {}, "note": "traffico",
+                                                      "disponibilita": {"inizio": "20", "fine": "22", "causale": "emergenza"}})
+    client.put(f"{PUBBLICA}/{MESE}/note", json={"note": "grazie"})
+    r = client.get(f"{GESTIONE}/{MESE}/{mario}/differenze")
+    assert r.status_code == 200 and "no-store" in r.headers["cache-control"]
+    d = r.json()
+    assert d["persona"]["nome"] == "Mario Rossi" and d["mese"] == MESE and d["note_finali"] == "grazie"
+    assert [g["giorno"] for g in d["giorni"]] == [3, 5]                                # il giorno 4 è uguale alla proposta
+    assert d["giorni"][0]["modifiche"] == [{"voce": "Ascoli", "prima": "—", "dopo": "8–20"}]
+    voci = {m["voce"]: m for m in d["giorni"][1]["modifiche"]}
+    assert set(voci) == {"Ferie", "Note", "Disponibilità aggiuntiva"}
+    assert voci["Note"]["dopo"] == "traffico" and voci["Disponibilità aggiuntiva"]["dopo"] == "20–22 (emergenza)"
+    assert all(g["turni_cambiati"] is False for g in d["giorni"])
+
+
+def test_differenze_senza_correzioni_e_dopo_la_conferma(client, mario):
+    client.put(f"{GESTIONE}/codici/{mario}", json={"codice": "123456"})
+    assert client.get(f"{GESTIONE}/{MESE}/{mario}/differenze").json()["giorni"] == []
+    entra(client, mario, "123456")
+    client.put(f"{PUBBLICA}/{MESE}/giorni/3", json=GIORNO_OK)
+    client.post(f"{PUBBLICA}/{MESE}/conferma")
+    d = client.get(f"{GESTIONE}/{MESE}/{mario}/differenze").json()
+    assert d["stato"] == "confermata" and [g["giorno"] for g in d["giorni"]] == [3]
+
+
+def test_differenze_dipendente_o_mese_non_validi(client, conn, mario):
+    volontario = db.crea_persona(conn, "Vol Carla", "volontario", "soccorritore")["id"]
+    assert client.get(f"{GESTIONE}/{MESE}/{volontario}/differenze").status_code == 404
+    assert client.get(f"{GESTIONE}/{MESE}/9999/differenze").status_code == 404
+    assert client.get(f"{GESTIONE}/2026-13/{mario}/differenze").status_code == 422
+
+
+def test_elenco_conta_i_giorni_con_correzioni(client, mario):
+    client.put(f"{GESTIONE}/codici/{mario}", json={"codice": "123456"})
+    assert client.get(f"{GESTIONE}/{MESE}").json()[0]["giorni_corretti"] == 0
+    entra(client, mario, "123456")
+    client.put(f"{PUBBLICA}/{MESE}/giorni/3", json=GIORNO_OK)
+    assert client.get(f"{GESTIONE}/{MESE}").json()[0]["giorni_corretti"] == 1
+
+
 def test_nessuna_cache(client, mario):
     assert "no-store" in client.get(f"{GESTIONE}/{MESE}").headers["cache-control"]
     assert "no-store" in client.post(f"{GESTIONE}/codici/{mario}/genera").headers["cache-control"]
@@ -169,7 +216,8 @@ def siti(tmp_path):
 def chiamate(pid):
     return [("PUT", f"{GESTIONE}/codici/{pid}", {"codice": "123456"}), ("DELETE", f"{GESTIONE}/codici/{pid}", None),
             ("POST", f"{GESTIONE}/codici/{pid}/genera", None), ("GET", f"{GESTIONE}/{MESE}", None),
-            ("GET", f"{GESTIONE}/{MESE}/{pid}.xlsx", None), ("POST", f"{GESTIONE}/{MESE}/{pid}/riapri", None)]
+            ("GET", f"{GESTIONE}/{MESE}/{pid}.xlsx", None), ("POST", f"{GESTIONE}/{MESE}/{pid}/riapri", None),
+            ("GET", f"{GESTIONE}/{MESE}/{pid}/differenze", None)]
 
 
 def test_la_password_normale_non_arriva_alla_gestione_se_esiste_la_master(siti):

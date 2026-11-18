@@ -320,8 +320,14 @@ schede_ore_giorni(persona_id, mese, giorno INTEGER, dati TEXT /*JSON: ferie, col
 - **Gestione** (prefisso `/api/schede-ore-gestione`, dietro la password del sito: chi entra con la password normale quando
   esiste la master riceve 403): `PUT /codici/{persona_id}` `{codice}` (il PIN: esattamente 6 cifre, 422 altrimenti; 204) · `DELETE /codici/{persona_id}`
   (204) · `POST /codici/{persona_id}/genera` → `{codice}` (PIN di 6 cifre, mostrato **una sola volta**) · `GET /{mese}` →
-  `[{persona_id, nome, stato, aggiornata_il, confermata_il, ha_codice}]` · `GET /{mese}/{persona_id}.xlsx` (solo
-  confermate) · `POST /{mese}/{persona_id}/riapri` (204: toglie solo la parte congelata, le correzioni restano).
+  `[{persona_id, nome, stato, aggiornata_il, confermata_il, ha_codice, giorni_corretti}]` (`giorni_corretti` = giorni con una
+  correzione salvata) · `GET /{mese}/{persona_id}.xlsx` (solo confermate) · `POST /{mese}/{persona_id}/riapri` (204: toglie
+  solo la parte congelata, le correzioni restano) · `GET /{mese}/{persona_id}/differenze` → `{persona: {id, nome}, mese,
+  stato, note_finali, giorni: [{giorno, turni_cambiati, modifiche: [{voce, prima, dopo}]}]}`: cosa ha scritto il dipendente di
+  diverso da quanto proponeva il programma (`prima` = il giorno calcolato quando ha salvato la correzione, `dopo` = ciò che ha
+  scritto; voci: Ferie, le colonne, Note, Disponibilità aggiuntiva; `—` = vuoto). I giorni uguali alla proposta non compaiono;
+  `turni_cambiati` = da allora il programma calcola il giorno diversamente. Vale anche per le schede confermate. La vista master
+  «Schede ore» lo mostra con il pulsante «Vedi modifiche».
 - **Registro**: impostare, generare, azzerare un codice e riaprire una scheda finiscono nel registro (il codice mai: `codice` è
   tra i campi nascosti); la conferma del dipendente è registrata come accesso `pubblico` ("Dipendente"); le correzioni no.
 - **File Excel**: ore intere come numeri interi (8, 20, 24) e le altre come frazione di giorno, come il formato del modello

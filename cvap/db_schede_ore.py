@@ -166,10 +166,12 @@ def elenco_mese(conn: sqlite3.Connection, mese: str) -> list[dict]:
     """Per ogni dipendente attivo lo stato della scheda del mese: non_aperta, bozza o confermata."""
     rows = conn.execute(
         "SELECT p.id AS persona_id, p.nome, s.stato, s.aggiornata_il, s.confermata_il, "
-        "c.persona_id IS NOT NULL AS ha_codice FROM persone p "
+        "c.persona_id IS NOT NULL AS ha_codice, "
+        "(SELECT COUNT(*) FROM schede_ore_giorni g WHERE g.persona_id = p.id AND g.mese = ?) AS giorni_corretti "
+        "FROM persone p "
         "LEFT JOIN schede_ore s ON s.persona_id = p.id AND s.mese = ? "
         "LEFT JOIN codici_scheda c ON c.persona_id = p.id "
-        "WHERE p.tipo = 'dipendente' AND p.attivo = 1 ORDER BY p.nome COLLATE NOCASE, p.id", (mese,)).fetchall()
+        "WHERE p.tipo = 'dipendente' AND p.attivo = 1 ORDER BY p.nome COLLATE NOCASE, p.id", (mese, mese)).fetchall()
     return [{"persona_id": r["persona_id"], "nome": r["nome"], "stato": r["stato"] or "non_aperta",
              "aggiornata_il": r["aggiornata_il"], "confermata_il": r["confermata_il"],
-             "ha_codice": bool(r["ha_codice"])} for r in rows]
+             "ha_codice": bool(r["ha_codice"]), "giorni_corretti": r["giorni_corretti"]} for r in rows]
