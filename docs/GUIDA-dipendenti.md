@@ -33,6 +33,8 @@ Quando compili il riepilogo mensile delle ore, scrivi l'**orario effettivo** in 
 
 > Esempio: nei Programmati il turno del pomeriggio finisce alle 20, ma se hai finito alle 17 scrivi **17**, non 20.
 
+Dal programma puoi compilare e scaricare la scheda già pronta dai tuoi turni: vedi il capitolo 12 della guida.
+
 ## 5. Ore sotto e sopra il contratto
 
 Se alla fine del mese un dipendente ha fatto **meno ore di quelle previste dal contratto**, le ore di differenza vengono **comunque pagate dalla Croce Verde**. Se nei mesi successivi si superano le ore previste dal contratto, le ore in più vengono scalate per recuperare quelle già pagate.
@@ -382,3 +384,17 @@ No, il programma non lo fa mai.
 | Festività | Ognuna gira guardando gli ultimi 5 anni; chi l'ha fatta di recente ha la precedenza per restare a casa |
 | Equità nel tempo | Ore, notti, weekend e turni speciali bilanciati nel corso delle settimane |
 | Volontari | Comunicano le disponibilità entro le 16 del venerdì e scelgono i propri turni; il programma non li sposta e assegna ai dipendenti i posti rimasti |
+
+## 12. La scheda ore del mese
+
+Il programma prepara da solo la tua scheda ore mensile, nello stesso modello del riepilogo mensile (una riga per giorno, con Ascoli, Acquasanta, Venarotta, Programmati, Assistenze, Viaggi, Ferie, Note e Disponibilità aggiuntive), partendo dai turni che hai davvero svolto: i cambi, le cessioni e gli scambi sono già tenuti in conto.
+
+**Come si apre.** Vai alla pagina `/scheda-ore` del programma, scegli il tuo nome e scrivi il **codice personale** che ti hanno dato i responsabili. Dopo 5 codici sbagliati la pagina si blocca per 15 minuti. Il codice è tuo: non darlo ad altri.
+
+**Cosa trovi.** Puoi aprire il mese in corso e i dodici precedenti. I turni sono già compilati: gli Standby compaiono nella colonna Programmati con la nota "Standby", le Assistenze ed Extra nella colonna Assistenze con il nome della richiesta, la malattia nelle note. Le colonne Viaggi e Disponibilità aggiuntive le compili tu.
+
+**Come si corregge.** Scrivi l'orario **effettivo** in cui hai iniziato e finito (come `8` oppure `8:30`; vedi il capitolo 4 del regolamento). Ogni giorno si salva da solo quando esci dal campo. Un giorno corretto porta l'etichetta "Corretto" e il pulsante "Ripristina dai turni". I giorni che non tocchi continuano ad aggiornarsi se i turni cambiano. Se un giorno ha due turni nella stessa colonna e non contigui, il programma ne scrive uno e mette l'altro nelle note, con l'etichetta "Da rivedere": sistemalo a mano. Se i turni cambiano dopo una tua correzione, il giorno ti avvisa. I totali del mese (postazioni, secondari, totale, ferie, disponibilità aggiuntive) sono sempre in fondo alla pagina e seguono le formule del modello.
+
+**Note finali.** In fondo alla scheda c'è un campo per le tue annotazioni.
+
+**Conferma e download.** Quando hai finito premi **Ho finito la revisione** e conferma: da quel momento la scheda non si può più modificare e non cambia più, nemmeno se i turni cambiano. Ora puoi **scaricarla in Excel**, nel modello originale. I responsabili vedono le schede confermate e, se serve correggerle ancora, possono riaprirle (le tue correzioni restano).

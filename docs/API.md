@@ -98,7 +98,7 @@ non di ferie (calcolata dalle assegnazioni reali, così le modifiche manuali con
 
 ## Endpoint REST (prefisso `/api`, JSON)
 
-Con `APP_PASSWORD` impostata (`create_app(..., password=...)`) tutte le API tranne accesso/sessione/uscita e i percorsi pubblici `/api/cambi-turno/*` rispondono
+Con `APP_PASSWORD` impostata (`create_app(..., password=...)`) tutte le API tranne accesso/sessione/uscita e i percorsi pubblici `/api/cambi-turno/*` e `/api/schede-ore/*` rispondono
 401 senza il cookie `cvap_sessione` (con `APP_PASSWORD_MASTER`, `create_app(..., password_master=...)`, il cookie
 porta anche il ruolo `normale` o `master` dentro la firma; HttpOnly, SameSite=Lax, 30 giorni, firmato HMAC: vedi `cvap/accesso.py`).
 - `GET /sessione` → `{protetto, autenticato, master}` · `POST /accesso` `{password}` → 200 `{autenticato, master}` e cookie · 401 se errata ·
@@ -286,6 +286,47 @@ calendari(persona_id INTEGER PK REFERENCES persone(id), codice TEXT UNIQUE /*20 
 - `GET /api/calendari/{id}` → `{persona_id, nome, percorso}` (crea il codice se manca) · `POST /api/calendari/{id}/rigenera`
   → stesso formato con un codice nuovo (il vecchio link smette di funzionare). 404 persona inesistente, 400 se non è
   un dipendente. Cancellare la persona cancella il codice; disattivarla sospende il link.
+
+## Scheda ore mensile del dipendente
+
+Moduli `scheda_ore.py` (calcolo puro: orari, righe dai turni, correzioni, totali come le formule del modello),
+`servizio_schede_ore.py` (scheda mostrata: turni effettivi + correzioni, o la parte congelata), `db_schede_ore.py`
+(codici personali, schede, correzioni), `xlsx_scheda.py` (compila `cvap/modelli/scheda-ore.xlsx`, copia di
+`docs/TABELLA_RIEPILOGO_ORE (1).xlsx`) e `api_schede_ore.py` (rotte). Pagina del dipendente: `GET /scheda-ore`
+(senza password del sito); vista master "Schede ore" e sezione "Codici scheda ore" nelle Impostazioni.
+```
+codici_scheda(persona_id INTEGER PK, hash TEXT /*scrypt*/, sale TEXT, aggiornato_il TEXT, fallimenti INTEGER, bloccato_fino TEXT)
+schede_ore(persona_id, mese TEXT /*AAAA-MM*/, note TEXT, stato TEXT /*bozza|confermata*/, aggiornata_il TEXT,
+           confermata_il TEXT, congelata TEXT /*JSON: giorni e totali alla conferma*/, PK(persona_id, mese))
+schede_ore_giorni(persona_id, mese, giorno INTEGER, dati TEXT /*JSON: ferie, colonne, note, disponibilita, _base*/,
+                  PK(persona_id, mese, giorno))
+```
+- **Accesso del dipendente** (percorsi liberi `/api/schede-ore/*`; ogni risposta `Cache-Control: no-store`):
+  `GET /dipendenti` → `[{id, nome}]` (attivi) · `POST /accesso` `{persona_id, codice}` → 200 `{persona_id, nome}` e cookie
+  `cvap_scheda` (firmato HMAC, `HttpOnly`, `SameSite=Strict`, path `/api/schede-ore`, 2 ore) · 401 `Nome o codice non
+  corretti` (stessa risposta per nome inesistente, volontario, disattivato e codice errato) · 403 codice non impostato ·
+  429 dopo 5 errori (blocco di 15 minuti, nel database) · `POST /uscita`. Ogni altra chiamata usa solo la persona del
+  cookie (401 se assente, scaduto, manomesso o se la persona non è più un dipendente attivo).
+- **Scheda**: `GET /mesi` → i 13 mesi apribili (in corso + 12 precedenti) con lo stato (`non_aperta|bozza|confermata`) ·
+  `GET /{mese}` → `{persona, mese, stato, note, giorni, totali, confermata_il, aggiornata_il}`; un giorno è
+  `{giorno, ferie, colonne: {ascoli|acquasanta|venarotta|programmati|assistenze|viaggi_ast|viaggi: [inizio, fine] | null},
+  note, disponibilita: {inizio, fine, causale} | null, da_rivedere, corretto, turni_cambiati}` (orari in ore decimali).
+  Mese futuro o oltre i 12 precedenti 404, formato diverso da `AAAA-MM` 422.
+- **Correzioni**: `PUT /{mese}/giorni/{1..31}` `{ferie, colonne: {colonna: ["8:30", "20"] | null}, note, disponibilita}`
+  → la scheda aggiornata (422 con il messaggio se non valido: orari `8`, `8:30`, 0–24; note del giorno al massimo 200
+  caratteri; causale 100) · `DELETE /{mese}/giorni/{n}` ripristina il giorno dai turni · `PUT /{mese}/note` `{note}` (massimo
+  1000 caratteri) · `POST /{mese}/conferma` congela la scheda (409 se già confermata; poi ogni modifica è 409) ·
+  `GET /{mese}.xlsx` scarica il modello compilato, solo dopo la conferma (409 prima).
+- **Gestione** (prefisso `/api/schede-ore-gestione`, dietro la password del sito: chi entra con la password normale quando
+  esiste la master riceve 403): `PUT /codici/{persona_id}` `{codice}` (almeno 6 caratteri, 204) · `DELETE /codici/{persona_id}`
+  (204) · `POST /codici/{persona_id}/genera` → `{codice}` (8 caratteri, mostrato **una sola volta**) · `GET /{mese}` →
+  `[{persona_id, nome, stato, aggiornata_il, confermata_il, ha_codice}]` · `GET /{mese}/{persona_id}.xlsx` (solo
+  confermate) · `POST /{mese}/{persona_id}/riapri` (204: toglie solo la parte congelata, le correzioni restano).
+- **Registro**: impostare, generare, azzerare un codice e riaprire una scheda finiscono nel registro (il codice mai: `codice` è
+  tra i campi nascosti); la conferma del dipendente è registrata come accesso `pubblico` ("Dipendente"); le correzioni no.
+- **File Excel**: ore intere come numeri interi (8, 20, 24) e le altre come frazione di giorno, come il formato del modello
+  (`[<1]h:mm;[>=1]0":00"`); i valori memorizzati dei totali sono già calcolati e la cartella chiede il ricalcolo all'apertura
+  (`fullCalcOnLoad`); le note finali vanno in `B52`/`B53` (unite `B53:U53`); l'area di stampa arriva alla riga 53.
 
 ## Cambi turno dei dipendenti
 
