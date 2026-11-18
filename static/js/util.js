@@ -168,7 +168,7 @@ export function etichettaParti(parti) {
 export function motiviAvvisoIndisponibilita(giorniAltri, parti) {
   if (!parti.size) return [];
   const motivi = [];
-  if (giorniAltri > 0) motivi.push("Ci sarebbero indisponibilità in più di un giorno della settimana.");
+  if (giorniAltri > 0) motivi.push("Stai inserendo più di un giorno di indisponibilità a settimana.");
   if (PARTI_TURNO.some((p) => !parti.has(p))) motivi.push("L'indisponibilità non copre tutta la giornata (8–8).");
   return motivi;
 }

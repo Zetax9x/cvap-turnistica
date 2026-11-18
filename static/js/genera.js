@@ -509,7 +509,7 @@ function passoIndisponibilita() {
     const giorniAltri = indisponibilita().filter((i) => i.persona_id === p.id && i.data !== g && i.parti.size).length;
     const motivi = p.indisponibilita_libera ? [] : motiviAvvisoIndisponibilita(giorniAltri, scelte);
     if (motivi.length && !(await chiediConferma(`${p.nome}: ${motivi.join(" ")} Vuoi salvarla comunque?`,
-      { titolo: "Stai violando il regolamento", ok: "Procedi comunque" }))) {
+      { titolo: "Il regolamento sulle indisponibilità non è rispettato", ok: "Procedi comunque" }))) {
       menu.value = precedente;
       return;
     }
