@@ -98,6 +98,13 @@ export const api = {
       indisponibilitaLibera === undefined ? { max_ore_settimana: maxOre }
         : { max_ore_settimana: maxOre, indisponibilita_libera: indisponibilitaLibera }),
 
+  // Scheda ore mensile del dipendente: gestione della master (codici personali, elenco, riapertura)
+  impostaCodiceScheda: (id, codice) => richiesta("PUT", `/schede-ore-gestione/codici/${enc(id)}`, { codice }),
+  azzeraCodiceScheda: (id) => richiesta("DELETE", `/schede-ore-gestione/codici/${enc(id)}`),
+  generaCodiceScheda: (id) => richiesta("POST", `/schede-ore-gestione/codici/${enc(id)}/genera`),
+  elencoSchedeOre: (mese) => richiesta("GET", `/schede-ore-gestione/${enc(mese)}`),
+  riapriSchedaOre: (mese, id) => richiesta("POST", `/schede-ore-gestione/${enc(mese)}/${enc(id)}/riapri`),
+
   divieti: () => richiesta("GET", "/divieti"),
   creaDivieto: (dati) => richiesta("POST", "/divieti", dati),
   eliminaDivieto: (id) => richiesta("DELETE", `/divieti/${enc(id)}`),

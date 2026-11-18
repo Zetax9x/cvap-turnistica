@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, BeforeValidator, Field, StringConstraints, model_validator
 
-from . import (accesso, api_push, push, api_calendari, api_cambi_turno, api_equita, api_festivita, api_storico_festivi,
+from . import (accesso, api_push, api_schede_ore, push, api_calendari, api_cambi_turno, api_equita, api_festivita, api_storico_festivi,
                dati_festivi, db, db_festivita, email_turni, registro)
 from .api_comune import (DATA_MAX, DATA_MIN, DataValida, Id, IdPath, Nome, descrivi_periodo, errore as _errore,
                          risposta_pdf)
@@ -671,6 +671,9 @@ def payload_calendario_copertura(conn: sqlite3.Connection, mese: date, cache: Ca
 
 # --- app ---------------------------------------------------------------------
 
+SCHEDE_ORE_PUBBLICHE = "/api/schede-ore/"  # scheda ore del dipendente: senza la password del sito (la protegge il codice)
+
+
 def create_app(db_path: str, password: str | None = None, postino=None,
                password_master: str | None = None) -> FastAPI:
     """`password`: se c'è, le API chiedono l'accesso (vedi accesso.py). `postino`: chi spedisce le email
@@ -761,7 +764,7 @@ def create_app(db_path: str, password: str | None = None, postino=None,
     @app.middleware("http")
     async def richiedi_accesso(request: Request, chiama):
         percorso = request.url.path
-        cambio_pubblico = percorso.startswith('/api/cambi-turno/')
+        cambio_pubblico = percorso.startswith('/api/cambi-turno/') or percorso.startswith(SCHEDE_ORE_PUBBLICHE)
         if percorso.startswith("/api/") and percorso not in libere and not cambio_pubblico and not autenticato(request):
             return JSONResponse({"detail": "Accesso richiesto: inserisci la password"}, status_code=401)
         return await chiama(request)
@@ -782,7 +785,7 @@ def create_app(db_path: str, password: str | None = None, postino=None,
     @app.middleware("http")
     async def modalita_semplice(request: Request, chiama):
         metodo, percorso = request.method, request.url.path
-        if percorso.startswith("/api/") and semplice(request):
+        if percorso.startswith("/api/") and not percorso.startswith(SCHEDE_ORE_PUBBLICHE) and semplice(request):
             consentita = accesso.consentita_in_semplice(metodo, percorso)
             # dalla procedura guidata si tolgono solo i turni dei volontari, non quelli generati
             if consentita and metodo == "DELETE" and percorso.startswith("/api/assegnazioni/"):
@@ -883,6 +886,8 @@ def create_app(db_path: str, password: str | None = None, postino=None,
     Conn = Annotated[sqlite3.Connection, Depends(connessione)]
     app.include_router(api_festivita.crea_router(connessione))
     app.include_router(api_calendari.crea_router(connessione))
+    app.include_router(api_schede_ore.crea_router(connessione))
+    app.include_router(api_schede_ore.crea_router_gestione(connessione))
     app.include_router(api_storico_festivi.crea_router(connessione))
     app.include_router(api_equita.crea_router(connessione, _settimana_passata))
     def notifica_push(titolo: str, testo: str, url: str) -> None:
@@ -1756,6 +1761,8 @@ def create_app(db_path: str, password: str | None = None, postino=None,
         percorso = request.url.path
         if not percorso.startswith("/api/") and "cache-control" not in risposta.headers:
             risposta.headers["Cache-Control"] = "no-cache"
+        if percorso.startswith("/api/schede-ore"):  # codici e schede personali: mai in cache, errori compresi
+            risposta.headers["Cache-Control"] = "no-store"
         return risposta
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR, check_dir=False), name="static")
@@ -1766,6 +1773,10 @@ def create_app(db_path: str, password: str | None = None, postino=None,
     @app.get('/cambio-turno', include_in_schema=False)
     def pagina_cambio_turno():
         return FileResponse(STATIC_DIR / 'cambio-turno.html')
+
+    @app.get('/scheda-ore', include_in_schema=False)
+    def pagina_scheda_ore():
+        return FileResponse(STATIC_DIR / 'scheda-ore.html')
 
     @app.get("/", include_in_schema=False)
     def index():

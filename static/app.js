@@ -8,6 +8,7 @@ import * as statistiche from "./js/statistiche.js";
 import * as impostazioni from "./js/impostazioni.js";
 import * as cambiTurno from "./js/cambi-turno-responsabile.js";
 import * as registro from "./js/registro.js";
+import * as schede from "./js/schede.js";
 import * as genera from "./js/genera.js";
 import { api } from "./js/api.js";
 import { el } from "./js/util.js";
@@ -22,6 +23,7 @@ const VISTE = {
   impostazioni: { modulo: impostazioni, titolo: "Impostazioni" },
   cambi: { modulo: cambiTurno, titolo: "Cambi turno" },
   registro: { modulo: registro, titolo: "Registro", soloMaster: true },
+  schede: { modulo: schede, titolo: "Schede ore", soloMaster: true },
   genera: { modulo: genera, titolo: "Turni della settimana" },
 };
 const PREDEFINITA = "settimana";
@@ -71,8 +73,10 @@ function predefinita() {
 }
 
 function aggiornaMaster() {
-  const link = document.querySelector('.nav a[data-view="registro"]');
-  if (link) link.hidden = !master;
+  for (const vista of ["registro", "schede"]) {  // le viste riservate alla master
+    const link = document.querySelector(`.nav a[data-view="${vista}"]`);
+    if (link) link.hidden = !master;
+  }
   for (const a of document.querySelectorAll(".nav a")) {
     if (!a.title) a.title = a.getAttribute("aria-label") || a.textContent.trim();
   }

@@ -76,6 +76,11 @@ _AZIONI = [
     ("POST", r"/api/storico-festivi/importa", None, "Storico delle festività importato"),
     ("PUT", rf"/api/storico-festivi/{_ID}", None, "Storico delle festività del {id} modificato"),
     ("POST", rf"/api/calendari/{_ID}/rigenera", "persona", "Link del calendario di {og} rigenerato"),
+    ("PUT", rf"/api/schede-ore-gestione/codici/{_ID}", "persona", "Codice scheda ore di {og} impostato"),
+    ("POST", rf"/api/schede-ore-gestione/codici/{_ID}/genera", "persona", "Codice scheda ore di {og} generato"),
+    ("DELETE", rf"/api/schede-ore-gestione/codici/{_ID}", "persona", "Codice scheda ore di {og} azzerato"),
+    ("POST", rf"/api/schede-ore-gestione/(?P<mese>\d{{4}}-\d{{2}})/{_ID}/riapri", "persona",
+     "Scheda ore di {og} riaperta ({mese})"),
     ("POST", r"/api/cambi-turno/conferme", None, "Cambio turno chiesto da un dipendente"),
     ("POST", rf"/api/gestione-cambi-turno/{_ID}/annulla", None, "Cambio turno {id} annullato"),
     ("POST", rf"/api/gestione-cambi-turno/{_ID}/reinvia", None, "Notifiche del cambio turno {id} inviate di nuovo"),
@@ -90,7 +95,7 @@ _AZIONI_RE = [(m, re.compile(p + "$"), og, d) for m, p, og, d in _AZIONI]
 MAX_ELENCO = 12   # voci mostrate di un elenco (indisponibilità, fabbisogno...)
 MAX_TESTO = 300
 # campi da non salvare mai: segreti e dati tecnici dei dispositivi
-_NASCOSTI = {"password", "chiave", "chiave_annullamento", "versione", "endpoint", "keys", "auth", "p256dh",
+_NASCOSTI = {"password", "codice", "chiave", "chiave_annullamento", "versione", "endpoint", "keys", "auth", "p256dh",
              "expirationTime"}
 _ETICHETTE = {
     "persona_id": "Persona", "sostituto_id": "Sostituto", "ceduto_id": "Turno ceduto", "nome": "Nome",
@@ -244,7 +249,8 @@ def dettagli_esito(metodo: str, percorso: str, codice: int, risposta) -> list[tu
 def da_registrare(metodo: str, percorso: str) -> bool:
     """Le modifiche alle API; non le letture, le anteprime e l'accesso (lo registra l'endpoint)."""
     return (metodo in ("POST", "PUT", "PATCH", "DELETE") and percorso.startswith("/api/")
-            and percorso != "/api/accesso" and not _SOLO_LETTURA.search(percorso))
+            and percorso != "/api/accesso" and not _SOLO_LETTURA.search(percorso)
+            and not percorso.startswith("/api/schede-ore/"))  # le correzioni del dipendente: la conferma si scrive da sé
 
 
 def prepara(conn, metodo: str, percorso: str, corpo=None) -> tuple[str, list[tuple[str, str]]]:

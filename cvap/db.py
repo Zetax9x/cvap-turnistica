@@ -201,6 +201,31 @@ CREATE TABLE IF NOT EXISTS calendari (  -- link segreti dei calendari .ics dei d
     codice TEXT NOT NULL UNIQUE,
     creato_il TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS codici_scheda (  -- codice personale per aprire la scheda ore (cvap/db_schede_ore.py)
+    persona_id INTEGER PRIMARY KEY REFERENCES persone(id),
+    hash TEXT NOT NULL,           -- scrypt: il codice non è mai salvato in chiaro
+    sale TEXT NOT NULL,
+    aggiornato_il TEXT NOT NULL,
+    fallimenti INTEGER NOT NULL DEFAULT 0,
+    bloccato_fino TEXT            -- dopo troppi errori
+);
+CREATE TABLE IF NOT EXISTS schede_ore (  -- scheda ore mensile del dipendente
+    persona_id INTEGER NOT NULL REFERENCES persone(id),
+    mese TEXT NOT NULL,           -- AAAA-MM
+    note TEXT NOT NULL DEFAULT '',
+    stato TEXT NOT NULL DEFAULT 'bozza',   -- bozza | confermata
+    aggiornata_il TEXT NOT NULL,
+    confermata_il TEXT,
+    congelata TEXT,               -- JSON: righe e totali al momento della conferma
+    PRIMARY KEY (persona_id, mese)
+);
+CREATE TABLE IF NOT EXISTS schede_ore_giorni (  -- solo i giorni corretti dal dipendente
+    persona_id INTEGER NOT NULL REFERENCES persone(id),
+    mese TEXT NOT NULL,
+    giorno INTEGER NOT NULL,
+    dati TEXT NOT NULL,           -- JSON: ferie, colonne, note, disponibilità
+    PRIMARY KEY (persona_id, mese, giorno)
+);
 """
 
 _POSTAZIONI_SEED = (("Acquasanta", 0, 1), ("Venarotta", 0, 2), ("Ascoli", 1, 3))
@@ -475,6 +500,8 @@ def elimina_persona(conn: sqlite3.Connection, persona_id: int) -> bool:
             conn.execute("DELETE FROM divieti WHERE persona_id = ?", (persona_id,))
             conn.execute("DELETE FROM email_inviate WHERE persona_id = ?", (persona_id,))
             conn.execute("DELETE FROM calendari WHERE persona_id = ?", (persona_id,))
+            for tabella in ("codici_scheda", "schede_ore", "schede_ore_giorni"):
+                conn.execute(f"DELETE FROM {tabella} WHERE persona_id = ?", (persona_id,))
             conn.execute("DELETE FROM persone WHERE id = ?", (persona_id,))
     return True
 
