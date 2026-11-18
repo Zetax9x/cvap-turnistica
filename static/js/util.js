@@ -159,6 +159,20 @@ export function etichettaParti(parti) {
   return scelta ? scelta[1] : (ALTRE_SCELTE[valore] || valore);
 }
 
+/**
+ * Motivi per cui salvare questa indisponibilità violerebbe il regolamento (nessuno: nessun avviso).
+ * `giorniAltri`: altri giorni della settimana in cui il dipendente è già indisponibile; `parti`: le parti scelte
+ * per il giorno (vuote = torna disponibile, niente da avvisare). Il regolamento vuole al massimo un giorno
+ * di indisponibilità a settimana e, quel giorno, tutta la giornata (mattina, pomeriggio e notte).
+ */
+export function motiviAvvisoIndisponibilita(giorniAltri, parti) {
+  if (!parti.size) return [];
+  const motivi = [];
+  if (giorniAltri > 0) motivi.push("Ci sarebbero indisponibilità in più di un giorno della settimana.");
+  if (PARTI_TURNO.some((p) => !parti.has(p))) motivi.push("L'indisponibilità non copre tutta la giornata (8–8).");
+  return motivi;
+}
+
 // ---------- Etichette ----------
 
 export const ETICHETTE = {

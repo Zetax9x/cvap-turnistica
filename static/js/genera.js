@@ -5,7 +5,7 @@
 import { api } from "./api.js";
 import {
   el, toast, toastErrore, chiediConferma, addDays, mondayOf, todayISO, ddmm, parseISO, GIORNI_BREVI, indiceGiorno,
-  etichetta, orarioTurno, PARTI_TURNO, SCELTE_INDISPONIBILITA, etichettaParti, badgeAssenza,
+  etichetta, orarioTurno, PARTI_TURNO, SCELTE_INDISPONIBILITA, etichettaParti, badgeAssenza, motiviAvvisoIndisponibilita,
 } from "./util.js";
 import { scaricaPdfServer } from "./pdf.js";
 
@@ -500,12 +500,20 @@ function passoIndisponibilita() {
   const persone = dipendenti().slice().sort((a, b) => a.nome.localeCompare(b.nome, "it"));
   const assenze = new Map((s.ferie || []).map((x) => [`${x.persona_id}|${x.data}`, x.motivo]));
   const parti = new Map(indisponibilita().map((i) => [`${i.persona_id}|${i.data}`, i.parti]));
-  const cambia = (p, g, menu) => {
+  const cambia = async (p, g, menu) => {
     const id = menu.id;
     const precedente = menu.dataset.precedente;
+    const scelte = new Set(menu.value ? menu.value.split("+") : []);
+    // chi non è tra gli esenti (Impostazioni): se l'indisponibilità viola il regolamento si chiede conferma
+    const giorniAltri = indisponibilita().filter((i) => i.persona_id === p.id && i.data !== g && i.parti.size).length;
+    const motivi = p.indisponibilita_libera ? [] : motiviAvvisoIndisponibilita(giorniAltri, scelte);
+    if (motivi.length && !(await chiediConferma(`${p.nome}: ${motivi.join(" ")} Vuoi salvarla comunque?`,
+      { titolo: "Stai violando il regolamento", ok: "Procedi comunque" }))) {
+      menu.value = precedente;
+      return;
+    }
     menu.closest("td").classList.toggle("disp-indisponibile", Boolean(menu.value));
     menu.disabled = true;
-    const scelte = new Set(menu.value ? menu.value.split("+") : []);
     const salva = coda.then(async () => {
       stato.settimana = await impostaGiorno(p.id, g, scelte);
     });
