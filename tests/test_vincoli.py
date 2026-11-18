@@ -285,12 +285,29 @@ def test_ascoli_di_fila_conta_anche_mezzo_turno():
     assert "ascoli_di_fila" in codici(valida_settimana(GIORNI, ASCOLI, a, PERSONE))
 
 
-def test_ascoli_giorno_poi_notte_o_altra_postazione_va_bene():
+def test_ascoli_giorno_poi_notte_il_giorno_dopo_e_un_errore():
+    a = [ass(GIORNI[0], "Ascoli", "giorno", "autista", 1), ass(GIORNI[1], "Ascoli", "notte", "autista", 1)]
+    assert "ascoli_di_fila" in codici(valida_settimana(GIORNI, ASCOLI, a, PERSONE))
+
+
+def test_ascoli_notte_poi_giorno_il_giorno_dopo_e_un_errore():
+    a = [ass(GIORNI[2], "Ascoli", "notte", "autista", 1), ass(GIORNI[3], "Ascoli", "giorno", "autista", 1)]
+    assert "ascoli_di_fila" in codici(valida_settimana(GIORNI, ASCOLI, a, PERSONE))
+
+
+def test_ascoli_giorno_poi_notte_dopo_due_giorni_o_altra_postazione_va_bene():
     a = [ass(GIORNI[0], "Ascoli", "giorno", "autista", 1),
-         ass(GIORNI[1], "Ascoli", "notte", "autista", 1),        # fascia diversa
+         ass(GIORNI[2], "Ascoli", "notte", "autista", 1),            # giorno, poi notte due giorni dopo
          ass(GIORNI[3], "Ascoli", "giorno", "soccorritore", 2),
          ass(GIORNI[4], "Acquasanta", "giorno", "soccorritore", 2),  # postazione diversa
          ass(GIORNI[5], "Ascoli", "notte", "autista", 1)]            # notte non consecutiva
+    v = valida_settimana(GIORNI, ASCOLI, a, PERSONE)
+    assert "ascoli_di_fila" not in codici(v) | codici(v, "avviso")
+
+
+def test_ascoli_poi_acquasanta_il_giorno_dopo_va_bene():
+    a = [ass(GIORNI[0], "Ascoli", "giorno", "autista", 1), ass(GIORNI[1], "Acquasanta", "notte", "autista", 1),
+         ass(GIORNI[3], "Ascoli", "notte", "soccorritore", 2), ass(GIORNI[4], "Venarotta", "giorno", "soccorritore", 2)]
     v = valida_settimana(GIORNI, ASCOLI, a, PERSONE)
     assert "ascoli_di_fila" not in codici(v) | codici(v, "avviso")
 
@@ -316,10 +333,21 @@ def test_due_giorni_ad_ascoli_senza_notti_sono_un_avviso():
 
 
 def test_un_giorno_e_una_notte_ad_ascoli_vanno_bene():
-    a = [ass(GIORNI[0], "Ascoli", "giorno", "autista", 1), ass(GIORNI[3], "Ascoli", "notte", "autista", 1),
-         ass(GIORNI[5], "Ascoli", "giorno", "autista", 1)]  # 2 giorni e 1 notte: più equilibrato non si può
+    a = [ass(GIORNI[0], "Ascoli", "giorno", "autista", 1), ass(GIORNI[3], "Ascoli", "notte", "autista", 1)]
     v = valida_settimana(GIORNI, ASCOLI, a, PERSONE)
     assert "ascoli_giorno_notte" not in codici(v) | codici(v, "avviso")
+
+
+def test_due_giorni_e_una_notte_ad_ascoli_sono_un_avviso():
+    a = [ass(GIORNI[0], "Ascoli", "giorno", "autista", 1), ass(GIORNI[3], "Ascoli", "notte", "autista", 1),
+         ass(GIORNI[5], "Ascoli", "giorno", "autista", 1)]
+    assert "ascoli_giorno_notte" in codici(valida_settimana(GIORNI, ASCOLI, a, PERSONE), "avviso")
+
+
+def test_due_notti_e_un_giorno_ad_ascoli_sono_un_avviso():
+    a = [ass(GIORNI[0], "Ascoli", "notte", "autista", 1), ass(GIORNI[3], "Ascoli", "giorno", "autista", 1),
+         ass(GIORNI[5], "Ascoli", "notte", "autista", 1)]
+    assert "ascoli_giorno_notte" in codici(valida_settimana(GIORNI, ASCOLI, a, PERSONE), "avviso")
 
 
 def test_giorno_e_notte_ad_ascoli_non_vale_per_i_volontari():
@@ -337,3 +365,52 @@ def test_un_solo_turno_ad_ascoli_va_bene():
     a = [ass(GIORNI[0], "Ascoli", "giorno", "autista", 1)]
     v = valida_settimana(GIORNI, ASCOLI, a, PERSONE)
     assert "ascoli_giorno_notte" not in codici(v) | codici(v, "avviso")
+
+
+# --- Ascoli: dopo una notte il giorno dopo almeno 48 ore (avviso) ----------------------------
+
+def _48_ore(giorno_dopo, **extra):
+    """Notte ad Ascoli al lunedì (GIORNI[0]), poi un turno di giorno `giorno_dopo` giorni più tardi."""
+    a = [ass(GIORNI[0], "Ascoli", "notte", "autista", 1),
+         ass(GIORNI[0] + timedelta(days=giorno_dopo), "Ascoli", "giorno", "autista", 1, **extra)]
+    return valida_settimana(GIORNI, ASCOLI, a, PERSONE)
+
+
+def test_giorno_ad_ascoli_due_giorni_dopo_una_notte_e_un_avviso():
+    v = _48_ore(2)
+    assert "ascoli_48_ore" in codici(v, "avviso") and "ascoli_48_ore" not in codici(v)
+
+
+def test_giorno_ad_ascoli_tre_giorni_dopo_una_notte_va_bene():
+    v = _48_ore(3)
+    assert "ascoli_48_ore" not in codici(v) | codici(v, "avviso")
+
+
+def test_giorno_ad_ascoli_il_giorno_dopo_una_notte_e_solo_di_fila():
+    v = _48_ore(1)
+    assert "ascoli_di_fila" in codici(v) and "ascoli_48_ore" not in codici(v) | codici(v, "avviso")
+
+
+def test_ascoli_48_ore_conta_anche_mezzo_turno():
+    v = _48_ore(2, segmento="pomeriggio")
+    assert "ascoli_48_ore" in codici(v, "avviso")
+
+
+def test_giorno_poi_notte_e_notte_poi_notte_a_due_giorni_non_hanno_il_vincolo_delle_48_ore():
+    a = [ass(GIORNI[0], "Ascoli", "giorno", "autista", 1), ass(GIORNI[2], "Ascoli", "notte", "autista", 1),
+         ass(GIORNI[4], "Ascoli", "notte", "autista", 1)]
+    v = valida_settimana(GIORNI, ASCOLI, a, PERSONE)
+    assert "ascoli_48_ore" not in codici(v) | codici(v, "avviso")
+
+
+def test_ascoli_48_ore_a_cavallo_della_settimana_precedente():
+    contesto = [ass(GIORNI[0] - timedelta(days=1), "Ascoli", "notte", "autista", 1)]  # domenica prima
+    a = [ass(GIORNI[1], "Ascoli", "giorno", "autista", 1)]                            # martedì
+    assert "ascoli_48_ore" in codici(valida_settimana(GIORNI, ASCOLI, a, PERSONE, contesto=contesto), "avviso")
+
+
+def test_ascoli_48_ore_non_vale_per_i_volontari():
+    a = [ass(GIORNI[0], "Ascoli", "notte", "soccorritore", 3, origine="volontario"),
+         ass(GIORNI[2], "Ascoli", "giorno", "soccorritore", 3, origine="volontario")]
+    v = valida_settimana(GIORNI, ASCOLI, a, PERSONE)
+    assert "ascoli_48_ore" not in codici(v) | codici(v, "avviso")
