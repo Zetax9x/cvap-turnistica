@@ -281,3 +281,19 @@ def test_con_la_password_del_sito_le_api_restano_raggiungibili(tmp_path):
     # anche con il cookie della password normale (modalità semplice) la scheda ore funziona
     assert client.post("/api/accesso", json={"password": "normale1"}).status_code == 200
     assert client.get(f"{URL}/mesi").status_code == 200
+
+
+# --- pagina ------------------------------------------------------------------------------
+
+def test_la_pagina_e_i_suoi_file_sono_serviti_senza_accesso(client):
+    pagina = client.get("/scheda-ore")
+    assert pagina.status_code == 200 and "text/html" in pagina.headers["content-type"]
+    assert "Scheda ore" in pagina.text and "/static/js/scheda-ore.js" in pagina.text
+    assert 'name="robots" content="noindex,nofollow"' in pagina.text
+    assert client.get("/static/js/scheda-ore.js").status_code == 200
+    assert client.get("/static/scheda-ore.css").status_code == 200
+
+
+def test_la_pagina_non_e_dietro_la_password_del_sito(tmp_path):
+    client = TestClient(create_app(str(tmp_path / "t.db"), password="normale1"))
+    assert client.get("/scheda-ore").status_code == 200
