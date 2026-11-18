@@ -9,7 +9,7 @@ Vincoli rigidi (mai violati):
   - nessuna sovrapposizione e almeno 11h di riposo tra due turni (anche rispetto alle settimane vicine)
   - al massimo 3 giorni (o 3 notti) di fila
   - al massimo 3 turni ad Ascoli a settimana per dipendente
-  - ad Ascoli mai due giorni (o due notti) di fila allo stesso dipendente
+  - ad Ascoli mai due turni in giorni consecutivi allo stesso dipendente (di giorno o di notte)
   - ore lavorate entro `ORE_MAX_SETTIMANA` (72), o entro il massimo del dipendente se più basso (le ferie non contano)
   - nessun turno vietato al dipendente (postazione e/o tipo di turno)
 Vincoli rigidi "con evidenza": se impossibili il modello resta risolvibile ma paga una penalità enorme
@@ -20,9 +20,10 @@ e il risultato li segnala:
     dipendenti senza massimo ore; ogni giorno di ferie conta 6 ore
   - almeno `ORE_MIN_SETTIMANA` (36) ore per dipendente, ferie comprese
 Obiettivi (minimizzati insieme, in ordine di peso):
-  - il 3° turno ad Ascoli solo in extremis (pesa come 10 ore oltre il limite, meno di un posto scoperto)
+  - il 3° turno ad Ascoli solo in extremis (meno di un posto scoperto)
+  - ad Ascoli un giorno e una notte: il secondo giorno o la seconda notte nella settimana solo in extremis
+  - ad Ascoli, dopo una notte, il giorno ad Ascoli dopo almeno 48 ore dalla fine (notte al giorno D, giorno da D+3)
   - evitare 3 giorni/notti di fila
-  - ad Ascoli giorno e notte alternati (non 2 giorni o 2 notti a testa nella settimana)
   - ore vicine alla media (o al massimo ore, se più basso), recuperando il saldo delle settimane precedenti
   - equilibrio giorni/notti, nella settimana e nello storico
   - sabati e domeniche distribuiti in modo equo rispetto allo storico
@@ -60,9 +61,11 @@ P_FUORI_BANDA = 100_000
 P_SOTTO_MINIMO = P_FUORI_BANDA  # per ogni ora sotto ORE_MIN_SETTIMANA
 P_TERZO_ASCOLI = 1_000_000
 P_TRE_DI_FILA = 5_000
-# per turno ad Ascoli della stessa fascia oltre l'equilibrio: batte lo scambio giorno/notte che peggiora
-# l'equilibrio generale di due persone (2 x 24h x (P_GIORNO_NOTTE + P_GIORNO_NOTTE_STORICO) = 1200)
-P_ASCOLI_GIORNO_NOTTE = 2_000
+# Ascoli, in ordine di peso: posto scoperto > terzo turno > secondo giorno/notte nella settimana > 48 ore > ore fuori banda
+# per ogni turno ad Ascoli della stessa fascia oltre il primo nella settimana
+P_ASCOLI_GIORNO_NOTTE = 500_000
+# per ogni giorno ad Ascoli a meno di 48 ore dalla fine di una notte ad Ascoli (D e D+2)
+P_ASCOLI_48_ORE = 300_000
 P_DOPPIO_WEEKEND = 300
 P_ORE = 40
 P_ORE_MAX = 40
@@ -92,8 +95,10 @@ VOCI_OBIETTIVO: dict[str, tuple[str, str, str]] = {
     "tre_di_fila": ("Tre turni di fila", "regola",
                     "Tre giorni (o tre notti) consecutivi nella stessa fascia: ammessi, ma da evitare."),
     "terzo_ascoli": ("Terzo turno ad Ascoli", "regola", "Turni ad Ascoli oltre il secondo nella settimana."),
-    "ascoli_giorno_notte": ("Ascoli sbilanciato nella settimana", "regola",
-                            "Turni ad Ascoli della stessa fascia oltre uno in più rispetto all'altra."),
+    "ascoli_giorno_notte": ("Ascoli: due giorni o due notti nella settimana", "regola",
+                            "Turni ad Ascoli della stessa fascia oltre il primo nella settimana."),
+    "ascoli_48_ore": ("Ascoli: giorno a meno di 48 ore da una notte", "regola",
+                      "Giorni ad Ascoli due giorni dopo una notte ad Ascoli (meno di 48 ore dalla fine)."),
     "sotto_minimo": ("Ore sotto il minimo", "regola", "Ore mancanti al minimo settimanale, sommate tra i dipendenti."),
     "fuori_banda": ("Differenza di ore oltre il limite", "regola",
                     "Ore oltre la differenza massima ammessa tra chi lavora di più e chi di meno."),
@@ -518,8 +523,7 @@ class _Modello:
             return sum(1 for t in presi[pid] if t.postazione == ASCOLI and t.data in settimana)
 
         def ascoli_vicino(pid, u):
-            return any(t.postazione == ASCOLI and t.fascia == u.fascia and abs((t.data - u.data).days) == 1
-                       for t in presi[pid])
+            return any(t.postazione == ASCOLI and abs((t.data - u.data).days) == 1 for t in presi[pid])
 
         def ore_fascia(pid, fascia):
             return sum(t.ore for t in presi[pid] if t.fascia == fascia and t.data in settimana)
@@ -620,10 +624,11 @@ class _Modello:
             self._pesa("terzo_ascoli", P_TERZO_ASCOLI * self.scala, extra)
             self._ascoli_giorno_notte(p)
         self._ascoli_di_fila()
+        self._ascoli_48_ore()
 
     def _ascoli_giorno_notte(self, p):
-        """Ad Ascoli un giorno e una notte (o quasi): paga ogni turno della stessa fascia oltre il primo
-        in più rispetto all'altra (2 giorni e 1 notte va bene, 2 giorni e 0 notti no). Anche mezzo turno conta."""
+        """Ad Ascoli un giorno e una notte: paga ogni turno della stessa fascia oltre il primo nella settimana
+        (2 giorni e 1 notte paga come 2 giorni e 0 notti). Anche mezzo turno conta."""
         conta, quanti = {}, 0
         for fascia in ("giorno", "notte"):
             fissi = sum(1 for a in self.fissi_settimana
@@ -631,12 +636,10 @@ class _Modello:
             turni = [v for u, v in self._vars_di(p.id, lambda u, f=fascia: u.postazione == ASCOLI and u.fascia == f)]
             conta[fascia] = sum(turni) + fissi
             quanti += len(turni) + fissi
-        for a, b in (("giorno", "notte"), ("notte", "giorno")):
-            espr = conta[a] - conta[b] - 1
-            if isinstance(espr, int):
+            if len(turni) + fissi < 2 or not turni:
                 continue
-            eccesso = self.model.NewIntVar(0, quanti, "")
-            self.model.Add(espr <= eccesso)
+            eccesso = self.model.NewIntVar(0, len(turni) + fissi, "")
+            self.model.Add(conta[fascia] - 1 <= eccesso)
             self._pesa("ascoli_giorno_notte", P_ASCOLI_GIORNO_NOTTE * self.scala, eccesso)
         # nel tempo: tanti giorni quante notti ad Ascoli, storico compreso (dopo l'alternanza nella settimana)
         st = self.storico.get(p.id, StoricoPersona())
@@ -669,30 +672,50 @@ class _Modello:
             self._giorni_notti_nel_tempo(p, STANDBY, conta, quanti, st.standby_giorno - st.standby_notte,
                                          "standby_gn_storico", P_STANDBY_GN_STORICO)
 
+    def _ad_ascoli(self, p, d, fascia=None):
+        """1 se il dipendente fa (almeno mezzo) turno ad Ascoli quel giorno (nella fascia, se indicata): 1 se è un
+        turno già noto, una variabile se lo decide il modello, 0 se non può."""
+        if any(a.postazione == ASCOLI and a.data == d and fascia in (None, a.fascia) for a in self.fissi_di[p.id]):
+            return 1
+        vars_d = [v for u, v in self._vars_di(
+            p.id, lambda u: u.data == d and u.postazione == ASCOLI and fascia in (None, u.fascia))]
+        if not vars_d:
+            return 0
+        b = self.model.NewBoolVar("")
+        self.model.AddMaxEquality(b, vars_d)
+        return b
+
     def _ascoli_di_fila(self):
+        """Mai due turni ad Ascoli in giorni consecutivi, di qualunque fascia."""
         settimana = set(self.giorni)
         giorni = [self.giorni[0] + timedelta(days=i) for i in range(-1, 8)]
         for p in self.dipendenti:
-            for fascia in ("giorno", "notte"):
-                note = {a.data for a in self.fissi_di[p.id] if a.postazione == ASCOLI and a.fascia == fascia}
-                # 1 se quel giorno fa (almeno mezzo) turno ad Ascoli in quella fascia
-                ad_ascoli = {}
-                for d in giorni:
-                    vars_d = [v for u, v in self._vars_di(
-                        p.id, lambda u, d=d: u.data == d and u.fascia == fascia and u.postazione == ASCOLI)]
-                    if d in note:
-                        ad_ascoli[d] = 1
-                    elif vars_d:
-                        b = self.model.NewBoolVar("")
-                        self.model.AddMaxEquality(b, vars_d)
-                        ad_ascoli[d] = b
-                    else:
-                        ad_ascoli[d] = 0
-                for d, dopo in zip(giorni, giorni[1:]):
-                    espr = ad_ascoli[d] + ad_ascoli[dopo]
-                    # due turni fissati di fila restano (li segnala il validatore)
-                    if not isinstance(espr, int) and {d, dopo} & settimana:
-                        self.model.Add(espr <= 1)
+            ad_ascoli = {d: self._ad_ascoli(p, d) for d in giorni}
+            for d, dopo in zip(giorni, giorni[1:]):
+                espr = ad_ascoli[d] + ad_ascoli[dopo]
+                # due turni fissati di fila restano (li segnala il validatore)
+                if not isinstance(espr, int) and {d, dopo} & settimana:
+                    self.model.Add(espr <= 1)
+
+    def _ascoli_48_ore(self):
+        """Dopo una notte ad Ascoli al giorno D (finisce la mattina di D+1) il giorno ad Ascoli da D+3: il giorno
+        D+2 si evita, ma si può fare per non lasciare un posto scoperto."""
+        settimana = set(self.giorni)
+        inizio = self.giorni[0]
+        for p in self.dipendenti:
+            for i in range(-2, 7):
+                d = inizio + timedelta(days=i)
+                dopo = d + timedelta(days=2)
+                if not ({d, dopo} & settimana):
+                    continue
+                notte, giorno = self._ad_ascoli(p, d, "notte"), self._ad_ascoli(p, dopo, "giorno")
+                if isinstance(notte, int) and isinstance(giorno, int):
+                    continue  # due turni fissati: restano, li segnala il validatore
+                if isinstance(notte, int) and not notte or isinstance(giorno, int) and not giorno:
+                    continue  # uno dei due non può esserci: nessuna violazione possibile
+                violata = self.model.NewBoolVar("")
+                self.model.Add(violata >= notte + giorno - 1)
+                self._pesa("ascoli_48_ore", P_ASCOLI_48_ORE * self.scala, violata)
 
     def _ore(self):
         n = self.scala
