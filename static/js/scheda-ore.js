@@ -257,7 +257,7 @@ function ripristina(giorno) {
 
 function aggiornaTotali() {
   const t = sessione.scheda.totali;
-  contenitori.totali.replaceChildren(...[["Giorni di ferie", t.giorni_ferie], ["Ore postazioni", t.ore_postazioni],
+  contenitori.totali.replaceChildren(el("span", { class: "so-totali-titolo" }, "Le tue ore del mese:"), ...[["Giorni di ferie", t.giorni_ferie], ["Ore postazioni", t.ore_postazioni],
     ["Ore secondari", t.ore_secondari], ["Totale mese", t.totale_mese], ["Ore disponibilità aggiuntive", t.ore_disponibilita]]
     .map(([nome, valore]) => el("span", {}, `${nome}: `, el("strong", {}, String(valore)))));
 }
@@ -265,7 +265,7 @@ function aggiornaTotali() {
 // ---------------------------------------------------------------- moduli del giorno
 
 const campoOra = (etichetta, valore) => {
-  const input = el("input", { type: "text", inputmode: "numeric", autocomplete: "off", maxlength: 5, placeholder: "8:30", value: valore });
+  const input = el("input", { type: "text", inputmode: "numeric", autocomplete: "off", maxlength: 5, placeholder: "8:00", value: valore });
   return { input, campo: el("label", { class: "so-ora" }, etichetta, input) };
 };
 
@@ -275,9 +275,9 @@ function formTurno(giorno, colonna, chiudi) {
   const attuale = colonna ? orePair(g.colonne[colonna]) : null;
   const scelta = colonna ? null : el("select", { "aria-label": "Tipo di turno" },
     COLONNE.filter(([c]) => !g.colonne[c]).map(([c, nome]) => el("option", { value: c }, nome)));
-  const inizio = campoOra("Inizio", attuale ? attuale[0] : ""), fine = campoOra("Fine", attuale ? attuale[1] : "");
+  const inizio = campoOra("Ora di inizio", attuale ? attuale[0] : ""), fine = campoOra("Ora di fine", attuale ? attuale[1] : "");
   const prima = separaExtra(colonna ? (leggiNote(g.note).turni[colonna] || "") : "");
-  const nota = el("input", { type: "text", autocomplete: "off", maxlength: MAX_NOTE_GIORNO, placeholder: "per esempio: ritardo per traffico", value: prima.testo });
+  const nota = el("input", { type: "text", autocomplete: "off", maxlength: MAX_NOTE_GIORNO, placeholder: "per esempio: Ass. Fiera", value: prima.testo });
   const extra = el("input", { type: "checkbox", checked: prima.extra });
   const salva = el("button", { type: "submit", class: "so-piccolo" }, "Salva");
   return el("form", { class: "so-turno-form", onsubmit: async (e) => {
@@ -323,7 +323,8 @@ function formExtra(giorno, bloccata) {
     const ok = await invia(giorno, { disponibilita: disp.some(Boolean) ? { inizio: disp[0], fine: disp[1], causale: disp[2] } : null });
     if (!ok) salva.disabled = false;
   } },
-  el("fieldset", { class: "so-disp" }, el("legend", {}, "Disponibilità aggiuntiva (Volontariato)"), dal.campo, al.campo,
+  el("fieldset", { class: "so-disp" }, el("legend", {}, "Disponibilità aggiuntiva (Volontariato)"),
+    el("p", { class: "so-tenue so-aiuto" }, "Compila solo se quel giorno hai dato una disponibilità in più. Altrimenti lascia vuoto."), dal.campo, al.campo,
     el("label", { class: "so-motivo" }, "Motivo", motivo)),
   ...(bloccata ? [] : [salva]));
 }
@@ -340,7 +341,8 @@ const segnaliGiorno = (g, bloccata) => [
 
 function elencoTurni(g) {
   const turni = COLONNE.filter(([c]) => g.colonne[c]);
-  if (modo === "correggi") return el("ul", { class: "so-turni" }, turni.map(([c, nome]) => voceTurno(g.giorno, c, nome, g.colonne[c])));
+  if (modo === "correggi") return el("div", {}, el("p", { class: "so-tenue" }, "Premi «Modifica» sul turno da cambiare, oppure «Elimina» se non l'hai fatto."),
+    el("ul", { class: "so-turni" }, turni.map(([c, nome]) => voceTurno(g.giorno, c, nome, g.colonne[c]))));
   if (!turni.length) return el("p", { class: "so-tenue" }, g.ferie ? "Hai segnato questo giorno come ferie." : "Il programma non ha trovato turni per questo giorno.");
   const note = leggiNote(g.note).turni;
   return el("div", { class: "so-grandi" }, turni.map(([c, nome]) => el("div", {},
@@ -351,14 +353,20 @@ function elencoTurni(g) {
 function azioniGiorno(g) {
   const giorno = g.giorno, ha = COLONNE.some(([c]) => g.colonne[c]), piene = COLONNE.every(([c]) => g.colonne[c]);
   const cambia = (valore) => { modo = modo === valore ? null : valore; aggiorna(); };
+  const grande = (titolo, spiegazione, opzioni) => el("button", { type: "button", ...opzioni },
+    el("strong", {}, titolo), el("small", {}, spiegazione));
   return el("div", { class: "so-azioni-giorno" },
-    el("button", { type: "button", class: "so-grande", onclick: () => {
-      controllati.add(giorno); salvaControllati(); vaiA(giorno < sessione.scheda.giorni.length ? giorno + 1 : "riepilogo");
-    } }, ha || g.ferie ? "✓ Sì, è giusto" : "✓ Sì, nessun turno"),
-    ...(ha ? [el("button", { type: "button", class: "so-secondario so-grande", "aria-pressed": String(modo === "correggi"), onclick: () => cambia("correggi") }, "Correggi gli orari")] : []),
-    ...(piene ? [] : [el("button", { type: "button", class: "so-secondario so-grande", "aria-pressed": String(modo === "aggiungi"), onclick: () => cambia("aggiungi") }, "Manca un turno")]),
-    el("button", { type: "button", class: "so-secondario so-grande", "aria-pressed": g.ferie ? "true" : "false",
-      onclick: () => invia(giorno, { ferie: g.ferie ? 0 : 1 }) }, g.ferie ? "Ero in ferie ✓ (tocca per togliere)" : "Ero in ferie"));
+    el("p", { class: "so-domanda-testo" }, "Cosa vuoi fare per questo giorno?"),
+    grande(ha || g.ferie ? "✓ Sì, è tutto giusto" : "✓ Sì, quel giorno non ho fatto turni",
+      ha ? "Ho fatto proprio questi turni, con questi orari. Passa al giorno dopo." : "Passa al giorno dopo.", { class: "so-grande", onclick: () => {
+        controllati.add(giorno); salvaControllati(); vaiA(giorno < sessione.scheda.giorni.length ? giorno + 1 : "riepilogo");
+      } }),
+    ...(ha ? [grande("Cambia un orario", "Ho iniziato o finito a un'ora diversa.",
+      { class: "so-secondario so-grande", "aria-pressed": String(modo === "correggi"), onclick: () => cambia("correggi") })] : []),
+    ...(piene ? [] : [grande("+ Aggiungi un turno", "Ho fatto un turno che qui non c'è.",
+      { class: "so-secondario so-grande", "aria-pressed": String(modo === "aggiungi"), onclick: () => cambia("aggiungi") })]),
+    grande(g.ferie ? "Ferie segnate ✓" : "Ero in ferie", g.ferie ? "Tocca per togliere le ferie." : "Segna questo giorno come ferie.",
+      { class: "so-secondario so-grande", "aria-pressed": g.ferie ? "true" : "false", onclick: () => invia(giorno, { ferie: g.ferie ? 0 : 1 }) }));
 }
 
 function schermataGiorno() {
@@ -366,7 +374,7 @@ function schermataGiorno() {
   erroreCorrente = boxErrore();
   return [el("section", { class: `so-domanda${eWeekend(giorno) ? " so-weekend" : ""}`, "aria-label": titoloGiorno(giorno) },
     el("h2", { tabindex: -1 }, titoloGiorno(giorno)),
-    ...(bloccata ? [] : [el("p", { class: "so-tenue" }, "Il programma dice che hai fatto:")]),
+    ...(bloccata ? [] : [el("p", { class: "so-tenue" }, "Il programma ha segnato questi turni per te:")]),
     elencoTurni(g),
     ...(leggiNote(g.note).altre.length ? [el("p", { class: "so-tenue so-nota-programma" }, `Note del programma: ${leggiNote(g.note).altre.join("; ")}`)] : []),
     ...segnaliGiorno(g, bloccata),
@@ -376,7 +384,7 @@ function schermataGiorno() {
   el("div", { class: "so-azioni so-passi" },
     el("button", { type: "button", class: "so-secondario", disabled: giorno <= 1, onclick: () => vaiA(giorno - 1) }, "‹ Giorno prima"),
     el("button", { type: "button", class: "so-secondario", onclick: () => vaiA(giorno < sessione.scheda.giorni.length ? giorno + 1 : "riepilogo") },
-      giorno < sessione.scheda.giorni.length ? "Salta ›" : "Vai al riepilogo ›"))];
+      giorno < sessione.scheda.giorni.length ? "Vai al giorno dopo ›" : "Vai al riepilogo ›"))];
 }
 
 // ---------------------------------------------------------------- striscia della settimana e avanzamento
@@ -397,15 +405,16 @@ function disegnaStriscia() {
     el("button", { type: "button", class: "so-secondario so-piccolo", disabled: primo <= 1, onclick: () => vaiA(Math.max(1, primo - 7)) }, "‹ Prima"),
     el("strong", {}, `Dal ${primoValido} al ${ultimoValido}`),
     el("button", { type: "button", class: "so-secondario so-piccolo", disabled: primo + 7 > n, onclick: () => vaiA(primo + 7) }, "Dopo ›")),
-  el("div", { class: "so-striscia" }, celle)];
+  el("div", { class: "so-striscia" }, celle),
+  ...(confermata() ? [] : [el("p", { class: "so-tenue so-didascalia" }, "Tocca un giorno per aprirlo. Il pallino verde vuol dire che l'hai già controllato.")])];
 }
 
 function disegnaAvanzamento() {
   if (confermata()) return [];
   const fine = ultimoDaControllare(), fatti = sessione.scheda.giorni.filter((g) => g.giorno <= fine && eControllato(g)).length;
   return [el("div", { class: "so-avanza" },
-    el("span", {}, `Controllati ${fatti} su ${fine}`),
-    el("button", { type: "button", class: "so-secondario so-piccolo", onclick: () => vaiA("riepilogo") }, "Riepilogo")),
+    el("span", {}, `Hai controllato ${fatti} ${fatti === 1 ? "giorno" : "giorni"} su ${fine}`),
+    el("button", { type: "button", class: "so-secondario so-piccolo", onclick: () => vaiA("riepilogo") }, "Vai al riepilogo")),
   el("progress", { value: fatti, max: fine, "aria-label": "Giorni controllati" })];
 }
 
@@ -503,7 +512,11 @@ function disegnaScheda() {
       el("div", { class: "so-azioni" },
         el("button", { type: "button", class: "so-secondario", onclick: () => vistaMesi() }, "‹ Mesi"),
         el("button", { type: "button", class: "so-secondario", onclick: esci }, "Esci"))),
-    ...(bloccata ? [] : [el("p", { class: "so-tenue" }, "Controlla un giorno alla volta: se è giusto premi «Sì, è giusto», altrimenti correggi. Gli orari si scrivono come 8 oppure 8:30.")]),
+    ...(bloccata ? [] : [el("div", { class: "so-guida" }, el("strong", {}, "Come si fa"),
+      el("ol", {}, el("li", {}, "Qui sotto vedi un giorno alla volta, con i turni che il programma ha segnato per te."),
+        el("li", {}, "Se è tutto giusto, premi «Sì, è tutto giusto». Se no, cambia l'orario o aggiungi il turno che manca."),
+        el("li", {}, "Quando hai controllato tutti i giorni, premi «Vai al riepilogo» e poi «Ho finito la revisione»."),
+        el("li", {}, "Gli orari si scrivono così: 8 oppure 8:30.")))]),
     contenitori.avanzamento, contenitori.striscia, contenitori.schermata, contenitori.totali);
   aggiorna();
 }

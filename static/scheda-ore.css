@@ -78,7 +78,14 @@
 .so-chip.so-acquasanta { background: #2b6fb0; } .so-chip.so-venarotta { background: #8a5a2b; } .so-chip.so-programmati { background: #7a4aa0; }
 .so-chip.so-assistenze { background: var(--so-evidenza); } .so-chip.so-viaggi_ast, .so-chip.so-viaggi { background: #5b6770; }
 .so-azioni-giorno { display: grid; gap: 8px; margin-top: 12px; }
-.so-pagina button.so-grande { min-height: 54px; font-size: 1.05rem; }
+.so-pagina button.so-grande { min-height: 64px; font-size: 1.05rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 10px 16px; text-align: center; }
+.so-grande small { font-size: .85rem; font-weight: 400; opacity: .9; }
+.so-domanda-testo { margin: 4px 0 0; font-weight: 700; font-size: 1.05rem; }
+.so-guida { background: var(--so-ok-sfondo); border: 1px solid #94c1a5; border-radius: var(--so-raggio); padding: 12px 16px; margin: 12px 0; }
+.so-guida ol { margin: 6px 0 0; padding-left: 22px; display: grid; gap: 4px; }
+.so-didascalia { margin: 6px 0 0; font-size: .85rem; }
+.so-aiuto { flex: 1 1 100%; margin: 0; font-size: .85rem; }
+.so-totali-titolo { color: var(--so-tenue); }
 .so-pagina button[aria-pressed="true"].so-secondario { background: var(--so-weekend); border-width: 2px; }
 .so-turni { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 6px; }
 .so-turno { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 0; border-top: 1px solid var(--so-bordo); }
@@ -107,15 +114,15 @@
 @media (min-width: 900px) {
   .so-pagina #so-app:has(.so-schermata-box) { display: grid; grid-template-columns: minmax(340px, 400px) minmax(0, 1fr); column-gap: 32px; grid-template-rows: auto auto auto 1fr auto; align-items: start; }
   #so-app:has(.so-schermata-box) > .so-testa-scheda { grid-column: 1 / -1; grid-row: 1; }
-  #so-app:has(.so-schermata-box) > .so-testa-scheda + p { grid-column: 1 / -1; grid-row: 2; }
-  #so-app:has(.so-schermata-box) > .so-avanzamento-box { grid-column: 1; grid-row: 3; }
-  #so-app:has(.so-schermata-box) > .so-striscia-box { grid-column: 1; grid-row: 4; }
-  #so-app:has(.so-schermata-box) > .so-schermata-box { grid-column: 2; grid-row: 3 / span 2; min-width: 0; max-width: 760px; }
-  #so-app:has(.so-schermata-box) > .so-totali { grid-column: 1 / -1; grid-row: 5; }
+  #so-app:has(.so-schermata-box) > .so-guida { grid-column: 1; grid-row: 4; margin-top: 4px; }
+  #so-app:has(.so-schermata-box) > .so-avanzamento-box { grid-column: 1; grid-row: 2; }
+  #so-app:has(.so-schermata-box) > .so-striscia-box { grid-column: 1; grid-row: 3; }
+  #so-app:has(.so-schermata-box) > .so-schermata-box { grid-column: 2; grid-row: 2 / span 3; min-width: 0; max-width: 760px; }
+  #so-app:has(.so-schermata-box) > .so-totali { grid-column: 1 / -1; grid-row: 5; margin-top: 16px; }
   .so-domanda { padding: 24px; }
   .so-pagina button.so-cella { min-height: 64px; }
   .so-azioni-giorno { grid-template-columns: 1fr 1fr; }
-  .so-azioni-giorno .so-grande:first-child { grid-column: 1 / -1; }
+  .so-azioni-giorno .so-domanda-testo, .so-azioni-giorno .so-grande:nth-child(2) { grid-column: 1 / -1; }
 }
 @media (hover: hover) {
   .so-pagina button:not(:disabled):hover { filter: brightness(.95); }
