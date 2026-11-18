@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS persone (
     attivo INTEGER NOT NULL DEFAULT 1,
     autista_programmati INTEGER NOT NULL DEFAULT 0,  -- soccorritore che può guidare nei Programmati
     max_ore_settimana INTEGER,  -- tetto alle ore lavorate a settimana (NULL = nessun limite)
-    email TEXT  -- per l'invio dei turni (NULL = nessuna)
+    email TEXT,  -- per l'invio dei turni (NULL = nessuna)
+    indisponibilita_libera INTEGER NOT NULL DEFAULT 0  -- 1: la procedura guidata non avvisa sulle sue indisponibilità
 );
 CREATE TABLE IF NOT EXISTS email_inviate (
     inizio TEXT NOT NULL,       -- lunedì della settimana
@@ -354,6 +355,12 @@ def _migra(conn) -> None:
         except Exception:
             if "email" not in _colonne(conn, "persone"):
                 raise
+    if "indisponibilita_libera" not in _colonne(conn, "persone"):
+        try:
+            conn.execute("ALTER TABLE persone ADD COLUMN indisponibilita_libera INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            if "indisponibilita_libera" not in _colonne(conn, "persone"):
+                raise
     if "motivo" not in _colonne(conn, "ferie"):
         try:
             conn.execute("ALTER TABLE ferie ADD COLUMN motivo TEXT NOT NULL DEFAULT 'ferie'")
@@ -377,7 +384,8 @@ def _migra(conn) -> None:
 def _persona_dict(r: sqlite3.Row) -> dict:
     return {"id": r["id"], "nome": r["nome"], "tipo": r["tipo"], "qualifica": r["qualifica"],
             "autista_programmati": bool(r["autista_programmati"]), "attivo": bool(r["attivo"]),
-            "max_ore_settimana": r["max_ore_settimana"], "email": r["email"]}
+            "max_ore_settimana": r["max_ore_settimana"], "email": r["email"],
+            "indisponibilita_libera": bool(r["indisponibilita_libera"])}
 
 
 def a_persona(r: dict | sqlite3.Row, divieti: tuple[Divieto, ...] = ()) -> Persona:
@@ -430,6 +438,18 @@ def imposta_max_ore(conn: sqlite3.Connection, persona_id: int, max_ore: int | No
     """Imposta (o toglie, con None) il massimo di ore settimanali; None se la persona non esiste."""
     with conn:
         cur = conn.execute("UPDATE persone SET max_ore_settimana = ? WHERE id = ?", (max_ore, persona_id))
+    return get_persona(conn, persona_id) if cur.rowcount else None
+
+
+def imposta_parametri(conn: sqlite3.Connection, persona_id: int, max_ore: int | None,
+                      indisponibilita_libera: bool | None = None) -> dict | None:
+    """Imposta il massimo di ore e, se indicato (None = resta com'è), se la procedura guidata evita di avvisare
+    sulle indisponibilità della persona; None se la persona non esiste."""
+    with conn:
+        cur = conn.execute("UPDATE persone SET max_ore_settimana = ? WHERE id = ?", (max_ore, persona_id))
+        if cur.rowcount and indisponibilita_libera is not None:
+            conn.execute("UPDATE persone SET indisponibilita_libera = ? WHERE id = ?",
+                         (int(indisponibilita_libera), persona_id))
     return get_persona(conn, persona_id) if cur.rowcount else None
 
 

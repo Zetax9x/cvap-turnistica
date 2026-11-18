@@ -54,7 +54,8 @@ def test_crud_persone(client):
     assert r.status_code == 200
     assert r.json() == {"id": p["id"], "nome": "Mario", "tipo": "volontario",
                         "qualifica": "soccorritore", "autista_programmati": False, "attivo": False,
-                        "max_ore_settimana": None, "email": None}
+                        "max_ore_settimana": None, "email": None,
+                        "indisponibilita_libera": False}
     assert len(client.get("/api/persone").json()) == 1
     assert client.delete(f"/api/persone/{p['id']}").status_code == 204
     assert client.get("/api/persone").json() == []
@@ -1315,6 +1316,35 @@ def test_modifica_persona_non_cancella_il_massimo_ore(client):
 def test_massimo_ore_non_valido_422(client, corpo):
     p = crea(client, "Mario")
     assert client.put(f"/api/persone/{p['id']}/parametri", json=corpo).status_code == 422
+
+
+def test_indisponibilita_libera_della_persona(client):
+    p = crea(client, "Mario")
+    assert client.get("/api/persone").json()[0]["indisponibilita_libera"] is False
+    url = f"/api/persone/{p['id']}/parametri"
+    r = client.put(url, json={"max_ore_settimana": None, "indisponibilita_libera": True})
+    assert r.status_code == 200 and r.json()["indisponibilita_libera"] is True
+    assert client.get("/api/persone").json()[0]["indisponibilita_libera"] is True
+    # senza il campo resta com'è, anche cambiando il massimo ore
+    r = client.put(url, json={"max_ore_settimana": 24})
+    assert r.json()["indisponibilita_libera"] is True and r.json()["max_ore_settimana"] == 24
+    r = client.put(url, json={"max_ore_settimana": 24, "indisponibilita_libera": False})
+    assert r.json()["indisponibilita_libera"] is False
+
+
+def test_modifica_persona_non_cancella_indisponibilita_libera(client):
+    p = crea(client, "Mario")
+    client.put(f"/api/persone/{p['id']}/parametri", json={"max_ore_settimana": None, "indisponibilita_libera": True})
+    r = client.put(f"/api/persone/{p['id']}", json={"nome": "Mario R", "tipo": "dipendente",
+                                                    "qualifica": "autista", "attivo": True})
+    assert r.json()["indisponibilita_libera"] is True
+
+
+@pytest.mark.parametrize("valore", ["forse", 2, [True]])
+def test_indisponibilita_libera_non_valida_422(client, valore):
+    p = crea(client, "Mario")
+    r = client.put(f"/api/persone/{p['id']}/parametri", json={"max_ore_settimana": None, "indisponibilita_libera": valore})
+    assert r.status_code == 422
 
 
 def test_massimo_ore_persona_inesistente_404(client):

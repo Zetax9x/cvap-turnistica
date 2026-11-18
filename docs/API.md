@@ -61,7 +61,8 @@ dopo la rimozione per malattia i posti vuoti si gestiscono dal tabellone.
 
 ```
 persone(id INTEGER PK, nome TEXT NOT NULL, tipo TEXT, qualifica TEXT, attivo INTEGER DEFAULT 1,
-        autista_programmati INTEGER, max_ore_settimana INTEGER /*NULL = solo il tetto di 72h*/)
+        autista_programmati INTEGER, max_ore_settimana INTEGER /*NULL = solo il tetto di 72h*/,
+        indisponibilita_libera INTEGER /*1: la procedura guidata non avvisa sulle sue indisponibilità*/)
 postazioni(id INTEGER PK, nome TEXT UNIQUE, solo_settimane_b INTEGER, ordine INTEGER)
    seed: Acquasanta(0,1), Venarotta(0,2), Ascoli(1,3)
 impostazioni(chiave TEXT PK, valore TEXT)        -- data_riferimento_a (default 2026-10-19), scarto_ore_max (default 12)
@@ -103,12 +104,12 @@ porta anche il ruolo `normale` o `master` dentro la firma; HttpOnly, SameSite=La
 - `GET /sessione` → `{protetto, autenticato, master}` · `POST /accesso` `{password}` → 200 `{autenticato, master}` e cookie · 401 se errata ·
   `POST /uscita` → 204 (cancella il cookie)
 
-- `GET /persone` → `[{id, nome, tipo, qualifica, attivo, autista_programmati, max_ore_settimana, email}]` (tutte, anche non attive)
+- `GET /persone` → `[{id, nome, tipo, qualifica, attivo, autista_programmati, max_ore_settimana, email, indisponibilita_libera}]` (tutte, anche non attive)
 - `POST /persone` `{nome, tipo, qualifica, email?}` → 201 persona · 422 se valori non validi (anche email non valida)
 - `PUT /persone/{id}` `{nome, tipo, qualifica, attivo, email?}` → persona · 404 (email assente = invariata; `""`/null = nessuna)
 - `DELETE /persone/{id}` → 204; se ha assegnazioni viene solo disattivata (`attivo=0`)
 - `GET /postazioni` → `[{id, nome, solo_settimane_b}]`
-- `PUT /persone/{id}/parametri` `{max_ore_settimana: int 1..72 | null}` → persona (con `max_ore_settimana`) · 404 · 422.
+- `PUT /persone/{id}/parametri` `{max_ore_settimana: int 1..72 | null, indisponibilita_libera?: bool}` → persona (con `max_ore_settimana` e `indisponibilita_libera`; se il secondo campo manca resta com'è) · 404 · 422.
   Il massimo conta le ore lavorate (non le ferie): oltre è `ore_max`; la banda ore si calcola da min(media, massimo).
   Per tutti i dipendenti vale comunque il tetto rigido di 72 ore lavorate a settimana (`ORE_MAX_SETTIMANA`):
   il generatore non lo supera mai (se non basta il personale lascia posti scoperti, indicati nel report) e

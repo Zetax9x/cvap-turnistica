@@ -140,6 +140,7 @@ class InvioRiepilogoIn(BaseModel):
 
 class ParametriIn(BaseModel):
     max_ore_settimana: int | None = Field(ge=1, le=ORE_MAX_SETTIMANA)  # obbligatorio; null = solo il tetto di 72h
+    indisponibilita_libera: bool | None = None  # assente = resta com'è
 
 
 class DivietoIn(BaseModel):
@@ -921,7 +922,7 @@ def create_app(db_path: str, password: str | None = None, postino=None,
 
     @app.put("/api/persone/{persona_id}/parametri")
     def imposta_parametri(persona_id: IdPath, body: ParametriIn, conn: Conn):
-        p = db.imposta_max_ore(conn, persona_id, body.max_ore_settimana)
+        p = db.imposta_parametri(conn, persona_id, body.max_ore_settimana, body.indisponibilita_libera)
         if p is None:
             raise HTTPException(404, "Persona non trovata")
         return p

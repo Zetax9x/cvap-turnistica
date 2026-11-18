@@ -233,7 +233,11 @@ def test_migrazione_di_un_database_precedente(tmp_path):
     vecchio.close()
     conn = db.connetti(percorso)
     assert db.lista_persone(conn)[0]["max_ore_settimana"] is None
+    assert db.lista_persone(conn)[0]["indisponibilita_libera"] is False
     assert db.imposta_max_ore(conn, 1, 30)["max_ore_settimana"] == 30
+    p = db.imposta_parametri(conn, 1, 30, True)
+    assert p["indisponibilita_libera"] is True and p["max_ore_settimana"] == 30
+    assert db.imposta_parametri(conn, 1, 20)["indisponibilita_libera"] is True  # None: resta com'è
     assert db.lista_divieti(conn) == []
     assert db.get_scarto_ore_max(conn) == 12
     conn.close()
