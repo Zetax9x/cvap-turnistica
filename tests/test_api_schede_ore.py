@@ -43,7 +43,7 @@ def conn(ambiente):
     c.close()
 
 
-def dipendente(conn, nome, codice="codice1", tipo="dipendente"):
+def dipendente(conn, nome, codice="123456", tipo="dipendente"):
     pid = db.crea_persona(conn, nome, tipo, "autista")["id"]
     if codice:
         db_schede_ore.imposta_codice(conn, pid, codice)
@@ -55,7 +55,7 @@ def mario(conn):
     return dipendente(conn, "Mario Rossi")
 
 
-def entra(client, pid, codice="codice1"):
+def entra(client, pid, codice="123456"):
     return client.post(f"{URL}/accesso", json={"persona_id": pid, "codice": codice})
 
 
@@ -90,7 +90,7 @@ def test_nome_o_codice_errati_hanno_la_stessa_risposta(client, conn, mario):
     risposte = [entra(client, mario, "sbagliato"), entra(client, 9999), entra(client, volontario),
                 entra(client, inattivo)]
     assert [r.status_code for r in risposte] == [401] * 4
-    assert all(r.json() == {"detail": "Nome o codice non corretti"} for r in risposte)
+    assert all(r.json() == {"detail": "Nome o PIN non corretti"} for r in risposte)
     assert "set-cookie" not in risposte[0].headers
 
 
@@ -121,7 +121,7 @@ def test_senza_cookie_tutto_e_negato_tranne_elenco_accesso_e_uscita(client, mari
 
 def test_cookie_scaduto_manomesso_o_falsificato(ambiente, conn, mario):
     client, _ = ambiente
-    anna = dipendente(conn, "Anna Neri", "codice2")
+    anna = dipendente(conn, "Anna Neri", "234567")
     base = api_schede_ore.chiave_scheda(db.segreto_sessione(conn))
     chiave = api_schede_ore.chiave_persona(base, db_schede_ore.impronta_codice(conn, mario))
     chiave_anna = api_schede_ore.chiave_persona(base, db_schede_ore.impronta_codice(conn, anna))
@@ -141,10 +141,10 @@ def test_cookie_scaduto_manomesso_o_falsificato(ambiente, conn, mario):
 
 
 def test_ognuno_vede_solo_la_propria_scheda(client, conn, mario):
-    anna = dipendente(conn, "Anna Neri", "codice2")
+    anna = dipendente(conn, "Anna Neri", "234567")
     db.crea_assegnazione(conn, Assegnazione(date(OGGI.year, OGGI.month, 10), "Acquasanta", "giorno", "intero",
                                             "autista", mario, "generato"))
-    entra(client, anna, "codice2")
+    entra(client, anna, "234567")
     s = client.get(f"{URL}/{MESE}").json()
     assert s["persona"]["nome"] == "Anna Neri" and s["totali"]["totale_mese"] == 0
     client.cookies.clear()
@@ -169,18 +169,18 @@ def test_azzerare_il_codice_chiude_le_sessioni_aperte(client, conn, mario):
 def test_un_nuovo_codice_chiude_le_sessioni_aperte_ma_si_puo_rientrare(client, conn, mario):
     entra(client, mario)
     vecchio = client.cookies.get("cvap_scheda")
-    db_schede_ore.imposta_codice(conn, mario, "nuovo222")
+    db_schede_ore.imposta_codice(conn, mario, "333222")
     assert client.get(f"{URL}/mesi").status_code == 401
     client.cookies.clear()
     assert client.get(f"{URL}/mesi", headers={"Cookie": f"cvap_scheda={vecchio}"}).status_code == 401
-    assert entra(client, mario, "nuovo222").status_code == 200
+    assert entra(client, mario, "333222").status_code == 200
     assert client.get(f"{URL}/mesi").status_code == 200
 
 
 def test_il_cookie_e_secure_solo_su_https(client, mario):
     http = entra(client, mario)
     assert "secure" not in http.headers["set-cookie"].lower()
-    https = client.post(f"{URL}/accesso", json={"persona_id": mario, "codice": "codice1"},
+    https = client.post(f"{URL}/accesso", json={"persona_id": mario, "codice": "123456"},
                         headers={"x-forwarded-proto": "https"})
     assert "secure" in https.headers["set-cookie"].lower()
 
@@ -296,7 +296,7 @@ def test_le_modifiche_non_sono_nel_registro_ma_la_conferma_si(client, conn, mari
     schede = [r for r in righe if "/schede-ore/" in r["percorso"]]
     assert len(schede) == 1 and schede[0]["accesso"] == "pubblico"        # come la pagina dei cambi turno
     assert "Mario Rossi" in schede[0]["descrizione"] and MESE in schede[0]["descrizione"]
-    assert "codice1" not in str(righe)
+    assert "123456" not in str(righe)
 
 
 def test_con_la_password_del_sito_le_api_restano_raggiungibili(tmp_path):

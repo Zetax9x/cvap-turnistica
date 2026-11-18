@@ -28,8 +28,8 @@ COOKIE = "cvap_scheda"
 PERCORSO_COOKIE = "/api/schede-ore"
 DURATA_COOKIE_S = 2 * 60 * 60
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-NON_VALIDO = "Nome o codice non corretti"
-ACCESSO_RICHIESTO = "Accesso richiesto: apri la tua scheda con nome e codice"
+NON_VALIDO = "Nome o PIN non corretti"
+ACCESSO_RICHIESTO = "Accesso richiesto: apri la tua scheda con nome e PIN"
 MESE_VALIDO = r"^\d{4}-(0[1-9]|1[0-2])$"
 
 Mese = Annotated[str, PathParam(pattern=MESE_VALIDO)]
@@ -87,7 +87,7 @@ class NoteIn(BaseModel):
 
 
 class CodiceIn(BaseModel):
-    codice: Annotated[str, Field(min_length=db_schede_ore.CODICE_MIN, max_length=100)]
+    codice: Annotated[str, Field(pattern=rf"^[0-9]{{{db_schede_ore.LUNGHEZZA_PIN}}}$")]
 
 
 def _dipendente_attivo(conn: sqlite3.Connection, persona_id: int | None) -> dict | None:
@@ -147,7 +147,7 @@ def crea_router(connessione: Callable) -> APIRouter:
             raise HTTPException(401, NON_VALIDO)
         stato, fino = db_schede_ore.verifica_codice(conn, p["id"], body.codice)
         if stato == "senza_codice":
-            raise HTTPException(403, "Il codice personale non è ancora impostato: chiedilo ai responsabili")
+            raise HTTPException(403, "Il PIN non è ancora impostato: chiedilo ai responsabili")
         if stato == "bloccato":
             minuti = max(1, math.ceil((fino - datetime.now()).total_seconds() / 60))
             raise HTTPException(429, f"Troppi tentativi: riprova tra {minuti} minuti")
