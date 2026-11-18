@@ -33,9 +33,8 @@ const TURNI_VOLONTARI_RICHIESTA = {
     ["notte", "standby_sera", "Sera 19–23"], ["notte", "standby_notte", "Notte 23–7"]],
 };
 
-// servizi: null = non ancora chiesto se servono Standby, Programmati o Assistenze; true/false = risposta
 // copertura: esito del controllo preventivo per i dati attuali ({chiave, esito} o {chiave, inCorso})
-const stato = { root: null, data: null, settimana: null, persone: [], ferie: [], passo: null, generando: false, servizi: null,
+const stato = { root: null, data: null, settimana: null, persone: [], ferie: [], passo: null, generando: false,
   copertura: null };
 
 const giorno = (iso) => `${GIORNI_BREVI[indiceGiorno(iso)]} ${ddmm(iso)}`;
@@ -368,21 +367,9 @@ function passoServizi() {
   const attive = s.postazioni_a_richiesta || [];
   const conStandby = attive.length > 0;
   const titolo = el("h2", {}, "1. Standby, Programmati e Assistenze");
-  if (stato.servizi === null && !righe.length) {
-    return [titolo,
-      el("p", {}, conStandby
-        ? "Questa settimana servono Standby, Programmati o Assistenze ed Extra?"
-        : "Questa settimana servono Assistenze ed Extra? (Standby e Programmati ci sono solo nelle settimane senza Ascoli.)"),
-      el("div", { class: "guida-scelta" },
-        el("button", { type: "button", class: "btn btn-secondary btn-grande", onclick: () => { stato.servizi = false; stato.passo = P.volontari; disegna(); } }, "No, nessuno"),
-        el("button", { type: "button", class: "btn btn-primary btn-grande", onclick: () => { stato.servizi = true; disegna(); } }, "Sì")),
-      el("div", { class: "guida-azioni" },
-        el("button", { type: "button", class: "btn btn-ghost", onclick: () => { stato.passo = null; disegna(); } }, "Annulla"))];
-  }
   const moduli = [];
   if (attive.includes(STANDBY)) moduli.push(grigliaStandby(s));
   if (attive.includes(PROGRAMMATI)) moduli.push(grigliaProgrammati(s));
-  if (!conStandby) moduli.push(el("p", { class: "muted" }, "In questa settimana (con Ascoli) Standby e Programmati non ci sono."));
   const nomeExtra = el("input", { required: true, maxlength: 100, placeholder: "Es. Assistenza partita" });
   const quandoExtra = el("select", {}, s.giorni.map((g) => opzione(g, giorno(g))));
   const ore = (valore) => el("select", {}, Array.from({ length: 24 }, (_, h) => opzione(String(h), `${h}:00`, String(valore))));
@@ -402,7 +389,10 @@ function passoServizi() {
       campo("Autisti", autisti), campo("Soccorritori", soccorritori),
       el("button", { type: "submit", class: "btn btn-secondary" }, "Aggiungi")));
   return [titolo,
-    el("p", {}, "Indica i servizi richiesti questa settimana: le modifiche si salvano subito. Quando hai finito premi Avanti."),
+    el("p", {}, conStandby
+      ? "Indica i servizi richiesti questa settimana: le modifiche si salvano subito. Quando hai finito premi Avanti."
+      : "Questa settimana ha Ascoli: Standby e Programmati non ci sono. Se servono, aggiungi Assistenze ed Extra, "
+        + "poi premi Avanti."),
     ...moduli,
     tabellaServizi(righe.filter((r) => r.tipo === "extra"), true),
     pulsantiPasso()];
@@ -717,7 +707,7 @@ function disegna() {
 export async function mostra(root, parametro) {
   const data = mondayOf(/^\d{4}-\d{2}-\d{2}$/.test(parametro || "") ? parametro : todayISO());
   if (stato.generando) { stato.root = root; disegna(); return; }  // non si cambia settimana durante la generazione
-  if (data !== stato.data) Object.assign(stato, { passo: null, servizi: null });
+  if (data !== stato.data) Object.assign(stato, { passo: null });
   Object.assign(stato, { root, data });
   root.replaceChildren(el("p", { class: "muted" }, "Caricamento…"));
   try {
