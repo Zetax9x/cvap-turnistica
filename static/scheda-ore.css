@@ -85,6 +85,11 @@
 .so-turno-ore { font-size: 1.1rem; margin-right: auto; font-weight: 700; }
 .so-turno-form { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; width: 100%; margin-top: 8px; }
 .so-turno-form select { width: auto; min-width: 9em; }
+.so-nota-turno { flex: 1 1 100%; display: block; font-size: .8rem; }
+.so-extra-turno { flex: 1 1 100%; display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.so-extra-turno input { width: 24px; min-height: 24px; height: 24px; }
+.so-nota-testo { flex: 1 1 100%; display: block; font-size: .85rem; font-weight: 400; color: var(--so-tenue); }
+.so-nota-programma { margin: 4px 0 8px; font-size: .9rem; }
 .so-ora { display: block; font-size: .8rem; }
 .so-ora input { width: 5.5em; text-align: center; font-size: 1rem; }
 .so-extra-box { margin-top: 12px; padding: 12px; background: white; border: 1px dashed var(--so-bordo); border-radius: var(--so-raggio); }
@@ -98,8 +103,22 @@
 .so-da-vedere button { width: 100%; display: flex; justify-content: space-between; align-items: center; text-align: left; }
 .so-domanda .so-errore:not([hidden]) { margin: 8px 0 0; }
 .so-domanda .so-etichetta { margin: 6px 0; }
-@media (min-width: 761px) {
-  .so-avanza, .so-settimana-nav, .so-striscia, .so-domanda, .so-extra-box, .so-passi, .so-testa-scheda + p { max-width: 640px; }
+/* computer: a sinistra avanzamento e striscia della settimana, a destra il giorno */
+@media (min-width: 900px) {
+  .so-pagina #so-app:has(.so-schermata-box) { display: grid; grid-template-columns: minmax(340px, 400px) minmax(0, 1fr); column-gap: 32px; grid-template-rows: auto auto auto 1fr auto; align-items: start; }
+  #so-app:has(.so-schermata-box) > .so-testa-scheda { grid-column: 1 / -1; grid-row: 1; }
+  #so-app:has(.so-schermata-box) > .so-testa-scheda + p { grid-column: 1 / -1; grid-row: 2; }
+  #so-app:has(.so-schermata-box) > .so-avanzamento-box { grid-column: 1; grid-row: 3; }
+  #so-app:has(.so-schermata-box) > .so-striscia-box { grid-column: 1; grid-row: 4; }
+  #so-app:has(.so-schermata-box) > .so-schermata-box { grid-column: 2; grid-row: 3 / span 2; min-width: 0; max-width: 760px; }
+  #so-app:has(.so-schermata-box) > .so-totali { grid-column: 1 / -1; grid-row: 5; }
+  .so-domanda { padding: 24px; }
+  .so-pagina button.so-cella { min-height: 64px; }
+  .so-azioni-giorno { grid-template-columns: 1fr 1fr; }
+  .so-azioni-giorno .so-grande:first-child { grid-column: 1 / -1; }
+}
+@media (hover: hover) {
+  .so-pagina button:not(:disabled):hover { filter: brightness(.95); }
 }
 
 /* totali sempre in vista */

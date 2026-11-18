@@ -6,13 +6,12 @@ const root = document.getElementById("so-app");
 const messaggioStato = document.getElementById("so-stato");
 const MESI = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre",
   "Novembre", "Dicembre"];
-const GIORNI = ["Dom", "Lun", "Mar", "Mer", "Gio", "Ven", "Sab"];
 const COLONNE = [["ascoli", "Ascoli"], ["acquasanta", "Acquasanta"], ["venarotta", "Venarotta"],
   ["programmati", "Programmati"], ["assistenze", "Assistenze"], ["viaggi_ast", "Viaggi Ast"], ["viaggi", "Viaggi"]];
 const STATI_MESE = { non_aperta: "Non ancora aperta", bozza: "In revisione", confermata: "Confermata" };
 const MAX_NOTE_GIORNO = 200, MAX_NOTE_FINALI = 1000, MAX_CAUSALE = 100;
 
-const sessione = { mese: null, scheda: null, vista: null };
+const sessione = { mese: null, scheda: null, vista: null, giorno: null, visto: 1 };  // giorno: numero o "riepilogo"
 let coda = Promise.resolve();  // i salvataggi vanno al server uno alla volta, nell'ordine in cui si fanno
 let timerStato = 0;
 
@@ -31,7 +30,6 @@ function giornoSettimana(giorno) {
   return new Date(Date.UTC(anno, mese - 1, giorno)).getUTCDay();
 }
 const eWeekend = (giorno) => [0, 6].includes(giornoSettimana(giorno));
-const etichettaGiorno = (giorno) => `${GIORNI[giornoSettimana(giorno)]} ${giorno}`;
 
 function testoErrore(dati, codice) {
   const dettaglio = dati && dati.detail;
@@ -163,6 +161,42 @@ function salvaControllati() {
 const eControllato = (g) => controllati.has(g.giorno) || Boolean(g.corretto);
 const daRivedere = (g) => Boolean(g.da_rivedere || g.turni_cambiati);
 
+// ---------------------------------------------------------------- note dei turni
+// Il programma salva una sola nota per giorno: le note dei turni ci stanno dentro come «Ascoli: testo», separate da «; ».
+// Le altre voci (Malattia, Standby, nomi delle assistenze...) le scrive il programma e restano com'sono.
+
+const SEPARATORE_NOTE = "; ";
+const prefissoNota = (nome) => `${nome}: `;
+
+function leggiNote(note) {
+  const turni = {}, altre = [];
+  for (const parte of note.split(SEPARATORE_NOTE).map((p) => p.trim()).filter(Boolean)) {
+    const colonna = COLONNE.find(([, nome]) => parte.startsWith(prefissoNota(nome)));
+    if (colonna) turni[colonna[0]] = parte.slice(prefissoNota(colonna[1]).length); else altre.push(parte);
+  }
+  return { turni, altre };
+}
+
+// Un turno extra (oltre a quelli che escono il venerdì) si segna con la parola «Extra» all'inizio della nota del turno.
+const MARCA_EXTRA = "Extra";
+function separaExtra(nota) {
+  if (nota === MARCA_EXTRA) return { extra: true, testo: "" };
+  if (nota.startsWith(`${MARCA_EXTRA} - `)) return { extra: true, testo: nota.slice(MARCA_EXTRA.length + 3) };
+  return { extra: false, testo: nota };
+}
+function uniscExtra(extra, testo) {
+  const pulito = testo.trim();
+  return extra ? (pulito ? `${MARCA_EXTRA} - ${pulito}` : MARCA_EXTRA) : pulito;
+}
+
+/** La nota del giorno riscritta con la nota di un solo turno cambiata (testo vuoto = nota tolta). */
+function componiNote(note, colonna, testo) {
+  const { turni, altre } = leggiNote(note);
+  const pulito = (testo || "").replace(/;/g, ",").trim();
+  if (pulito) turni[colonna] = pulito; else delete turni[colonna];
+  return [...altre, ...COLONNE.filter(([c]) => turni[c]).map(([c, nome]) => prefissoNota(nome) + turni[c])].join(SEPARATORE_NOTE);
+}
+
 /** L'ultimo giorno da controllare: oggi nel mese in corso, altrimenti tutto il mese. */
 function ultimoDaControllare() {
   const oggi = new Date(), [anno, mese] = sessione.mese.split("-").map(Number);
@@ -242,15 +276,20 @@ function formTurno(giorno, colonna, chiudi) {
   const scelta = colonna ? null : el("select", { "aria-label": "Tipo di turno" },
     COLONNE.filter(([c]) => !g.colonne[c]).map(([c, nome]) => el("option", { value: c }, nome)));
   const inizio = campoOra("Inizio", attuale ? attuale[0] : ""), fine = campoOra("Fine", attuale ? attuale[1] : "");
+  const prima = separaExtra(colonna ? (leggiNote(g.note).turni[colonna] || "") : "");
+  const nota = el("input", { type: "text", autocomplete: "off", maxlength: MAX_NOTE_GIORNO, placeholder: "per esempio: ritardo per traffico", value: prima.testo });
+  const extra = el("input", { type: "checkbox", checked: prima.extra });
   const salva = el("button", { type: "submit", class: "so-piccolo" }, "Salva");
   return el("form", { class: "so-turno-form", onsubmit: async (e) => {
     e.preventDefault();
     if (!inizio.input.value.trim() || !fine.input.value.trim()) { scrivi(erroreCorrente, "Scrivi l'ora di inizio e di fine, per esempio 8 oppure 8:30."); return; }
     salva.disabled = true;
-    const tipo = colonna || scelta.value;
-    const colonne = { ...corpoDa(datiGiorno(giorno)).colonne, [tipo]: [inizio.input.value.trim(), fine.input.value.trim()] };
-    if (!await invia(giorno, { colonne })) salva.disabled = false;
-  } }, ...(scelta ? [scelta] : []), inizio.campo, fine.campo, salva,
+    const tipo = colonna || scelta.value, corrente = datiGiorno(giorno);
+    const colonne = { ...corpoDa(corrente).colonne, [tipo]: [inizio.input.value.trim(), fine.input.value.trim()] };
+    if (!await invia(giorno, { colonne, note: componiNote(corrente.note, tipo, uniscExtra(extra.checked, nota.value)) })) salva.disabled = false;
+  } }, ...(scelta ? [scelta] : []), inizio.campo, fine.campo,
+  el("label", { class: "so-extra-turno" }, extra, " Si tratta di un extra? (Oltre i turni che escono il venerdì)"),
+  el("label", { class: "so-nota-turno" }, "Nota del turno (se serve)", nota), salva,
   el("button", { type: "button", class: "so-secondario so-piccolo", onclick: chiudi }, "Annulla"));
 }
 
@@ -262,29 +301,29 @@ function voceTurno(giorno, colonna, nome, coppia) {
     el("button", { type: "button", class: "so-secondario so-piccolo", "aria-label": `Modifica ${nome}`,
       onclick: () => li.replaceChildren(formTurno(giorno, colonna, vista)) }, "Modifica"),
     el("button", { type: "button", class: "so-secondario so-piccolo", "aria-label": `Elimina ${nome}`,
-      onclick: () => invia(giorno, { colonne: { ...corpoDa(datiGiorno(giorno)).colonne, [colonna]: null } }) }, "Elimina"));
+      onclick: () => { const corrente = datiGiorno(giorno);
+        invia(giorno, { colonne: { ...corpoDa(corrente).colonne, [colonna]: null }, note: componiNote(corrente.note, colonna, "") }); } }, "Elimina"),
+    ...(leggiNote(datiGiorno(giorno).note).turni[colonna] ? [el("span", { class: "so-nota-testo" }, leggiNote(datiGiorno(giorno).note).turni[colonna])] : []));
   vista();
   return li;
 }
 
-/** Nota del giorno e disponibilità aggiuntiva (sempre visibili): un solo modulo con un solo pulsante. */
+/** Disponibilità aggiuntiva del giorno (sempre visibile): un solo modulo con un solo pulsante. */
 function formExtra(giorno, bloccata) {
   const g = datiGiorno(giorno), d = g.disponibilita;
-  const nota = el("input", { type: "text", autocomplete: "off", maxlength: MAX_NOTE_GIORNO, value: g.note, disabled: bloccata });
   const dal = campoOra("Dalle", d ? formatta(d.inizio) : ""), al = campoOra("Alle", d ? formatta(d.fine) : "");
   const motivo = el("input", { type: "text", autocomplete: "off", maxlength: MAX_CAUSALE, value: d ? d.causale : "", disabled: bloccata });
   for (const c of [dal.input, al.input]) c.disabled = bloccata;
-  const salva = el("button", { type: "submit", class: "so-secondario so-piccolo" }, "Salva nota e disponibilità");
+  const salva = el("button", { type: "submit", class: "so-secondario so-piccolo" }, "Salva disponibilità");
   return el("form", { class: "so-extra", onsubmit: async (e) => {
     e.preventDefault();
     const disp = [dal.input.value.trim(), al.input.value.trim(), motivo.value.trim()];
     if (disp.some(Boolean) && (!disp[0] || !disp[1])) { scrivi(erroreCorrente, "Per la disponibilità aggiuntiva scrivi sia da che ora a che ora."); return; }
     salva.disabled = true;
-    const ok = await invia(giorno, { note: nota.value.trim(), disponibilita: disp.some(Boolean) ? { inizio: disp[0], fine: disp[1], causale: disp[2] } : null });
+    const ok = await invia(giorno, { disponibilita: disp.some(Boolean) ? { inizio: disp[0], fine: disp[1], causale: disp[2] } : null });
     if (!ok) salva.disabled = false;
   } },
-  el("label", { class: "so-nota" }, "Nota del giorno", nota),
-  el("fieldset", { class: "so-disp" }, el("legend", {}, "Disponibilità aggiuntiva (oltre al turno)"), dal.campo, al.campo,
+  el("fieldset", { class: "so-disp" }, el("legend", {}, "Disponibilità aggiuntiva (Volontariato)"), dal.campo, al.campo,
     el("label", { class: "so-motivo" }, "Motivo", motivo)),
   ...(bloccata ? [] : [salva]));
 }
@@ -303,8 +342,10 @@ function elencoTurni(g) {
   const turni = COLONNE.filter(([c]) => g.colonne[c]);
   if (modo === "correggi") return el("ul", { class: "so-turni" }, turni.map(([c, nome]) => voceTurno(g.giorno, c, nome, g.colonne[c])));
   if (!turni.length) return el("p", { class: "so-tenue" }, g.ferie ? "Hai segnato questo giorno come ferie." : "Il programma non ha trovato turni per questo giorno.");
+  const note = leggiNote(g.note).turni;
   return el("div", { class: "so-grandi" }, turni.map(([c, nome]) => el("div", {},
-    el("span", { class: `so-chip so-${c}` }, nome), ` ${formatta(g.colonne[c][0])} – ${formatta(g.colonne[c][1])}`)));
+    el("span", { class: `so-chip so-${c}` }, nome), ` ${formatta(g.colonne[c][0])} – ${formatta(g.colonne[c][1])}`,
+    ...(note[c] ? [el("small", { class: "so-nota-testo" }, note[c])] : []))));
 }
 
 function azioniGiorno(g) {
@@ -326,7 +367,9 @@ function schermataGiorno() {
   return [el("section", { class: `so-domanda${eWeekend(giorno) ? " so-weekend" : ""}`, "aria-label": titoloGiorno(giorno) },
     el("h2", { tabindex: -1 }, titoloGiorno(giorno)),
     ...(bloccata ? [] : [el("p", { class: "so-tenue" }, "Il programma dice che hai fatto:")]),
-    elencoTurni(g), ...segnaliGiorno(g, bloccata),
+    elencoTurni(g),
+    ...(leggiNote(g.note).altre.length ? [el("p", { class: "so-tenue so-nota-programma" }, `Note del programma: ${leggiNote(g.note).altre.join("; ")}`)] : []),
+    ...segnaliGiorno(g, bloccata),
     ...(modo === "aggiungi" && !bloccata ? [formTurno(giorno, null, () => { modo = null; aggiorna(); })] : []),
     ...(bloccata ? [] : [azioniGiorno(g)]), erroreCorrente),
   el("section", { class: "so-extra-box" }, formExtra(giorno, bloccata)),
