@@ -7,6 +7,7 @@ non si aggira ricaricando la pagina. Questo modulo non decide chi può fare cosa
 import hashlib
 import hmac
 import json
+import re
 import secrets
 import sqlite3
 import threading
@@ -14,9 +15,8 @@ from datetime import datetime, timedelta
 
 TENTATIVI_MAX = 5
 BLOCCO_MINUTI = 15
-CODICE_MIN = 6
-ALFABETO_CODICI = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # senza I, O, 0, 1: si leggono e si dettano senza dubbi
-LUNGHEZZA_CODICE_GENERATO = 8
+LUNGHEZZA_PIN = 6   # il codice personale è un PIN: esattamente 6 cifre, da 0 a 9
+_FORMATO_PIN = re.compile(rf"[0-9]{{{LUNGHEZZA_PIN}}}")
 HASH_CONTEMPORANEI = 4  # scrypt usa 16 MiB: richieste in parallelo non devono occupare la memoria del server
 _SEMAFORO_HASH = threading.BoundedSemaphore(HASH_CONTEMPORANEI)
 
@@ -28,7 +28,7 @@ def _iso(quando: datetime) -> str:
 # --- codici ------------------------------------------------------------------------------
 
 def genera_codice() -> str:
-    return "".join(secrets.choice(ALFABETO_CODICI) for _ in range(LUNGHEZZA_CODICE_GENERATO))
+    return "".join(secrets.choice("0123456789") for _ in range(LUNGHEZZA_PIN))
 
 
 def _hash(codice: str, sale: str) -> str:
@@ -37,8 +37,8 @@ def _hash(codice: str, sale: str) -> str:
 
 
 def imposta_codice(conn: sqlite3.Connection, persona_id: int, codice: str, adesso: datetime | None = None) -> None:
-    if len(codice) < CODICE_MIN:
-        raise ValueError(f"Il codice deve avere almeno {CODICE_MIN} caratteri")
+    if not _FORMATO_PIN.fullmatch(codice):
+        raise ValueError(f"Il PIN deve avere esattamente {LUNGHEZZA_PIN} cifre, solo numeri")
     sale = secrets.token_hex(16)
     with conn:
         conn.execute("INSERT OR REPLACE INTO codici_scheda(persona_id, hash, sale, aggiornato_il, fallimenti, "

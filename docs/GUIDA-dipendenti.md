@@ -389,7 +389,7 @@ No, il programma non lo fa mai.
 
 Il programma prepara da solo la tua scheda ore mensile, nello stesso modello del riepilogo mensile (una riga per giorno, con Ascoli, Acquasanta, Venarotta, Programmati, Assistenze, Viaggi, Ferie, Note e Disponibilità aggiuntive), partendo dai turni che hai davvero svolto: i cambi, le cessioni e gli scambi sono già tenuti in conto.
 
-**Come si apre.** Vai alla pagina `/scheda-ore` del programma, scegli il tuo nome e scrivi il **codice personale** che ti hanno dato i responsabili. Dopo 5 codici sbagliati la pagina si blocca per 15 minuti. Il codice è tuo: non darlo ad altri.
+**Come si apre.** Vai alla pagina `/scheda-ore` del programma, scegli il tuo nome e scrivi il tuo **PIN**: sono 6 cifre che ti hanno dato i responsabili. Dopo 5 PIN sbagliati la pagina si blocca per 15 minuti. Il PIN è tuo: non darlo ad altri.
 
 **Cosa trovi.** Puoi aprire il mese in corso e i dodici precedenti. I turni sono già compilati: gli Standby compaiono nella colonna Programmati con la nota "Standby", le Assistenze ed Extra nella colonna Assistenze con il nome della richiesta, la malattia nelle note. Le colonne Viaggi e Disponibilità aggiuntive le compili tu.
 

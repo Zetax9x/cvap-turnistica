@@ -75,7 +75,7 @@ function scrivi(box, testo) { box.hidden = !testo; box.textContent = testo || ""
 async function vistaAccesso(messaggio = "") {
   const errore = boxErrore();
   const nome = el("select", { id: "so-nome", required: true });
-  const codice = el("input", { id: "so-codice", type: "password", autocomplete: "off", required: true, maxlength: 100 });
+  const codice = el("input", { id: "so-codice", type: "password", inputmode: "numeric", pattern: "[0-9]*", autocomplete: "off", required: true, maxlength: 6 });
   const entra = el("button", { type: "submit" }, "Entra");
   const form = el("form", { class: "so-stretto", onsubmit: async (e) => {
     e.preventDefault();
@@ -91,10 +91,10 @@ async function vistaAccesso(messaggio = "") {
     }
   } },
   el("label", { class: "so-campo", for: "so-nome" }, el("span", {}, "Il tuo nome"), nome),
-  el("label", { class: "so-campo", for: "so-codice" }, el("span", {}, "Il tuo codice personale"), codice),
+  el("label", { class: "so-campo", for: "so-codice" }, el("span", {}, "Il tuo PIN (6 cifre)"), codice),
   el("div", { class: "so-azioni" }, entra), errore);
   mostra("accesso", el("h2", {}, "Apri la tua scheda"),
-    el("p", { class: "so-tenue so-stretto" }, "Scegli il tuo nome e scrivi il codice che ti hanno dato i responsabili."), form);
+    el("p", { class: "so-tenue so-stretto" }, "Scegli il tuo nome e scrivi il PIN di 6 cifre che ti hanno dato i responsabili."), form);
   try {
     const dipendenti = await chiama("GET", "/dipendenti");
     nome.append(el("option", { value: "" }, "Scegli il tuo nome"), ...dipendenti.map((d) => el("option", { value: d.id }, d.nome)));
@@ -108,7 +108,7 @@ async function esci() {
   await vistaAccesso();
 }
 
-function sessioneScaduta() { return vistaAccesso("La sessione è scaduta: rientra con il tuo codice."); }
+function sessioneScaduta() { return vistaAccesso("La sessione è scaduta: rientra con il tuo PIN."); }
 
 // ---------------------------------------------------------------- mesi
 
