@@ -92,8 +92,11 @@ export const api = {
   creaPersona: (dati) => richiesta("POST", "/persone", dati),
   aggiornaPersona: (id, dati) => richiesta("PUT", `/persone/${enc(id)}`, dati),
   eliminaPersona: (id) => richiesta("DELETE", `/persone/${enc(id)}`),
-  impostaParametri: (id, maxOre) =>
-    richiesta("PUT", `/persone/${enc(id)}/parametri`, { max_ore_settimana: maxOre }),
+  // `indisponibilitaLibera` assente (undefined): resta com'è
+  impostaParametri: (id, maxOre, indisponibilitaLibera) =>
+    richiesta("PUT", `/persone/${enc(id)}/parametri`,
+      indisponibilitaLibera === undefined ? { max_ore_settimana: maxOre }
+        : { max_ore_settimana: maxOre, indisponibilita_libera: indisponibilitaLibera }),
 
   divieti: () => richiesta("GET", "/divieti"),
   creaDivieto: (dati) => richiesta("POST", "/divieti", dati),
