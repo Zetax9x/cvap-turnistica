@@ -43,6 +43,12 @@ def chiave_scheda(segreto: str) -> bytes:
     return hmac.new(segreto.encode(), b"scheda-ore", hashlib.sha256).digest()
 
 
+def chiave_persona(chiave: bytes, impronta: str) -> bytes:
+    """La chiave dei cookie di una persona: dipende dal suo codice attuale (`db_schede_ore.impronta_codice`), quindi
+    azzerare o cambiare il codice chiude subito le sessioni aperte."""
+    return hmac.new(chiave, impronta.encode(), hashlib.sha256).digest()
+
+
 def _firma(chiave: bytes, corpo: str) -> str:
     return hmac.new(chiave, corpo.encode(), hashlib.sha256).hexdigest()
 
@@ -55,7 +61,7 @@ def crea_cookie(chiave: bytes, persona_id: int, adesso: float) -> str:
 def persona_dal_cookie(chiave: bytes, valore: str | None, adesso: float) -> int | None:
     """La persona del cookie, o None se è assente, manomesso o scaduto."""
     parti = (valore or "").split(".")
-    if len(parti) != 3 or not (parti[0].isdigit() and parti[1].isdigit()):
+    if len(parti) != 3 or not (parti[0].isdigit() and parti[1].isdigit()) or not parti[2].isascii():
         return None
     if not hmac.compare_digest(parti[2], _firma(chiave, f"{parti[0]}.{parti[1]}")):
         return None
@@ -102,8 +108,16 @@ def crea_router(connessione: Callable) -> APIRouter:
             chiavi["scheda"] = chiave_scheda(db.segreto_sessione(conn))
         return chiavi["scheda"]
 
+    def persona_dal_cookie_attuale(conn: sqlite3.Connection, valore: str | None) -> int | None:
+        """La persona del cookie, solo se il suo codice è ancora quello con cui è entrata."""
+        grezzo = (valore or "").split(".")[0]
+        impronta = db_schede_ore.impronta_codice(conn, int(grezzo)) if grezzo.isdigit() and len(grezzo) <= 12 else None
+        if impronta is None:
+            return None
+        return persona_dal_cookie(chiave_persona(chiave_di(conn), impronta), valore, time.time())
+
     def persona_corrente(request: Request, conn: Conn) -> dict:
-        pid = persona_dal_cookie(chiave_di(conn), request.cookies.get(COOKIE), time.time())
+        pid = persona_dal_cookie_attuale(conn, request.cookies.get(COOKIE))
         p = _dipendente_attivo(conn, pid)
         if p is None:
             raise HTTPException(401, ACCESSO_RICHIESTO)
@@ -127,7 +141,7 @@ def crea_router(connessione: Callable) -> APIRouter:
                 if p["tipo"] == "dipendente" and p["attivo"]]
 
     @router.post("/accesso")
-    def accesso(body: AccessoIn, response: Response, conn: Conn):
+    def accesso(body: AccessoIn, request: Request, response: Response, conn: Conn):
         p = _dipendente_attivo(conn, body.persona_id)
         if p is None:
             raise HTTPException(401, NON_VALIDO)
@@ -139,8 +153,11 @@ def crea_router(connessione: Callable) -> APIRouter:
             raise HTTPException(429, f"Troppi tentativi: riprova tra {minuti} minuti")
         if stato != "ok":
             raise HTTPException(401, NON_VALIDO)
-        response.set_cookie(COOKIE, crea_cookie(chiave_di(conn), p["id"], time.time()), max_age=DURATA_COOKIE_S,
-                            path=PERCORSO_COOKIE, httponly=True, samesite="strict")
+        https = request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
+        cookie = crea_cookie(chiave_persona(chiave_di(conn), db_schede_ore.impronta_codice(conn, p["id"]) or ""),
+                             p["id"], time.time())
+        response.set_cookie(COOKIE, cookie, max_age=DURATA_COOKIE_S, path=PERCORSO_COOKIE, httponly=True,
+                            samesite="strict", secure=https)
         return {"persona_id": p["id"], "nome": p["nome"]}
 
     @router.post("/uscita")

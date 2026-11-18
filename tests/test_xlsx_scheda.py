@@ -71,6 +71,18 @@ def test_mezzanotte_e_ventiquattro_ore():
     assert celle["H19"] == 14 and celle["I19"] == 0           # fine a mezzanotte
 
 
+def test_ventiquattro_si_scrive_zero_cosi_il_modello_conta_come_la_pagina():
+    # nel modello 24 diventa 24*(1-23/24) in virgola mobile: scritto come 0 il confronto tra inizio e fine è esatto
+    corr = {6: valida_correzione({"colonne": {"ascoli": ["0", "24"], "venarotta": ["24", "0"], "acquasanta": ["8", "24"]}},
+                                 "2026-11", 6)}
+    sc = scheda(correzioni=corr)
+    celle, _, _ = leggi(compila_scheda(sc))
+    assert celle["D20"] == 0 and celle["E20"] == 0               # 0–24: 24 ore
+    assert celle["H20"] == 0 and celle["I20"] == 0               # 24–0: 24 ore
+    assert celle["F20"] == 8 and celle["G20"] == 0               # 8–24: 16 ore
+    assert sc["totali"]["ore_postazioni"] == 24 + 24 + 16
+
+
 def test_intestazione_anno_nome_mese():
     celle, _, _ = leggi(compila_scheda(scheda()))
     assert celle["B2"] == 2026 and celle["G3"] == "Mario Rossi" and celle["O3"] == "NOVEMBRE"

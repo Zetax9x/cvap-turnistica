@@ -9,6 +9,7 @@ import hmac
 import json
 import secrets
 import sqlite3
+import threading
 from datetime import datetime, timedelta
 
 TENTATIVI_MAX = 5
@@ -16,6 +17,8 @@ BLOCCO_MINUTI = 15
 CODICE_MIN = 6
 ALFABETO_CODICI = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # senza I, O, 0, 1: si leggono e si dettano senza dubbi
 LUNGHEZZA_CODICE_GENERATO = 8
+HASH_CONTEMPORANEI = 4  # scrypt usa 16 MiB: richieste in parallelo non devono occupare la memoria del server
+_SEMAFORO_HASH = threading.BoundedSemaphore(HASH_CONTEMPORANEI)
 
 
 def _iso(quando: datetime) -> str:
@@ -29,7 +32,8 @@ def genera_codice() -> str:
 
 
 def _hash(codice: str, sale: str) -> str:
-    return hashlib.scrypt(codice.encode(), salt=bytes.fromhex(sale), n=2**14, r=8, p=1).hex()
+    with _SEMAFORO_HASH:
+        return hashlib.scrypt(codice.encode(), salt=bytes.fromhex(sale), n=2**14, r=8, p=1).hex()
 
 
 def imposta_codice(conn: sqlite3.Connection, persona_id: int, codice: str, adesso: datetime | None = None) -> None:
@@ -52,27 +56,40 @@ def ha_codice(conn: sqlite3.Connection, persona_id: int) -> bool:
     return conn.execute("SELECT 1 AS si FROM codici_scheda WHERE persona_id = ?", (persona_id,)).fetchone() is not None
 
 
+def impronta_codice(conn: sqlite3.Connection, persona_id: int) -> str | None:
+    """L'hash del codice attuale (None senza codice): cambia a ogni nuovo codice, anche uguale al vecchio, quindi
+    serve a chiudere le sessioni aperte con un codice che non vale più."""
+    r = conn.execute("SELECT hash FROM codici_scheda WHERE persona_id = ?", (persona_id,)).fetchone()
+    return r["hash"] if r else None
+
+
 def verifica_codice(conn: sqlite3.Connection, persona_id: int, codice: str,
                     adesso: datetime | None = None) -> tuple[str, datetime | None]:
-    """("ok" | "errato" | "bloccato" | "senza_codice", fine del blocco). Conta gli errori e blocca al quinto."""
+    """("ok" | "errato" | "bloccato" | "senza_codice", fine del blocco).
+
+    Il tentativo si conta con un'unica istruzione PRIMA di calcolare l'hash, e al quinto il blocco scatta nella stessa
+    istruzione: richieste in parallelo non guadagnano tentativi. Un codice giusto azzera il conto e il blocco."""
     adesso = adesso or datetime.now()
-    r = conn.execute("SELECT hash, sale, fallimenti, bloccato_fino FROM codici_scheda WHERE persona_id = ?",
-                     (persona_id,)).fetchone()
+    r = conn.execute("SELECT hash, sale FROM codici_scheda WHERE persona_id = ?", (persona_id,)).fetchone()
     if r is None:
         return "senza_codice", None
-    fino = datetime.fromisoformat(r["bloccato_fino"]) if r["bloccato_fino"] else None
-    if fino and adesso < fino:
-        return "bloccato", fino
+    fine_blocco = _iso(adesso + timedelta(minutes=BLOCCO_MINUTI))
+    with conn:
+        cur = conn.execute(
+            "UPDATE codici_scheda SET fallimenti = CASE WHEN fallimenti + 1 >= ? THEN 0 ELSE fallimenti + 1 END, "
+            "bloccato_fino = CASE WHEN fallimenti + 1 >= ? THEN ? ELSE NULL END "
+            "WHERE persona_id = ? AND (bloccato_fino IS NULL OR bloccato_fino <= ?)",
+            (TENTATIVI_MAX, TENTATIVI_MAX, fine_blocco, persona_id, _iso(adesso)))
+    if cur.rowcount == 0:
+        bloccato = conn.execute("SELECT bloccato_fino FROM codici_scheda WHERE persona_id = ?", (persona_id,)).fetchone()
+        if bloccato is None:                       # il codice è stato azzerato nel frattempo
+            return "senza_codice", None
+        return "bloccato", datetime.fromisoformat(bloccato["bloccato_fino"])
     if hmac.compare_digest(_hash(codice, r["sale"]), r["hash"]):
         with conn:
             conn.execute("UPDATE codici_scheda SET fallimenti = 0, bloccato_fino = NULL WHERE persona_id = ?",
                          (persona_id,))
         return "ok", None
-    fallimenti = r["fallimenti"] + 1
-    blocco = _iso(adesso + timedelta(minutes=BLOCCO_MINUTI)) if fallimenti >= TENTATIVI_MAX else None
-    with conn:
-        conn.execute("UPDATE codici_scheda SET fallimenti = ?, bloccato_fino = ? WHERE persona_id = ?",
-                     (0 if blocco else fallimenti, blocco, persona_id))
     return "errato", None
 
 

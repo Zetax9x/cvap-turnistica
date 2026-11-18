@@ -46,6 +46,9 @@ def _num(valore: float) -> str:
 
 
 def _orario(ore: float) -> str:
+    """24 si scrive 0 (la stessa ora): la formula del modello converte 24 in 24*(1-23/24), che in virgola mobile
+    non è uguale a 0 e darebbe ore diverse da quelle della pagina."""
+    ore = ore % 24
     return _num(ore) if float(ore).is_integer() else repr(round(ore / 24, 12))
 
 

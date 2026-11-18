@@ -1,4 +1,6 @@
 """Dati della scheda ore: codici personali con blocco, schede, correzioni e conferma (cvap/db_schede_ore.py)."""
+import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
 import pytest
@@ -191,3 +193,36 @@ def test_elimina_persona_toglie_codice_scheda_e_correzioni(conn, mario):
     assert db.elimina_persona(conn, mario) is True
     for tabella in ("codici_scheda", "schede_ore", "schede_ore_giorni"):
         assert conn.execute(f"SELECT COUNT(*) AS n FROM {tabella}").fetchone()["n"] == 0
+
+
+def test_richieste_in_parallelo_non_aggirano_il_blocco(tmp_path):
+    # ogni richiesta ha la sua connessione: il tentativo si conta con un'unica istruzione, prima di calcolare l'hash
+    percorso = str(tmp_path / "parallelo.db")
+    c = db.connetti(percorso)
+    pid = db.crea_persona(c, "Mario Rossi", "dipendente", "autista")["id"]
+    s.imposta_codice(c, pid, "codice1", ADESSO)
+    c.close()
+
+    def tenta(_):
+        conn = db.apri(percorso)
+        try:
+            return s.verifica_codice(conn, pid, "sbagliato")[0]
+        except sqlite3.OperationalError:
+            return "occupato"
+        finally:
+            conn.close()
+
+    with ThreadPoolExecutor(16) as pool:
+        esiti = list(pool.map(tenta, range(16)))
+    assert esiti.count("errato") <= s.TENTATIVI_MAX, esiti
+    assert "ok" not in esiti
+
+
+def test_impronta_del_codice_cambia_a_ogni_nuovo_codice(conn, mario):
+    assert s.impronta_codice(conn, mario) is None
+    s.imposta_codice(conn, mario, "codice1", ADESSO)
+    prima = s.impronta_codice(conn, mario)
+    s.imposta_codice(conn, mario, "codice1", ADESSO)                       # lo stesso codice, sale nuovo
+    assert prima and s.impronta_codice(conn, mario) not in (None, prima)
+    s.azzera_codice(conn, mario)
+    assert s.impronta_codice(conn, mario) is None

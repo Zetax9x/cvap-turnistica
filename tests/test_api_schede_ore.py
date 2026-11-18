@@ -122,17 +122,21 @@ def test_senza_cookie_tutto_e_negato_tranne_elenco_accesso_e_uscita(client, mari
 def test_cookie_scaduto_manomesso_o_falsificato(ambiente, conn, mario):
     client, _ = ambiente
     anna = dipendente(conn, "Anna Neri", "codice2")
-    chiave = api_schede_ore.chiave_scheda(db.segreto_sessione(conn))
+    base = api_schede_ore.chiave_scheda(db.segreto_sessione(conn))
+    chiave = api_schede_ore.chiave_persona(base, db_schede_ore.impronta_codice(conn, mario))
+    chiave_anna = api_schede_ore.chiave_persona(base, db_schede_ore.impronta_codice(conn, anna))
     adesso = time.time()
     valido = api_schede_ore.crea_cookie(chiave, mario, adesso)
     scaduto = api_schede_ore.crea_cookie(chiave, mario, adesso - 7201)
     manomesso = valido[:-1] + ("0" if valido[-1] != "0" else "1")
     # il cookie di Anna con l'id di Mario al posto del suo: la firma non torna
-    falsificato = api_schede_ore.crea_cookie(chiave, anna, adesso).replace(f"{anna}.", f"{mario}.", 1)
-    for cookie, atteso in ((valido, 200), (scaduto, 401), (manomesso, 401), (falsificato, 401), ("", 401), ("a.b.c", 401)):
+    falsificato = api_schede_ore.crea_cookie(chiave_anna, anna, adesso).replace(f"{anna}.", f"{mario}.", 1)
+    for cookie, atteso in ((valido, 200), (scaduto, 401), (manomesso, 401), (falsificato, 401), ("", 401), ("a.b.c", 401),
+                           ("999999.2.abc", 401)):
         r = client.get(f"{URL}/mesi", headers={"Cookie": f"cvap_scheda={cookie}"})
         assert r.status_code == atteso, cookie
     assert api_schede_ore.persona_dal_cookie(chiave, valido, adesso) == mario
+    assert api_schede_ore.persona_dal_cookie(chiave, "1.2.è", adesso) is None         # firma non ASCII: mai un errore 500
     assert api_schede_ore.persona_dal_cookie(chiave, scaduto, adesso) is None
 
 
@@ -153,6 +157,32 @@ def test_un_dipendente_disattivato_dopo_l_accesso_perde_l_accesso(client, conn, 
     assert client.get(f"{URL}/mesi").status_code == 200
     db.aggiorna_persona(conn, mario, "Mario Rossi", "dipendente", "autista", False, None, db.INVARIATA)
     assert client.get(f"{URL}/mesi").status_code == 401
+
+
+def test_azzerare_il_codice_chiude_le_sessioni_aperte(client, conn, mario):
+    entra(client, mario)
+    assert client.get(f"{URL}/mesi").status_code == 200
+    db_schede_ore.azzera_codice(conn, mario)
+    assert client.get(f"{URL}/mesi").status_code == 401
+
+
+def test_un_nuovo_codice_chiude_le_sessioni_aperte_ma_si_puo_rientrare(client, conn, mario):
+    entra(client, mario)
+    vecchio = client.cookies.get("cvap_scheda")
+    db_schede_ore.imposta_codice(conn, mario, "nuovo222")
+    assert client.get(f"{URL}/mesi").status_code == 401
+    client.cookies.clear()
+    assert client.get(f"{URL}/mesi", headers={"Cookie": f"cvap_scheda={vecchio}"}).status_code == 401
+    assert entra(client, mario, "nuovo222").status_code == 200
+    assert client.get(f"{URL}/mesi").status_code == 200
+
+
+def test_il_cookie_e_secure_solo_su_https(client, mario):
+    http = entra(client, mario)
+    assert "secure" not in http.headers["set-cookie"].lower()
+    https = client.post(f"{URL}/accesso", json={"persona_id": mario, "codice": "codice1"},
+                        headers={"x-forwarded-proto": "https"})
+    assert "secure" in https.headers["set-cookie"].lower()
 
 
 def test_uscita_toglie_il_cookie(client, mario):
