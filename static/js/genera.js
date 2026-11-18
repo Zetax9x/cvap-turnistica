@@ -9,7 +9,7 @@ import {
 } from "./util.js";
 import { scaricaPdfServer } from "./pdf.js";
 
-const TEMPO_GENERAZIONE = 180;  // secondi
+const TEMPO_GENERAZIONE = 360;  // secondi
 const PASSI = ["Servizi", "Volontari", "Ferie e malattie", "Indisponibilità", "Riepilogo", "Generazione"];
 const P = { servizi: 0, volontari: 1, ferie: 2, indisponibilita: 3, riepilogo: 4, generazione: 5 };
 const STANDBY = "Standby";

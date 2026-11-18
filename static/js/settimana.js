@@ -25,10 +25,11 @@ const MAX_EXTRA = 20;  // persone per ruolo in una richiesta di Assistenze ed Ex
 const SCARTO_PREDEFINITO = 12;  // se il server non indica `scarto_ore_max`
 const CHIAVE_SETTIMANA = "cvap.settimana";
 const CHIAVE_TEMPO = "cvap.tempoGenerazione";
-// Su Vercel la funzione si ferma a 300 s: si lascia margine per leggere e salvare i dati
-const TEMPO_PREDEFINITO = 120;
+// Il sito gira su un VPS (6 core): nessun limite di durata della richiesta. Il server accetta fino a 600 s
+// (`tempo_max` in cvap/app.py). Su Vercel (300 s) questi valori andrebbero abbassati.
+const TEMPO_PREDEFINITO = 360;
 const TEMPO_MIN = 10;
-const TEMPO_MAX = 280;
+const TEMPO_MAX = 600;
 
 const stato = {
   root: null,
