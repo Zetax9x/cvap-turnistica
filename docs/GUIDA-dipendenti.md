@@ -140,7 +140,7 @@ Non ti vengono mai assegnati turni nei giorni di ferie o malattia, nei giorni in
 
 ### 4.5 Ascoli
 
-Ad Ascoli valgono regole in più: al massimo 3 turni a settimana a testa e mai due giorni o due notti di fila. I dettagli sono nel capitolo 7.
+Ad Ascoli valgono regole in più: al massimo 3 turni a settimana a testa e mai due turni in giorni consecutivi. I dettagli sono nel capitolo 7.
 
 ## 5. Le regole sulle ore
 
@@ -216,8 +216,9 @@ Se la connessione si interrompe, usa **Verifica esito** o **Riprendi lo stesso i
 
 - Al massimo 2 turni ad Ascoli a settimana per dipendente; anche mezzo turno conta come turno.
 - Un terzo turno solo se proprio non c'è altra soluzione; mai più di 3.
-- Mai due giorni di fila o due notti di fila ad Ascoli, anche a cavallo tra due settimane.
-- Il programma cerca di alternare giorno e notte: con due turni ad Ascoli, meglio un giorno e una notte.
+- Mai due turni ad Ascoli in giorni consecutivi (giorno e notte compresi), anche a cavallo tra due settimane.
+- Dopo una notte ad Ascoli il turno di giorno ad Ascoli viene dopo almeno 48 ore dalla fine della notte (notte il lunedì, giorno dal giovedì). Il programma la rispetta se può, altrimenti la supera pur di non lasciare un posto scoperto.
+- Il programma alterna giorno e notte: con due turni ad Ascoli, un giorno e una notte; due giorni o due notti nella stessa settimana solo se non c'è altra soluzione.
 
 ### 7.2 Standby e Programmati (settimane A)
 
@@ -373,7 +374,7 @@ No, il programma non lo fa mai.
 | Ore minime | 36 ore a settimana, ferie comprese (se il personale basta) |
 | Differenza tra colleghi | Di norma al massimo 12 ore tra chi lavora di più e chi di meno (se il personale basta) |
 | Ferie e malattia | Nessun turno; 6 ore per giorno nel conteggio; niente da recuperare |
-| Ascoli | Al massimo 2 turni (3 solo in extremis); mai 2 giorni o 2 notti di fila; alternare giorno e notte |
+| Ascoli | Al massimo 2 turni (3 solo in extremis); mai due turni in giorni consecutivi; un giorno e una notte; dopo una notte il giorno dopo 48 ore |
 | Weekend | Distribuiti in modo equo nel tempo; di norma al massimo uno a settimana |
 | Standby e Programmati | Solo nelle settimane A, quando richiesti; distribuiti in modo equo sulle settimane A di servizio; nello Standby anche giorni e notti |
 | Mezzi turni | Solo dai volontari: di giorno e nella notte di Standby (19–23 / 23–7); l'altra metà va a un dipendente |
