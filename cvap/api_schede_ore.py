@@ -20,7 +20,7 @@ from fastapi import Path as PathParam
 from pydantic import BaseModel, Field
 
 from . import db, db_schede_ore, registro, servizio_schede_ore
-from .api_comune import Id
+from .api_comune import Id, IdPath
 from .scheda_ore import MAX_NOTE_FINALI, mesi_apribili
 from .xlsx_scheda import compila_scheda, nome_file
 
@@ -78,6 +78,10 @@ class GiornoIn(BaseModel):
 
 class NoteIn(BaseModel):
     note: Annotated[str, Field(max_length=MAX_NOTE_FINALI)]
+
+
+class CodiceIn(BaseModel):
+    codice: Annotated[str, Field(min_length=db_schede_ore.CODICE_MIN, max_length=100)]
 
 
 def _dipendente_attivo(conn: sqlite3.Connection, persona_id: int | None) -> dict | None:
@@ -195,5 +199,59 @@ def crea_router(connessione: Callable) -> APIRouter:
         registro.registra(conn, "dipendente", "POST", f"{PERCORSO_COOKIE}/{mese}/conferma", 200,
                           f"{p['nome']} ha confermato la scheda ore di {mese}")
         return servizio_schede_ore.scheda_del_mese(conn, p["id"], mese)
+
+    return router
+
+
+# --- router di gestione (master) ----------------------------------------------------------
+
+def crea_router_gestione(connessione: Callable) -> APIRouter:
+    """Codici personali, elenco delle schede di un mese, download e riapertura. Dietro la password del sito:
+    chi entra con la password normale quando esiste la master non lo raggiunge (modalità semplice)."""
+    router = APIRouter(prefix="/api/schede-ore-gestione")
+    Conn = Annotated[sqlite3.Connection, Depends(connessione)]
+
+    def dipendente(conn: sqlite3.Connection, persona_id: int) -> dict:
+        p = db.get_persona(conn, persona_id)
+        if p is None or p["tipo"] != "dipendente":
+            raise HTTPException(404, "Dipendente non trovato")
+        return p
+
+    @router.put("/codici/{persona_id}", status_code=204)
+    def imposta_codice(persona_id: IdPath, body: CodiceIn, conn: Conn):
+        db_schede_ore.imposta_codice(conn, dipendente(conn, persona_id)["id"], body.codice)
+        return Response(status_code=204)
+
+    @router.delete("/codici/{persona_id}", status_code=204)
+    def azzera_codice(persona_id: IdPath, conn: Conn):
+        db_schede_ore.azzera_codice(conn, dipendente(conn, persona_id)["id"])
+        return Response(status_code=204)
+
+    @router.post("/codici/{persona_id}/genera")
+    def genera_codice(persona_id: IdPath, conn: Conn):
+        """Il codice nuovo, che questa risposta mostra una sola volta."""
+        codice = db_schede_ore.genera_codice()
+        db_schede_ore.imposta_codice(conn, dipendente(conn, persona_id)["id"], codice)
+        return {"codice": codice}
+
+    @router.get("/{mese}/{persona_id}.xlsx")
+    def scarica(mese: Mese, persona_id: IdPath, conn: Conn):
+        dipendente(conn, persona_id)
+        scheda = servizio_schede_ore.scheda_del_mese(conn, persona_id, mese)
+        if scheda["stato"] != "confermata":
+            raise HTTPException(409, "La scheda non è ancora confermata")
+        return Response(compila_scheda(scheda), media_type=XLSX, headers={
+            "Content-Disposition": f'attachment; filename="{nome_file(scheda)}"', "Cache-Control": "no-store"})
+
+    @router.post("/{mese}/{persona_id}/riapri", status_code=204)
+    def riapri(mese: Mese, persona_id: IdPath, conn: Conn):
+        dipendente(conn, persona_id)
+        if not db_schede_ore.riapri(conn, persona_id, mese):
+            raise HTTPException(409, "La scheda non è confermata")
+        return Response(status_code=204)
+
+    @router.get("/{mese}")
+    def elenco(mese: Mese, conn: Conn):
+        return db_schede_ore.elenco_mese(conn, mese)
 
     return router

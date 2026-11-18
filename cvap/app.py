@@ -887,6 +887,7 @@ def create_app(db_path: str, password: str | None = None, postino=None,
     app.include_router(api_festivita.crea_router(connessione))
     app.include_router(api_calendari.crea_router(connessione))
     app.include_router(api_schede_ore.crea_router(connessione))
+    app.include_router(api_schede_ore.crea_router_gestione(connessione))
     app.include_router(api_storico_festivi.crea_router(connessione))
     app.include_router(api_equita.crea_router(connessione, _settimana_passata))
     def notifica_push(titolo: str, testo: str, url: str) -> None:
