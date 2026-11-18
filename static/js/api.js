@@ -103,6 +103,7 @@ export const api = {
   azzeraCodiceScheda: (id) => richiesta("DELETE", `/schede-ore-gestione/codici/${enc(id)}`),
   generaCodiceScheda: (id) => richiesta("POST", `/schede-ore-gestione/codici/${enc(id)}/genera`),
   elencoSchedeOre: (mese) => richiesta("GET", `/schede-ore-gestione/${enc(mese)}`),
+  differenzeSchedaOre: (mese, id) => richiesta("GET", `/schede-ore-gestione/${enc(mese)}/${enc(id)}/differenze`),
   riapriSchedaOre: (mese, id) => richiesta("POST", `/schede-ore-gestione/${enc(mese)}/${enc(id)}/riapri`),
 
   divieti: () => richiesta("GET", "/divieti"),
