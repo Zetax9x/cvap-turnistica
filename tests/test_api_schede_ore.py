@@ -264,7 +264,7 @@ def test_le_modifiche_non_sono_nel_registro_ma_la_conferma_si(client, conn, mari
     client.post(f"{URL}/{MESE}/conferma")
     righe = [dict(r) for r in conn.execute("SELECT accesso, percorso, descrizione FROM registro_azioni").fetchall()]
     schede = [r for r in righe if "/schede-ore/" in r["percorso"]]
-    assert len(schede) == 1 and schede[0]["accesso"] == "dipendente"
+    assert len(schede) == 1 and schede[0]["accesso"] == "pubblico"        # come la pagina dei cambi turno
     assert "Mario Rossi" in schede[0]["descrizione"] and MESE in schede[0]["descrizione"]
     assert "codice1" not in str(righe)
 

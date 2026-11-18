@@ -5,6 +5,7 @@ import { api } from "./api.js";
 import { mostraRiepiloghi } from "./riepiloghi.js";
 import { mostra as mostraFestivita, renderSchede, nuovoCaricamento, superato } from "./festivita.js";
 import { mostra as mostraStorico } from "./storico-festivi.js";
+import { renderCodiciScheda } from "./codici-scheda.js";
 import { el, clear, toast, toastErrore, mondayOf, todayISO, dataLunga, parseISO } from "./util.js";
 
 const SCARTO_PREDEFINITO = 12;
@@ -143,6 +144,7 @@ function render(imp, salvata = null) {
     form,
     renderScarto(imp),
     renderMassimiOre(),
+    renderCodiciScheda(sezioneRipiegabile),
     renderDivieti(),
     sezioneRiepiloghi,
     renderEmailEquita(),
@@ -155,6 +157,7 @@ const SEZIONI = [
   ["imp-alternanza", "Settimane A/B"],
   ["imp-scarto", "Differenza ore"],
   ["imp-parametri", "Massimi ore"],
+  ["imp-codici-scheda", "Codici scheda ore"],
   ["imp-divieti", "Divieti"],
   ["imp-riepiloghi", "Email"],
   ["imp-email-equita", "Email equità"],

@@ -196,7 +196,7 @@ def crea_router(connessione: Callable) -> APIRouter:
         congelata = servizio_schede_ore.congela(conn, p["id"], mese)
         if not db_schede_ore.conferma(conn, p["id"], mese, congelata):
             raise HTTPException(409, "La scheda è confermata e non si può più modificare")
-        registro.registra(conn, "dipendente", "POST", f"{PERCORSO_COOKIE}/{mese}/conferma", 200,
+        registro.registra(conn, registro.PUBBLICO, "POST", f"{PERCORSO_COOKIE}/{mese}/conferma", 200,
                           f"{p['nome']} ha confermato la scheda ore di {mese}")
         return servizio_schede_ore.scheda_del_mese(conn, p["id"], mese)
 
