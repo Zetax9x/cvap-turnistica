@@ -99,7 +99,7 @@ Riceve gli stessi dati di `statistiche_persona`: turni effettivi del dipendente 
   segnato "da rivedere".
 - Totali come nelle formule del modello: ore di ogni coppia Inizio/Fine con intervallo oltre la mezzanotte (uguale = 24 ore),
   arrotondate a 2 decimali; ore postazioni = Ascoli + Acquasanta + Venarotta e ore secondari = Programmati + Assistenze + Viaggi Ast + Viaggi,
-  ciascuno arrotondato all'ora intera (da mezz'ora in su); totale mese = somma dei due; ore disponibilità aggiuntive e giorni di ferie a parte.
+  ciascuno arrotondato all'ora intera come nel modello (la mezz'ora esatta scende: 0,5 → 0; 1,6 → 2); totale mese = somma dei due; ore disponibilità aggiuntive e giorni di ferie a parte.
 - Un giorno corretto che non coincide più con i turni calcolati mostra l'avviso "I turni sono cambiati dopo la tua correzione".
 
 ## 4. Interfaccia del dipendente
