@@ -81,7 +81,7 @@
 .so-pagina button.so-grande { min-height: 64px; font-size: 1.05rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 10px 16px; text-align: center; }
 .so-grande small { font-size: .85rem; font-weight: 400; opacity: .9; }
 .so-domanda-testo { margin: 4px 0 0; font-weight: 700; font-size: 1.05rem; }
-.so-guida { background: white; border: 1px solid var(--so-bordo); border-left: 6px solid var(--so-verde); border-radius: var(--so-raggio); padding: 12px 16px; margin: 12px 0; }
+.so-guida { background: var(--so-ok-sfondo); border: 1px solid #94c1a5; border-radius: var(--so-raggio); padding: 12px 16px; margin: 12px 0; }
 .so-guida ol { margin: 6px 0 0; padding-left: 22px; display: grid; gap: 4px; }
 .so-didascalia { margin: 6px 0 0; font-size: .85rem; }
 .so-aiuto { flex: 1 1 100%; margin: 0; font-size: .85rem; }
