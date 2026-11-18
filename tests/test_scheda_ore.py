@@ -5,7 +5,8 @@ import pytest
 
 from cvap.modello import EXTRA, segmento_extra
 from cvap.scheda_ore import (COLONNE, applica_correzioni, formatta_orario, giorni_del_mese, mesi_apribili,
-                             ore_intervallo, parse_orario, totali, turni_in_righe, valida_correzione)
+                             ore_colonna, ore_disponibilita_grezze, ore_intervallo, parse_orario, totali,
+                             turni_in_righe, valida_correzione)
 
 from .conftest import ass
 
@@ -240,3 +241,11 @@ def test_intervalli_uguali_valgono_24_ore():
 
 def test_celle_incomplete_non_contano():
     assert totali([righe_con({"ascoli": [8.0, None]})])["ore_postazioni"] == 0
+
+
+def test_ore_colonna_e_disponibilita_grezze_prima_dell_arrotondamento():
+    giorni = [righe_con({"viaggi": [8.0, 8.5]}, disp={"inizio": 9.0, "fine": 13.5, "causale": "x"}, n=1),
+              righe_con({"viaggi": [8.0, 9.25]}, n=2)]
+    assert ore_colonna(giorni, "viaggi") == 1.75
+    assert ore_colonna(giorni, "ascoli") == 0
+    assert ore_disponibilita_grezze(giorni) == 4.5

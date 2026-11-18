@@ -123,7 +123,7 @@ Pagina `static/scheda-ore.html` con `static/js/scheda-ore.js` e `static/scheda-o
   "Scarica Excel" (solo confermate) e "Riapri" (con conferma).
 - **Excel:** il modello è copiato in `cvap/modelli/scheda-ore.xlsx`; `cvap/xlsx_scheda.py` lo compila modificando il suo XML con la libreria
   standard. Scrive anno (B2), cognome e nome (G3), nome del mese (O3), per ogni giorno Ferie, Inizio/Fine delle colonne, Note e Disponibilità
-  aggiuntive (orari come frazione di giorno), scrive i valori già calcolati nelle celle con formula e imposta il ricalcolo all'apertura
+  aggiuntive (orari secondo il formato del modello: ore intere come interi, 24 compreso; le altre come frazione di giorno), scrive i valori già calcolati nelle celle con formula e imposta il ricalcolo all'apertura
   (`fullCalcOnLoad`). Le note finali vanno in una riga unita sotto le istruzioni, con etichetta "Note finali:" e lo stile del testo esistente.
   Nome file: `scheda-ore-cognome-nome-AAAA-MM.xlsx`.
 

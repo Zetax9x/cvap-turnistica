@@ -171,7 +171,7 @@ Casi che la spec implica e nessun task può dimenticare (ognuno ha il suo test n
 
 - [ ] **Step 1: Scrivere i test (devono fallire)** in `tests/test_xlsx_scheda.py`, leggendo il risultato con `zipfile` e `xml.etree.ElementTree`:
   - lo zip contiene ancora tutti i file del modello (`xl/worksheets/sheet1.xml`, `xl/workbook.xml`, `xl/styles.xml`, `[Content_Types].xml`) e ogni file XML si rilegge senza errori;
-  - con un giorno che ha Acquasanta `[8.0, 20.0]`: la cella `F{14+giorno}` ha valore `8/24` e `G…` ha `20/24` (numeri, tolleranza `1e-9`);
+  - con un giorno che ha Acquasanta `[8.0, 20.0]`: la cella `F{14+giorno}` ha valore `8` e `G…` ha `20` (ore intere come interi, convenzione del modello); `8:30` è `8.5/24` (tolleranza `1e-9`);
   - `B2 == 2026`, `G3` contiene il nome, `O3 == "NOVEMBRE"` per `"2026-11"`;
   - totali: il valore memorizzato di `F46` è `12`, `D48` e `R48` coincidono con `totali()` del Task 1;
   - `workbook.xml` contiene `fullCalcOnLoad="1"`;

@@ -223,14 +223,22 @@ def _ore_coppie(coppie: Iterable[list[float] | None]) -> float:
     return round(sum(ore_intervallo(c[0], c[1]) for c in coppie if c and None not in c), 2)
 
 
+def ore_colonna(giorni: list[dict], colonna: str) -> float:
+    """Ore di una colonna nel mese (come la riga 46 del modello: 2 decimali, prima dell'arrotondamento all'ora)."""
+    return _ore_coppie(g["colonne"][colonna] for g in giorni)
+
+
+def ore_disponibilita_grezze(giorni: list[dict]) -> float:
+    """Ore delle disponibilità aggiuntive nel mese, 2 decimali (cella S46 del modello)."""
+    return _ore_coppie([g["disponibilita"]["inizio"], g["disponibilita"]["fine"]] for g in giorni if g["disponibilita"])
+
+
 def totali(giorni: list[dict]) -> dict:
     """Totali come le formule del modello: postazioni, secondari, totale del mese, disponibilità e giorni di ferie."""
     def ore(colonne):
-        return round(sum(_ore_coppie(g["colonne"][c] for g in giorni) for c in colonne), 4)
+        return round(sum(ore_colonna(giorni, c) for c in colonne), 4)
 
-    disponibilita = _ore_coppie([g["disponibilita"]["inizio"], g["disponibilita"]["fine"]]
-                                for g in giorni if g["disponibilita"])
     postazioni, secondari = _arrotonda_ora(ore(COLONNE_POSTAZIONI)), _arrotonda_ora(ore(COLONNE_SECONDARI))
     return {"giorni_ferie": sum(g["ferie"] for g in giorni), "ore_postazioni": postazioni,
             "ore_secondari": secondari, "totale_mese": postazioni + secondari,
-            "ore_disponibilita": _arrotonda_ora(disponibilita)}
+            "ore_disponibilita": _arrotonda_ora(ore_disponibilita_grezze(giorni))}
