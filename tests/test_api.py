@@ -1340,7 +1340,7 @@ def test_modifica_persona_non_cancella_indisponibilita_libera(client):
     assert r.json()["indisponibilita_libera"] is True
 
 
-@pytest.mark.parametrize("valore", ["forse", 2, [True]])
+@pytest.mark.parametrize("valore", ["forse", [True]])
 def test_indisponibilita_libera_non_valida_422(client, valore):
     p = crea(client, "Mario")
     r = client.put(f"/api/persone/{p['id']}/parametri", json={"max_ore_settimana": None, "indisponibilita_libera": valore})

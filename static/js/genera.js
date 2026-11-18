@@ -504,6 +504,7 @@ function passoIndisponibilita() {
     const id = menu.id;
     const precedente = menu.dataset.precedente;
     const scelte = new Set(menu.value ? menu.value.split("+") : []);
+    await coda;  // i salvataggi in corso finiscono prima: gli altri giorni del dipendente sono quelli aggiornati
     // chi non è tra gli esenti (Impostazioni): se l'indisponibilità viola il regolamento si chiede conferma
     const giorniAltri = indisponibilita().filter((i) => i.persona_id === p.id && i.data !== g && i.parti.size).length;
     const motivi = p.indisponibilita_libera ? [] : motiviAvvisoIndisponibilita(giorniAltri, scelte);
