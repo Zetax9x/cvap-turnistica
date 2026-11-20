@@ -165,10 +165,10 @@ Le ore delle **sostituzioni** (paragrafo 6.4) sono a parte: non entrano in quest
 ### 5.3 Non più di 12 ore di differenza, nella settimana e nel mese
 
 - **Nella settimana:** tra il dipendente con più ore contate e quello con meno, nella stessa settimana, la differenza non deve superare 12 ore, cioè un turno.
-- **Nel mese:** anche nel mese di calendario, dal giorno 1 fino all'ultima settimana generata, la differenza tra chi ha più ore contate e chi ne ha meno non deve superare 12 ore. Il controllo si ripete a ogni settimana, così a fine mese vale per tutto il mese (dal 1 al 30 o 31). Un turno conta nel mese in cui comincia: la notte del 31 conta nel mese che finisce. Si comincia a controllare quando dal giorno 1 sono passati almeno 7 giorni.
+- **Nel mese:** anche nel mese di calendario, dal giorno 1 fino all'ultima settimana generata, tra chi è più avanti con le ore e chi è più indietro non ci devono essere più di 12 ore. Il controllo si ripete a ogni settimana, così a fine mese vale per tutto il mese (dal 1 al 30 o 31). I dettagli, comprese ferie e malattia, sono nel paragrafo 8.4.
 - Se i due limiti non si possono rispettare insieme (per esempio in un mese già sbilanciato), il programma rispetta quello della settimana e si avvicina il più possibile a quello del mese.
 - Entrambi i limiti possono essere modificati dal responsabile.
-- Nel confronto non entra chi è in ferie tutta la settimana né chi ha un massimo di ore personale. Nel mese non entra nemmeno chi in quel mese è stato assente una settimana intera o non era ancora in servizio.
+- Nel confronto della settimana non entra chi è in ferie tutta la settimana né chi ha un massimo di ore personale.
 - Oltre a questo, il programma cerca di portare ciascuno vicino alla media delle ore dei colleghi, tenendo conto delle settimane passate (capitolo 8).
 
 ### 5.4 Massimo di ore personale
@@ -242,7 +242,7 @@ Il programma ricorda le settimane passate e le usa per bilanciare il carico di l
 - **Acquasanta e Venarotta**: nel tempo ognuno fa più o meno tanti turni in una sede quanti nell'altra (paragrafo 8.1).
 - **Festività**: ogni festività gira tra i dipendenti guardando gli ultimi 5 anni (capitolo 9).
 
-L'equità si misura sul lungo periodo: in una singola settimana puoi avere più notti o più ore di un collega, e il programma tende a compensare nelle settimane successive.
+L'equità si misura sul lungo periodo: in una singola settimana puoi avere più notti o più ore di un collega, e il programma tende a compensare nelle settimane successive. Per ore, notti e weekend c'è in più un limite nel mese (paragrafo 8.4).
 
 ### 8.1 Equilibrio tra Acquasanta e Venarotta
 
@@ -275,13 +275,32 @@ Quando non si può avere tutto, il programma segue in linea di massima questo or
 1. coprire tutti i posti (prima le postazioni fisse, poi Standby e Programmati);
 2. rispettare il minimo di 36 ore e la differenza massima di 12 ore (nella settimana e nel mese), ed evitare il terzo turno ad Ascoli;
 3. evitare 3 giorni o 3 notti di fila;
-4. alternare giorno e notte ad Ascoli;
-5. non dare a una persona più di un turno di weekend nella stessa settimana, né più di un turno di Standby o di Programmati;
-6. portare le ore di ciascuno vicino alla media, recuperando le differenze delle settimane passate;
-7. distribuire in modo equo nel tempo weekend, Standby, Programmati e festività;
-8. equilibrare giorni e notti, anche nello Standby e ad Ascoli.
+4. nel mese, non più di 2 notti e 1 turno di weekend di differenza tra chi ne ha fatti di più e chi di meno (paragrafo 8.4);
+5. alternare giorno e notte ad Ascoli;
+6. non dare a una persona più di un turno di weekend nella stessa settimana, né più di un turno di Standby o di Programmati;
+7. portare le ore di ciascuno vicino alla media, recuperando le differenze delle settimane passate;
+8. distribuire in modo equo nel tempo weekend, Standby, Programmati e festività;
+9. equilibrare giorni e notti, anche nello Standby e ad Ascoli.
 
 Solo alla fine, a turni decisi, il programma pareggia Acquasanta e Venarotta con gli scambi del paragrafo 8.1, senza cambiare nient'altro.
+
+### 8.4 L'equità nel mese
+
+Oltre al pareggio nel tempo, nel mese di calendario (dal 1 al 30 o 31) tra chi è più avanti e chi è più indietro non ci devono essere più di:
+
+| Cosa | Differenza massima nel mese |
+|---|---|
+| Ore | 12 ore |
+| Notti | 2 notti |
+| Turni di weekend (sabato e domenica, giorno o notte) | 1 turno |
+
+- Il controllo si ripete a ogni settimana generata, sul periodo dal giorno 1 fin lì: così a fine mese vale per tutto il mese. Si comincia quando dal giorno 1 sono passati almeno 7 giorni.
+- Per ogni settimana si guarda quanto ognuno ha fatto rispetto alla media dei colleghi; nel mese si sommano queste differenze.
+- **Ferie e malattia:** la settimana in cui hai anche solo un giorno di ferie o malattia, per te, non conta nel mese: non crea né debiti né crediti, come per le ore nel tempo. Lo stesso vale per le settimane in cui non eri ancora in servizio. Così chi è in ferie non «sfora» il limite e non deve recuperare dopo.
+- Un turno conta nel mese in cui comincia: la notte del 31 conta nel mese che finisce. Mezza notte conta mezza notte.
+- Non entra nel confronto chi ha un massimo di ore personale. Le sostituzioni (ore extra) non contano.
+- Standby, Programmati, Ascoli e festività restano solo nel pareggio nel tempo: in un mese sono troppo pochi per pareggiarli.
+- I limiti possono essere modificati dal responsabile (0 = nessun limite).
 
 ## 9. Le festività
 
@@ -375,6 +394,7 @@ No, il programma non lo fa mai.
 | Ore massime | 72 ore lavorate a settimana, o il tuo massimo personale se più basso |
 | Ore minime | 36 ore a settimana, ferie comprese (se il personale basta) |
 | Differenza tra colleghi | Di norma al massimo 12 ore tra chi lavora di più e chi di meno, nella settimana e nel mese (se il personale basta) |
+| Notti e weekend nel mese | Di norma al massimo 2 notti e 1 turno di weekend di differenza tra colleghi |
 | Ferie e malattia | Nessun turno; 6 ore per giorno nel conteggio; niente da recuperare |
 | Ascoli | Al massimo 2 turni (3 solo in extremis); mai 2 giorni o 2 notti di fila; alternare giorno e notte |
 | Weekend | Distribuiti in modo equo nel tempo; di norma al massimo uno a settimana |

@@ -44,7 +44,7 @@ from ortools.sat.python import cp_model
 
 from .modello import (EXTRA, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, STANDBY, Assegnazione, Fabbisogno, Persona,
                       Unita, in_conflitto, ore_extra, parti_turno)
-from .ore_mese import ConfrontoMese, differenza as differenza_mese
+from .ore_mese import NOMI_MISURE, ConfrontoMese, differenza as differenza_mese, valore as valore_mese
 from .rotazione_festivi import ContoFestivita, FestiviSettimana, costo_festivita, debiti
 from .slot import unita_da_coprire
 from .storico import CATEGORIE_RICHIESTA, CATEGORIE_WEEKEND, SEDI_ALTERNATE, StoricoPersona, categoria_weekend
@@ -62,6 +62,13 @@ P_SOTTO_MINIMO = P_FUORI_BANDA  # per ogni ora sotto ORE_MIN_SETTIMANA
 # per ogni ora oltre il limite del mese (cvap/ore_mese.py): sotto il limite della settimana, così se i due sono in
 # conflitto (un mese già sbilanciato) vince la settimana e il mese si avvicina al limite il più possibile
 P_FUORI_BANDA_MESE = P_FUORI_BANDA // 2
+# notti e weekend nel mese: per ogni notte (anche solo in parte) e per ogni turno di weekend oltre il limite. Sopra il
+# pareggio giorno/notte e i doppi weekend della settimana, sotto i tre di fila (5.000) e molto sotto le ore
+P_NOTTI_MESE = 3_600
+P_WEEKEND_MESE = 2_000
+# misura: (voce, peso per unità oltre il limite, ore di un'unità): le notti si sforano a notti intere (12 ore)
+PESI_MESE = {"ore": ("fuori_banda_mese", P_FUORI_BANDA_MESE, 1), "notti": ("notti_mese", P_NOTTI_MESE, 12),
+             "weekend": ("weekend_mese", P_WEEKEND_MESE, 1)}
 P_TERZO_ASCOLI = 1_000_000
 P_TRE_DI_FILA = 5_000
 # per turno ad Ascoli della stessa fascia oltre l'equilibrio: batte lo scambio giorno/notte che peggiora
@@ -103,6 +110,10 @@ VOCI_OBIETTIVO: dict[str, tuple[str, str, str]] = {
                     "Ore oltre la differenza massima ammessa tra chi lavora di più e chi di meno."),
     "fuori_banda_mese": ("Differenza di ore nel mese oltre il limite", "regola",
                          "Ore oltre la differenza massima ammessa nel mese, dal 1° fino a questa settimana."),
+    "notti_mese": ("Notti nel mese oltre il limite", "regola",
+                   "Ore di notte oltre la differenza massima ammessa nel mese, dal 1° fino a questa settimana."),
+    "weekend_mese": ("Weekend nel mese oltre il limite", "regola",
+                     "Turni di weekend oltre la differenza massima ammessa nel mese, dal 1° fino a questa settimana."),
     "doppio_weekend": ("Doppi weekend", "regola", "Turni di weekend oltre il primo alla stessa persona."),
     "doppia_richiesta": ("Doppi Standby, Programmati o Extra", "regola",
                          "Turni della stessa postazione a richiesta oltre il primo alla stessa persona."),
@@ -160,7 +171,7 @@ class Risultato:
     durata_s: float = 0.0
     qualita: dict | None = None  # indicatori della ricerca; solo se esiste una soluzione
     diagnostica: dict | None = None  # peso di ogni regola nella soluzione (vedi `_diagnostica`)
-    differenza_mese: list[dict] = field(default_factory=list)  # per mese controllato (vedi cvap/ore_mese.py)
+    differenza_mese: list[dict] = field(default_factory=list)  # per mese e misura controllati (cvap/ore_mese.py)
 
 
 def genera(
@@ -181,7 +192,7 @@ def genera(
     copertura_rigida: bool = False,
     contesto_generati: Sequence[Assegnazione] | None = None,
     mese: Sequence[ConfrontoMese] = (),
-    scarto_ore_mese: int | None = None,
+    limiti_mese: dict[str, int] | None = None,
 ) -> Risultato:
     """Genera i turni dei dipendenti.
 
@@ -198,8 +209,8 @@ def genera(
     `contesto` contiene gli impegni effettivi delle settimane vicine, usati per i vincoli.
     `contesto_generati` contiene il programma originale, usato per le penalità di distribuzione;
     se omesso coincide con `contesto`. Lo storico e i conti festivi devono riferirsi ai generati.
-    `mese`: i confronti del mese (cvap/ore_mese.py); `scarto_ore_mese`: differenza massima di ore contate nel mese,
-    dal 1° fino a questa settimana (None o 0: nessun limite mensile).
+    `mese`: i confronti del mese (cvap/ore_mese.py); `limiti_mese`: per misura ("ore", "notti" in ore di notte,
+    "weekend" in turni) la distanza massima nel mese, dal 1° fino a questa settimana (assente o 0: nessun limite).
     """
     avvio = time.monotonic()
     storico = storico or {}
@@ -221,9 +232,10 @@ def genera(
         return Risultato("impossibile", scoperti=unita, messaggio="Nessun dipendente attivo disponibile.")
 
     ferie_di = {p.id: set(ferie.get(p.id, ())) for p in dipendenti}
-    mese = list(mese) if scarto_ore_mese else []
+    limiti_mese = {k: v for k, v in (limiti_mese or {}).items() if v}
+    mese = list(mese) if limiti_mese else []
     m = _Modello(giorni, unita, dipendenti, fissi, contesto, storico, crediti, ferie_di, indisponibili,
-                 scarto_ore_max, festivi, copertura_rigida, contesto_generati, mese, scarto_ore_mese)
+                 scarto_ore_max, festivi, copertura_rigida, contesto_generati, mese, limiti_mese)
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = tempo_max
     solver.parameters.num_search_workers = workers
@@ -274,13 +286,14 @@ def genera(
         note.append(f"Differenza di ore oltre il limite di {scarto_ore_max}h: "
                     f"{alto['nome']} {alto['ore']}h, {basso['nome']} {basso['ore']}h.")
     persone_id = {p.id: p for p in persone}
-    diff_mese = [x for x in (differenza_mese(cm, fissi + assegnazioni, persone_id) for cm in mese) if x]
+    diff_mese = [x for cm in mese for misura in limiti_mese
+                 if (x := differenza_mese(cm, fissi + assegnazioni, misura, persone_id))]
     for x in diff_mese:
-        x["limite"] = scarto_ore_mese
-        if x["differenza"] > scarto_ore_mese:
+        x["limite"] = limiti_mese[x["misura"]]
+        if x["differenza"] > x["limite"] + 0.05:
             alto, basso = x["massimo"], x["minimo"]
-            note.append(f"Differenza di ore nel mese di {x['mese']} oltre il limite di {scarto_ore_mese}h: "
-                        f"{alto['nome']} {alto['ore']}h, {basso['nome']} {basso['ore']}h.")
+            note.append(f"Nel mese di {x['mese']} distanza di {x['differenza']:g} {x['unita']} oltre il limite di "
+                        f"{x['limite']}: più avanti {alto['nome']}, più indietro {basso['nome']}.")
     note += _nota_minimo(giorni, fissi + assegnazioni, dipendenti, ferie)
     nomi = {p.id: p.nome for p in dipendenti}
     in_extremis = [nomi[pid] for pid, n in Counter(a.persona_id for a in fissi + assegnazioni
@@ -461,7 +474,7 @@ class _Modello:
 
     def __init__(self, giorni, unita, dipendenti, fissi, contesto, storico, crediti, ferie, indisponibili,
                  scarto_ore_max=SCARTO_ORE_MAX, festivi=None, copertura_rigida=False,
-                 contesto_generati=None, mese=(), scarto_ore_mese=None):
+                 contesto_generati=None, mese=(), limiti_mese=None):
         self.model = cp_model.CpModel()
         self.giorni = giorni
         self.unita = unita
@@ -469,7 +482,7 @@ class _Modello:
         self.storico = storico
         self.scarto_ore_max = scarto_ore_max
         self.mese = list(mese)
-        self.scarto_ore_mese = scarto_ore_mese
+        self.limiti_mese = dict(limiti_mese or {})
         self.festivi = festivi or FestiviSettimana()
         self.crediti = crediti  # ore di ferie di ogni dipendente, contate come lavorate
         # scala intera dei termini dell'obiettivo: le ore si misurano in unità di 1/scala
@@ -783,28 +796,39 @@ class _Modello:
         self._pesa("fuori_banda", P_FUORI_BANDA * self.scala, oltre)
 
     def _differenza_mese(self):
-        """Limite progressivo del mese (cvap/ore_mese.py): tra chi ha più ore contate dal 1° del mese a fine
-        settimana e chi ne ha meno al più `scarto_ore_mese`, o paga P_FUORI_BANDA_MESE per ogni ora oltre."""
-        if not self.scarto_ore_mese:
-            return
+        """Limiti progressivi del mese (cvap/ore_mese.py): per ogni misura, tra chi è più avanti e chi è più indietro
+        dal 1° del mese a fine settimana al più il limite, o paga il peso in PESI_MESE per ogni unità oltre
+        (un'ora, una notte, un turno di weekend).
+
+        Lo scarto di chi è presente in settimana è precedente + valore − media dei presenti; moltiplicato per il
+        numero dei presenti `k` resta intero: k·precedente (arrotondato) + k·valore − somma dei valori."""
         for cm in self.mese:
-            ids = [p.id for p in self.dipendenti if p.id in cm.precedenti]
-            if len(ids) < 2:
-                continue
-            contate = []
-            for pid in ids:
-                lavorate = sum(u.ore * v for u, v in self._vars_di(pid, lambda u: u.data in cm.giorni))
-                fisse = sum(a.ore for a in self.fissi_settimana if a.persona_id == pid and a.data in cm.giorni)
-                contate.append(lavorate + fisse + cm.precedenti[pid] + cm.crediti.get(pid, 0))
-            tetto = max(cm.precedenti.values()) + 24 * 7 + 7 * 6
-            massime = self.model.NewIntVar(0, tetto, "")
-            minime = self.model.NewIntVar(0, tetto, "")
-            oltre = self.model.NewIntVar(0, tetto, "")
-            for c in contate:
-                self.model.Add(massime >= c)
-                self.model.Add(minime <= c)
-            self.model.Add(massime - minime <= self.scarto_ore_mese + oltre)
-            self._pesa("fuori_banda_mese", P_FUORI_BANDA_MESE * self.scala, oltre)
+            presenti = [p.id for p in self.dipendenti if p.id in cm.presenti]
+            k = len(presenti)
+            if k == 0 or len(cm.partecipanti) < 2:
+                continue  # nessuno conta in settimana: lo scarto del mese non cambia
+            for misura, limite in self.limiti_mese.items():
+                voce, peso, passo = PESI_MESE[misura]
+                prima = cm.precedenti.get(misura, {})
+                x = {}
+                for pid in presenti:
+                    x[pid] = (sum(valore_mese(misura, u) * v for u, v in self._vars_di(pid, lambda u: u.data in cm.giorni))
+                              + sum(valore_mese(misura, a) for a in self.fissi_settimana
+                                    if a.persona_id == pid and a.data in cm.giorni))
+                # la somma dei presenti in una variabile: ogni scarto resta un vincolo con pochi termini
+                tetto = k * (int(max((abs(v) for v in prima.values()), default=0)) + 1 + 2 * 24 * 7)
+                somma = self.model.NewIntVar(0, k * 24 * 7, "")
+                self.model.Add(somma == sum(x.values()))
+                scarti = [round(k * prima.get(pid, 0.0)) + (k * x[pid] - somma if pid in x else 0)
+                          for pid in cm.partecipanti]
+                massime = self.model.NewIntVar(-tetto, tetto, "")
+                minime = self.model.NewIntVar(-tetto, tetto, "")
+                oltre = self.model.NewIntVar(0, 2 * tetto, "")
+                for s in scarti:
+                    self.model.Add(massime >= s)
+                    self.model.Add(minime <= s)
+                self.model.Add(massime - minime <= k * limite + k * passo * oltre)
+                self._pesa(voce, peso * self.scala, oltre)
 
     def _giorni_notti(self):
         n = self.scala

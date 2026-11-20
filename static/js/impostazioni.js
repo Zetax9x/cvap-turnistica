@@ -13,6 +13,11 @@ const SCARTO_MAX = 24;
 const SCARTO_MESE_PREDEFINITO = 12;  // limite progressivo del mese; 0 = nessun limite
 const SCARTO_MESE_MIN = 0;
 const SCARTO_MESE_MAX = 72;
+// notti e weekend nel mese: [chiave, etichetta, predefinito, massimo, unità]
+const LIMITI_TURNI_MESE = [
+  ["scarto_notti_mese", "Differenza massima di notti nel mese", 2, 10, ["notte", "notti"]],
+  ["scarto_weekend_mese", "Differenza massima di turni di weekend nel mese", 1, 10, ["turno", "turni"]],
+];
 const ORE_SETTIMANA_MAX = 72;  // come ORE_MAX_SETTIMANA nel server
 const TURNI_DIVIETO = [
   ["mattina", "Mattina (8–14)"],
@@ -219,6 +224,14 @@ function renderScarto(imp) {
     type: "number", id: "scarto-mese", name: "scarto_ore_mese", required: true, inputmode: "numeric",
     min: String(SCARTO_MESE_MIN), max: String(SCARTO_MESE_MAX), step: "1", value: String(valoreMese),
   });
+  const turniMese = LIMITI_TURNI_MESE.map(([chiave, etichetta, predefinito, massimo, unita]) => {
+    const v = imp[chiave] ?? predefinito;
+    const campo = el("input", {
+      type: "number", id: `imp-${chiave}`, name: chiave, required: true, inputmode: "numeric",
+      min: "0", max: String(massimo), step: "1", value: String(v),
+    });
+    return { chiave, etichetta, predefinito, massimo, unita, campo, v };
+  });
   const invia = el("button", { type: "submit", class: "btn btn-primary" }, "Salva");
   const form = el("form", {
     class: "card",
@@ -236,9 +249,19 @@ function renderScarto(imp) {
         toast(`Nel mese indica un numero intero di ore da ${SCARTO_MESE_MIN} a ${SCARTO_MESE_MAX}.`, "avviso");
         return;
       }
+      const valori = { scarto_ore_max: n, scarto_ore_mese: nMese };
+      for (const t of turniMese) {
+        const x = Number(t.campo.value);
+        if (!Number.isInteger(x) || x < 0 || x > t.massimo) {
+          t.campo.focus();
+          toast(`${t.etichetta}: indica un numero intero da 0 a ${t.massimo}.`, "avviso");
+          return;
+        }
+        valori[t.chiave] = x;
+      }
       invia.disabled = true;
       try {
-        dati.imp = await api.salvaImpostazioni({ scarto_ore_max: n, scarto_ore_mese: nMese });
+        dati.imp = await api.salvaImpostazioni(valori);
         toast("Differenze massime salvate.", "ok");
         render(dati.imp, "imp-scarto");
       } catch (err) {
@@ -258,9 +281,16 @@ function renderScarto(imp) {
     inputMese,
     el("p", { class: "hint" }, `Tra chi ha più ore e chi ne ha meno dal 1° del mese fino alla settimana che si genera: `
       + `il controllo si ripete a ogni settimana, così a fine mese vale per tutto il mese. Si controlla da quando sono `
-      + `passati almeno 7 giorni dal 1°. Non entra chi ha un massimo di ore, chi non era in servizio o chi è stato `
-      + `assente una settimana intera. Se i due limiti sono in conflitto vince quello della settimana. Attualmente ${valoreMese ? `${valoreMese} h` : "nessun limite"}. `
+      + `passati almeno 7 giorni dal 1°. Non entra chi ha un massimo di ore. Una settimana con ferie, malattia o non `
+      + `in servizio, per quella persona, non conta nel mese (né debiti né crediti). Se i due limiti sono in conflitto `
+      + `vince quello della settimana. Attualmente ${valoreMese ? `${valoreMese} h` : "nessun limite"}. `
       + `Valori ammessi da ${SCARTO_MESE_MIN} (nessun limite) a ${SCARTO_MESE_MAX}; predefinito ${SCARTO_MESE_PREDEFINITO}.`)),
+  ...turniMese.map((t) => el("div", { class: "campo" },
+    el("label", { for: `imp-${t.chiave}` }, t.etichetta),
+    t.campo,
+    el("p", { class: "hint" }, `Come per le ore: tra chi ne ha fatti di più e chi di meno dal 1° del mese, `
+      + `con lo stesso controllo progressivo. Attualmente ${t.v ? `${t.v} ${t.unita[t.v === 1 ? 0 : 1]}` : "nessun limite"}. `
+      + `Valori ammessi da 0 (nessun limite) a ${t.massimo}; predefinito ${t.predefinito}.`))),
   el("div", { class: "form-actions" }, invia));
   form.id = "imp-scarto";
   segnalaModifiche(form);

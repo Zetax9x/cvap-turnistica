@@ -19,8 +19,10 @@ from .vincoli import ORE_MAX_SETTIMANA
 RIFERIMENTO_A_DEFAULT = "2026-10-19"
 SCARTO_ORE_MAX_DEFAULT = 12
 SCARTO_ORE_MAX_RANGE = (1, 24)
-SCARTO_ORE_MESE_DEFAULT = 12  # differenza massima di ore nel mese (limite progressivo); 0 = nessun limite
 SCARTO_ORE_MESE_RANGE = (0, 72)
+# equità nel mese: distanza massima in notti e in turni di weekend (cvap/ore_mese.py); 0 = nessun limite
+LIMITI_MESE_DEFAULT = {"scarto_ore_mese": 12, "scarto_notti_mese": 2, "scarto_weekend_mese": 1}
+LIMITI_MESE_RANGE = {"scarto_ore_mese": SCARTO_ORE_MESE_RANGE, "scarto_notti_mese": (0, 10), "scarto_weekend_mese": (0, 10)}
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS persone (
@@ -547,17 +549,26 @@ def set_scarto_ore_max(conn: sqlite3.Connection, ore: int) -> int:
     return ore
 
 
-def get_scarto_ore_mese(conn: sqlite3.Connection) -> int:
-    """Differenza massima di ore contate nel mese, dal 1° a fine settimana (cvap/ore_mese.py); 0 = nessun limite."""
-    r = conn.execute("SELECT valore FROM impostazioni WHERE chiave = 'scarto_ore_mese'").fetchone()
-    return int(r["valore"]) if r and r["valore"] not in (None, "") else SCARTO_ORE_MESE_DEFAULT
+def get_limite_mese(conn: sqlite3.Connection, chiave: str) -> int:
+    """Un limite dell'equità nel mese (cvap/ore_mese.py): scarto_ore_mese (ore), scarto_notti_mese (notti),
+    scarto_weekend_mese (turni di weekend); 0 = nessun limite."""
+    r = conn.execute("SELECT valore FROM impostazioni WHERE chiave = ?", (chiave,)).fetchone()
+    return int(r["valore"]) if r and r["valore"] not in (None, "") else LIMITI_MESE_DEFAULT[chiave]
 
 
-def set_scarto_ore_mese(conn: sqlite3.Connection, ore: int) -> int:
+def set_limite_mese(conn: sqlite3.Connection, chiave: str, valore: int) -> int:
+    if chiave not in LIMITI_MESE_DEFAULT:
+        raise ValueError(f"limite del mese sconosciuto: {chiave}")
     with conn:
-        conn.execute("INSERT INTO impostazioni(chiave, valore) VALUES ('scarto_ore_mese', ?) "
-                     "ON CONFLICT(chiave) DO UPDATE SET valore = excluded.valore", (str(ore),))
-    return ore
+        conn.execute("INSERT INTO impostazioni(chiave, valore) VALUES (?, ?) "
+                     "ON CONFLICT(chiave) DO UPDATE SET valore = excluded.valore", (chiave, str(valore)))
+    return valore
+
+
+def limiti_mese(conn: sqlite3.Connection) -> dict[str, int]:
+    """I limiti per il generatore: ore, notti in ore di notte (12 per notte), weekend in turni."""
+    return {"ore": get_limite_mese(conn, "scarto_ore_mese"), "notti": 12 * get_limite_mese(conn, "scarto_notti_mese"),
+            "weekend": get_limite_mese(conn, "scarto_weekend_mese")}
 
 
 def get_email_equita(conn: sqlite3.Connection) -> str | None:

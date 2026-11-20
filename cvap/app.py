@@ -155,13 +155,19 @@ class EmailEquitaIn(BaseModel):
 class ImpostazioniIn(BaseModel):
     data_riferimento_a: DataValida | None = None
     scarto_ore_max: int | None = Field(default=None, ge=db.SCARTO_ORE_MAX_RANGE[0], le=db.SCARTO_ORE_MAX_RANGE[1])
-    scarto_ore_mese: int | None = Field(default=None, ge=db.SCARTO_ORE_MESE_RANGE[0], le=db.SCARTO_ORE_MESE_RANGE[1])
+    scarto_ore_mese: int | None = Field(default=None, ge=db.LIMITI_MESE_RANGE["scarto_ore_mese"][0],
+                                        le=db.LIMITI_MESE_RANGE["scarto_ore_mese"][1])
+    scarto_notti_mese: int | None = Field(default=None, ge=db.LIMITI_MESE_RANGE["scarto_notti_mese"][0],
+                                          le=db.LIMITI_MESE_RANGE["scarto_notti_mese"][1])
+    scarto_weekend_mese: int | None = Field(default=None, ge=db.LIMITI_MESE_RANGE["scarto_weekend_mese"][0],
+                                            le=db.LIMITI_MESE_RANGE["scarto_weekend_mese"][1])
 
     @model_validator(mode="after")
     def _almeno_una(self):
-        if not self.model_fields_set & {"data_riferimento_a", "scarto_ore_max", "scarto_ore_mese"}:
-            raise ValueError("indicare data_riferimento_a, scarto_ore_max e/o scarto_ore_mese")
-        if self.data_riferimento_a is None and self.scarto_ore_max is None and self.scarto_ore_mese is None:
+        campi = {"data_riferimento_a", "scarto_ore_max", *db.LIMITI_MESE_DEFAULT}
+        if not self.model_fields_set & campi:
+            raise ValueError("indicare almeno un'impostazione")
+        if all(getattr(self, c) is None for c in campi):
             raise ValueError("i valori indicati non possono essere null")
         return self
 
@@ -950,7 +956,8 @@ def create_app(db_path: str, password: str | None = None, postino=None,
 
     def impostazioni(conn) -> dict:
         return {"data_riferimento_a": db.get_riferimento_a(conn).isoformat(),
-                "scarto_ore_max": db.get_scarto_ore_max(conn), "scarto_ore_mese": db.get_scarto_ore_mese(conn)}
+                "scarto_ore_max": db.get_scarto_ore_max(conn),
+                **{c: db.get_limite_mese(conn, c) for c in db.LIMITI_MESE_DEFAULT}}
 
     @app.get("/api/impostazioni")
     def get_impostazioni(conn: Conn):
@@ -962,8 +969,9 @@ def create_app(db_path: str, password: str | None = None, postino=None,
             db.set_riferimento_a(conn, body.data_riferimento_a)
         if body.scarto_ore_max is not None:
             db.set_scarto_ore_max(conn, body.scarto_ore_max)
-        if body.scarto_ore_mese is not None:
-            db.set_scarto_ore_mese(conn, body.scarto_ore_mese)
+        for c in db.LIMITI_MESE_DEFAULT:
+            if getattr(body, c) is not None:
+                db.set_limite_mese(conn, c, getattr(body, c))
         return impostazioni(conn)
 
     # --- divieti ---
@@ -1200,7 +1208,7 @@ def create_app(db_path: str, password: str | None = None, postino=None,
                                 indisponibili=db.indisponibili_periodo(conn, giorni[0], giorni[-1]),
                                 fabbisogno=fabbisogno, scarto_ore_max=db.get_scarto_ore_max(conn),
                                 festivi=festivi, workers=worker_generatore(),
-                                mese=confronti_mese(conn, giorni, dipendenti), scarto_ore_mese=db.get_scarto_ore_mese(conn),
+                                mese=confronti_mese(conn, giorni, dipendenti), limiti_mese=db.limiti_mese(conn),
                                 **kwargs)
             durata = round(time.monotonic() - t0, 2)
             if ris.stato in ("impossibile", "nessuna_soluzione"):
