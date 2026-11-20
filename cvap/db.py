@@ -19,6 +19,8 @@ from .vincoli import ORE_MAX_SETTIMANA
 RIFERIMENTO_A_DEFAULT = "2026-10-19"
 SCARTO_ORE_MAX_DEFAULT = 12
 SCARTO_ORE_MAX_RANGE = (1, 24)
+SCARTO_ORE_MESE_DEFAULT = 12  # differenza massima di ore nel mese (limite progressivo); 0 = nessun limite
+SCARTO_ORE_MESE_RANGE = (0, 72)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS persone (
@@ -541,6 +543,19 @@ def get_scarto_ore_max(conn: sqlite3.Connection) -> int:
 def set_scarto_ore_max(conn: sqlite3.Connection, ore: int) -> int:
     with conn:
         conn.execute("INSERT INTO impostazioni(chiave, valore) VALUES ('scarto_ore_max', ?) "
+                     "ON CONFLICT(chiave) DO UPDATE SET valore = excluded.valore", (str(ore),))
+    return ore
+
+
+def get_scarto_ore_mese(conn: sqlite3.Connection) -> int:
+    """Differenza massima di ore contate nel mese, dal 1° a fine settimana (cvap/ore_mese.py); 0 = nessun limite."""
+    r = conn.execute("SELECT valore FROM impostazioni WHERE chiave = 'scarto_ore_mese'").fetchone()
+    return int(r["valore"]) if r and r["valore"] not in (None, "") else SCARTO_ORE_MESE_DEFAULT
+
+
+def set_scarto_ore_mese(conn: sqlite3.Connection, ore: int) -> int:
+    with conn:
+        conn.execute("INSERT INTO impostazioni(chiave, valore) VALUES ('scarto_ore_mese', ?) "
                      "ON CONFLICT(chiave) DO UPDATE SET valore = excluded.valore", (str(ore),))
     return ore
 

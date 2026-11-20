@@ -44,6 +44,7 @@ from ortools.sat.python import cp_model
 
 from .modello import (EXTRA, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, STANDBY, Assegnazione, Fabbisogno, Persona,
                       Unita, in_conflitto, ore_extra, parti_turno)
+from .ore_mese import ConfrontoMese, differenza as differenza_mese
 from .rotazione_festivi import ContoFestivita, FestiviSettimana, costo_festivita, debiti
 from .slot import unita_da_coprire
 from .storico import CATEGORIE_RICHIESTA, CATEGORIE_WEEKEND, SEDI_ALTERNATE, StoricoPersona, categoria_weekend
@@ -58,6 +59,9 @@ __all__ = ["Risultato", "StoricoPersona", "genera"]
 P_SCOPERTO = 10_000_000
 P_FUORI_BANDA = 100_000
 P_SOTTO_MINIMO = P_FUORI_BANDA  # per ogni ora sotto ORE_MIN_SETTIMANA
+# per ogni ora oltre il limite del mese (cvap/ore_mese.py): sotto il limite della settimana, così se i due sono in
+# conflitto (un mese già sbilanciato) vince la settimana e il mese si avvicina al limite il più possibile
+P_FUORI_BANDA_MESE = P_FUORI_BANDA // 2
 P_TERZO_ASCOLI = 1_000_000
 P_TRE_DI_FILA = 5_000
 # per turno ad Ascoli della stessa fascia oltre l'equilibrio: batte lo scambio giorno/notte che peggiora
@@ -97,6 +101,8 @@ VOCI_OBIETTIVO: dict[str, tuple[str, str, str]] = {
     "sotto_minimo": ("Ore sotto il minimo", "regola", "Ore mancanti al minimo settimanale, sommate tra i dipendenti."),
     "fuori_banda": ("Differenza di ore oltre il limite", "regola",
                     "Ore oltre la differenza massima ammessa tra chi lavora di più e chi di meno."),
+    "fuori_banda_mese": ("Differenza di ore nel mese oltre il limite", "regola",
+                         "Ore oltre la differenza massima ammessa nel mese, dal 1° fino a questa settimana."),
     "doppio_weekend": ("Doppi weekend", "regola", "Turni di weekend oltre il primo alla stessa persona."),
     "doppia_richiesta": ("Doppi Standby, Programmati o Extra", "regola",
                          "Turni della stessa postazione a richiesta oltre il primo alla stessa persona."),
@@ -154,6 +160,7 @@ class Risultato:
     durata_s: float = 0.0
     qualita: dict | None = None  # indicatori della ricerca; solo se esiste una soluzione
     diagnostica: dict | None = None  # peso di ogni regola nella soluzione (vedi `_diagnostica`)
+    differenza_mese: list[dict] = field(default_factory=list)  # per mese controllato (vedi cvap/ore_mese.py)
 
 
 def genera(
@@ -173,6 +180,8 @@ def genera(
     festivi: FestiviSettimana | None = None,
     copertura_rigida: bool = False,
     contesto_generati: Sequence[Assegnazione] | None = None,
+    mese: Sequence[ConfrontoMese] = (),
+    scarto_ore_mese: int | None = None,
 ) -> Risultato:
     """Genera i turni dei dipendenti.
 
@@ -189,6 +198,8 @@ def genera(
     `contesto` contiene gli impegni effettivi delle settimane vicine, usati per i vincoli.
     `contesto_generati` contiene il programma originale, usato per le penalità di distribuzione;
     se omesso coincide con `contesto`. Lo storico e i conti festivi devono riferirsi ai generati.
+    `mese`: i confronti del mese (cvap/ore_mese.py); `scarto_ore_mese`: differenza massima di ore contate nel mese,
+    dal 1° fino a questa settimana (None o 0: nessun limite mensile).
     """
     avvio = time.monotonic()
     storico = storico or {}
@@ -210,8 +221,9 @@ def genera(
         return Risultato("impossibile", scoperti=unita, messaggio="Nessun dipendente attivo disponibile.")
 
     ferie_di = {p.id: set(ferie.get(p.id, ())) for p in dipendenti}
+    mese = list(mese) if scarto_ore_mese else []
     m = _Modello(giorni, unita, dipendenti, fissi, contesto, storico, crediti, ferie_di, indisponibili,
-                 scarto_ore_max, festivi, copertura_rigida, contesto_generati)
+                 scarto_ore_max, festivi, copertura_rigida, contesto_generati, mese, scarto_ore_mese)
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = tempo_max
     solver.parameters.num_search_workers = workers
@@ -261,6 +273,14 @@ def genera(
         alto, basso = d["massimo"], d["minimo"]
         note.append(f"Differenza di ore oltre il limite di {scarto_ore_max}h: "
                     f"{alto['nome']} {alto['ore']}h, {basso['nome']} {basso['ore']}h.")
+    persone_id = {p.id: p for p in persone}
+    diff_mese = [x for x in (differenza_mese(cm, fissi + assegnazioni, persone_id) for cm in mese) if x]
+    for x in diff_mese:
+        x["limite"] = scarto_ore_mese
+        if x["differenza"] > scarto_ore_mese:
+            alto, basso = x["massimo"], x["minimo"]
+            note.append(f"Differenza di ore nel mese di {x['mese']} oltre il limite di {scarto_ore_mese}h: "
+                        f"{alto['nome']} {alto['ore']}h, {basso['nome']} {basso['ore']}h.")
     note += _nota_minimo(giorni, fissi + assegnazioni, dipendenti, ferie)
     nomi = {p.id: p.nome for p in dipendenti}
     in_extremis = [nomi[pid] for pid, n in Counter(a.persona_id for a in fissi + assegnazioni
@@ -284,6 +304,7 @@ def genera(
         durata_s=durata,
         qualita=_qualita(solver, conteggio, durata, tempo_max, workers, status),
         diagnostica=_diagnostica(solver, m.obiettivo, scambi_sedi),
+        differenza_mese=diff_mese,
     )
 
 
@@ -440,13 +461,15 @@ class _Modello:
 
     def __init__(self, giorni, unita, dipendenti, fissi, contesto, storico, crediti, ferie, indisponibili,
                  scarto_ore_max=SCARTO_ORE_MAX, festivi=None, copertura_rigida=False,
-                 contesto_generati=None):
+                 contesto_generati=None, mese=(), scarto_ore_mese=None):
         self.model = cp_model.CpModel()
         self.giorni = giorni
         self.unita = unita
         self.dipendenti = dipendenti
         self.storico = storico
         self.scarto_ore_max = scarto_ore_max
+        self.mese = list(mese)
+        self.scarto_ore_mese = scarto_ore_mese
         self.festivi = festivi or FestiviSettimana()
         self.crediti = crediti  # ore di ferie di ogni dipendente, contate come lavorate
         # scala intera dei termini dell'obiettivo: le ore si misurano in unità di 1/scala
@@ -712,6 +735,7 @@ class _Modello:
         banda = self.scarto_ore_max
         limite = 2 * (24 * 7 + max(self.crediti.values())) * n + 4 * max(banda, 24) * n  # supera ogni |scarto| possibile
         self._differenza(banda)
+        self._differenza_mese()
         massimo = self.model.NewIntVar(0, limite, "scarto_max")
         # i saldi si centrano sui dipendenti attuali: chi è entrato o uscito non sposta tutti dalla media
         saldi = {p.id: self.storico.get(p.id, StoricoPersona()).saldo_ore for p in self.dipendenti}
@@ -757,6 +781,30 @@ class _Modello:
             self.model.Add(minime <= c)
         self.model.Add(massime - minime <= banda + oltre)
         self._pesa("fuori_banda", P_FUORI_BANDA * self.scala, oltre)
+
+    def _differenza_mese(self):
+        """Limite progressivo del mese (cvap/ore_mese.py): tra chi ha più ore contate dal 1° del mese a fine
+        settimana e chi ne ha meno al più `scarto_ore_mese`, o paga P_FUORI_BANDA_MESE per ogni ora oltre."""
+        if not self.scarto_ore_mese:
+            return
+        for cm in self.mese:
+            ids = [p.id for p in self.dipendenti if p.id in cm.precedenti]
+            if len(ids) < 2:
+                continue
+            contate = []
+            for pid in ids:
+                lavorate = sum(u.ore * v for u, v in self._vars_di(pid, lambda u: u.data in cm.giorni))
+                fisse = sum(a.ore for a in self.fissi_settimana if a.persona_id == pid and a.data in cm.giorni)
+                contate.append(lavorate + fisse + cm.precedenti[pid] + cm.crediti.get(pid, 0))
+            tetto = max(cm.precedenti.values()) + 24 * 7 + 7 * 6
+            massime = self.model.NewIntVar(0, tetto, "")
+            minime = self.model.NewIntVar(0, tetto, "")
+            oltre = self.model.NewIntVar(0, tetto, "")
+            for c in contate:
+                self.model.Add(massime >= c)
+                self.model.Add(minime <= c)
+            self.model.Add(massime - minime <= self.scarto_ore_mese + oltre)
+            self._pesa("fuori_banda_mese", P_FUORI_BANDA_MESE * self.scala, oltre)
 
     def _giorni_notti(self):
         n = self.scala

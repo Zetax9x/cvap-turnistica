@@ -24,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, BeforeValidator, Field, StringConstraints, model_validator
 
 from . import (accesso, api_push, push, api_calendari, api_cambi_turno, api_equita, api_festivita, api_storico_festivi,
-               dati_festivi, db, db_festivita, email_turni, registro)
+               dati_festivi, db, db_festivita, email_turni, ore_mese, registro)
 from .api_comune import (DATA_MAX, DATA_MIN, DataValida, Id, IdPath, Nome, descrivi_periodo, errore as _errore,
                          risposta_pdf)
 from .posta import PostinoBloccato, PostinoSmtp
@@ -155,12 +155,13 @@ class EmailEquitaIn(BaseModel):
 class ImpostazioniIn(BaseModel):
     data_riferimento_a: DataValida | None = None
     scarto_ore_max: int | None = Field(default=None, ge=db.SCARTO_ORE_MAX_RANGE[0], le=db.SCARTO_ORE_MAX_RANGE[1])
+    scarto_ore_mese: int | None = Field(default=None, ge=db.SCARTO_ORE_MESE_RANGE[0], le=db.SCARTO_ORE_MESE_RANGE[1])
 
     @model_validator(mode="after")
     def _almeno_una(self):
-        if not self.model_fields_set & {"data_riferimento_a", "scarto_ore_max"}:
-            raise ValueError("indicare data_riferimento_a e/o scarto_ore_max")
-        if self.data_riferimento_a is None and self.scarto_ore_max is None:
+        if not self.model_fields_set & {"data_riferimento_a", "scarto_ore_max", "scarto_ore_mese"}:
+            raise ValueError("indicare data_riferimento_a, scarto_ore_max e/o scarto_ore_mese")
+        if self.data_riferimento_a is None and self.scarto_ore_max is None and self.scarto_ore_mese is None:
             raise ValueError("i valori indicati non possono essere null")
         return self
 
@@ -475,6 +476,16 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date, versione: str = "e
 
 def _candidato_json(c: Candidato) -> dict:
     return {**dataclasses.asdict(c), "regole": list(c.regole), "avvisi": list(c.avvisi)}
+
+
+def confronti_mese(conn, giorni: list[date], dipendenti) -> list:
+    """I confronti del limite di ore nel mese (cvap/ore_mese.py) per la settimana `giorni`, sui turni generati."""
+    primo = min(date(d.year, d.month, 1) for d in giorni)
+    prima = giorni[0] - timedelta(days=1)
+    passato = [a for _, a in db.assegnazioni_periodo(conn, primo, prima, "generati")] if prima >= primo else []
+    settimane = [(giorni_settimana(date.fromisoformat(r["inizio"])), r["dipendenti"])
+                 for r in db.lista_settimane(conn, prima_di=giorni[0])]
+    return ore_mese.prepara(giorni, passato, db.ferie_periodo(conn, primo, giorni[-1]), settimane, dipendenti)
 
 
 def _settimana_passata(conn, riga: dict, versione: str = "effettivi") -> SettimanaPassata:
@@ -939,7 +950,7 @@ def create_app(db_path: str, password: str | None = None, postino=None,
 
     def impostazioni(conn) -> dict:
         return {"data_riferimento_a": db.get_riferimento_a(conn).isoformat(),
-                "scarto_ore_max": db.get_scarto_ore_max(conn)}
+                "scarto_ore_max": db.get_scarto_ore_max(conn), "scarto_ore_mese": db.get_scarto_ore_mese(conn)}
 
     @app.get("/api/impostazioni")
     def get_impostazioni(conn: Conn):
@@ -951,6 +962,8 @@ def create_app(db_path: str, password: str | None = None, postino=None,
             db.set_riferimento_a(conn, body.data_riferimento_a)
         if body.scarto_ore_max is not None:
             db.set_scarto_ore_max(conn, body.scarto_ore_max)
+        if body.scarto_ore_mese is not None:
+            db.set_scarto_ore_mese(conn, body.scarto_ore_mese)
         return impostazioni(conn)
 
     # --- divieti ---
@@ -1186,7 +1199,9 @@ def create_app(db_path: str, password: str | None = None, postino=None,
                                 storico=storico, contesto_generati=contesto_generati, ferie=db.ferie_periodo(conn, giorni[0], giorni[-1]),
                                 indisponibili=db.indisponibili_periodo(conn, giorni[0], giorni[-1]),
                                 fabbisogno=fabbisogno, scarto_ore_max=db.get_scarto_ore_max(conn),
-                                festivi=festivi, workers=worker_generatore(), **kwargs)
+                                festivi=festivi, workers=worker_generatore(),
+                                mese=confronti_mese(conn, giorni, dipendenti), scarto_ore_mese=db.get_scarto_ore_mese(conn),
+                                **kwargs)
             durata = round(time.monotonic() - t0, 2)
             if ris.stato in ("impossibile", "nessuna_soluzione"):
                 # niente da salvare: si tengono i turni generati in precedenza
@@ -1200,6 +1215,7 @@ def create_app(db_path: str, password: str | None = None, postino=None,
                 "durata_s": durata,
                 "qualita": ris.qualita,
                 "diagnostica": ris.diagnostica,
+                "differenza_mese": ris.differenza_mese,
                 "qualita_precedente": qualita_precedente,
                 "festivi": riepilogo_generazione(festivi, [a for a in fissi if not ore_extra(a)] + ris.assegnazioni, [p.id for p in dipendenti],
                                                  {f["id"]: f["nome"] for f in db_festivita.lista_festivita(conn)}),

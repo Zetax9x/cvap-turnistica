@@ -986,7 +986,16 @@ function renderRiepilogo(s) {
       diff ? el("span", { class: `conteggi ${oltre ? "scarto-alto" : "muted"}`,
         title: "Tra chi fa più ore e chi ne fa meno; ferie 6 h al giorno; chi ha un massimo di ore non è confrontato" },
       `Differenza max−min: ${formatOre(diff.differenza)} h (limite ${formatOre(limite)} h)`,
-      oltre ? el("span", { class: "sr-only" }, " oltre il limite") : null) : null));
+      oltre ? el("span", { class: "sr-only" }, " oltre il limite") : null) : null,
+      // limite progressivo del mese, calcolato alla generazione sui turni generati (cvap/ore_mese.py)
+      ...((s.report && s.report.differenza_mese) || []).map((m) => {
+        const fuori = m.differenza > m.limite;
+        const fino = m.fino_al ? ` fino al ${m.fino_al.slice(8, 10)}/${m.fino_al.slice(5, 7)}` : "";
+        return el("span", { class: `conteggi ${fuori ? "scarto-alto" : "muted"}`,
+          title: "Ore contate dal 1° del mese fino a questa settimana, sui turni generati; ferie 6 h al giorno" },
+        `Nel mese di ${m.mese}${fino}: ${formatOre(m.differenza)} h (limite ${formatOre(m.limite)} h)`,
+        fuori ? el("span", { class: "sr-only" }, " oltre il limite") : null);
+      })));
   if (!righe.length) {
     sezione.append(el("p", { class: "muted" }, "Nessuna assegnazione in questa settimana."));
     return sezione;

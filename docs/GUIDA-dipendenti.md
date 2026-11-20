@@ -48,7 +48,7 @@ Per alcuni dipendenti possono essere esclusi un certo tipo di turno o una certa 
 - I turni si organizzano per settimana, dal lunedì alla domenica.
 - Prima vengono inseriti i turni scelti dai volontari, in base alle disponibilità comunicate entro le 16 del venerdì; poi il programma assegna ai dipendenti tutti i posti rimasti, valutando l'intera settimana insieme e non un turno alla volta.
 - Il programma rispetta sempre: almeno 11 ore di riposo tra due turni, al massimo 3 giorni o 3 notti di fila, al massimo 72 ore lavorate a settimana, ferie, malattia, indisponibilità e turni che non puoi fare.
-- Cerca di dare a tutti circa le stesse ore: almeno 36 a settimana e di norma non più di 12 ore di differenza tra chi lavora di più e chi di meno.
+- Cerca di dare a tutti circa le stesse ore: almeno 36 a settimana e di norma non più di 12 ore di differenza tra chi lavora di più e chi di meno, sia nella settimana sia nel mese.
 - Distribuisce in modo equo, anche nel corso delle settimane, ore, notti, weekend, turni di Standby (anche tra giorni e notti) e Programmati, turni tra Acquasanta e Venarotta e turni nelle festività.
 - Il responsabile dei turni controlla il risultato, lo corregge se serve, conferma la settimana e invia i turni entro le 20 del venerdì.
 - Ferie, malattia e indisponibilità vanno comunicate al responsabile dei turni, che le registra nel programma (le indisponibilità entro le 12 del venerdì).
@@ -162,10 +162,13 @@ Le ore delle **sostituzioni** (paragrafo 6.4) sono a parte: non entrano in quest
 - Se hai un massimo di ore personale sotto le 36, il minimo è uguale al tuo massimo.
 - Se a fine mese resti sotto le ore del contratto, la differenza viene comunque pagata; se il mese dopo superi le ore del contratto, le ore in più vengono scalate per recuperarla (regolamento, punto 5).
 
-### 5.3 Non più di 12 ore di differenza
+### 5.3 Non più di 12 ore di differenza, nella settimana e nel mese
 
-- Tra il dipendente con più ore contate e quello con meno, nella stessa settimana, la differenza non deve superare 12 ore, cioè un turno. Il limite può essere modificato dal responsabile.
-- Nel confronto non entra chi è in ferie tutta la settimana né chi ha un massimo di ore personale.
+- **Nella settimana:** tra il dipendente con più ore contate e quello con meno, nella stessa settimana, la differenza non deve superare 12 ore, cioè un turno.
+- **Nel mese:** anche nel mese di calendario, dal giorno 1 fino all'ultima settimana generata, la differenza tra chi ha più ore contate e chi ne ha meno non deve superare 12 ore. Il controllo si ripete a ogni settimana, così a fine mese vale per tutto il mese (dal 1 al 30 o 31). Un turno conta nel mese in cui comincia: la notte del 31 conta nel mese che finisce. Si comincia a controllare quando dal giorno 1 sono passati almeno 7 giorni.
+- Se i due limiti non si possono rispettare insieme (per esempio in un mese già sbilanciato), il programma rispetta quello della settimana e si avvicina il più possibile a quello del mese.
+- Entrambi i limiti possono essere modificati dal responsabile.
+- Nel confronto non entra chi è in ferie tutta la settimana né chi ha un massimo di ore personale. Nel mese non entra nemmeno chi in quel mese è stato assente una settimana intera o non era ancora in servizio.
 - Oltre a questo, il programma cerca di portare ciascuno vicino alla media delle ore dei colleghi, tenendo conto delle settimane passate (capitolo 8).
 
 ### 5.4 Massimo di ore personale
@@ -270,7 +273,7 @@ Nelle statistiche e nell'email dell'equità che riceve il responsabile, per ogni
 Quando non si può avere tutto, il programma segue in linea di massima questo ordine di importanza:
 
 1. coprire tutti i posti (prima le postazioni fisse, poi Standby e Programmati);
-2. rispettare il minimo di 36 ore e la differenza massima di 12 ore, ed evitare il terzo turno ad Ascoli;
+2. rispettare il minimo di 36 ore e la differenza massima di 12 ore (nella settimana e nel mese), ed evitare il terzo turno ad Ascoli;
 3. evitare 3 giorni o 3 notti di fila;
 4. alternare giorno e notte ad Ascoli;
 5. non dare a una persona più di un turno di weekend nella stessa settimana, né più di un turno di Standby o di Programmati;
@@ -371,7 +374,7 @@ No, il programma non lo fa mai.
 | Turni di fila | Al massimo 3 giorni o 3 notti di fila; meglio 2 |
 | Ore massime | 72 ore lavorate a settimana, o il tuo massimo personale se più basso |
 | Ore minime | 36 ore a settimana, ferie comprese (se il personale basta) |
-| Differenza tra colleghi | Di norma al massimo 12 ore tra chi lavora di più e chi di meno (se il personale basta) |
+| Differenza tra colleghi | Di norma al massimo 12 ore tra chi lavora di più e chi di meno, nella settimana e nel mese (se il personale basta) |
 | Ferie e malattia | Nessun turno; 6 ore per giorno nel conteggio; niente da recuperare |
 | Ascoli | Al massimo 2 turni (3 solo in extremis); mai 2 giorni o 2 notti di fila; alternare giorno e notte |
 | Weekend | Distribuiti in modo equo nel tempo; di norma al massimo uno a settimana |

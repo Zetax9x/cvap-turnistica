@@ -99,7 +99,7 @@ _ETICHETTE = {
     "dal": "Dal", "al": "Al", "motivo": "Motivo", "data": "Giorno", "postazione": "Postazione", "fascia": "Fascia",
     "segmento": "Parte del turno", "ruolo": "Ruolo", "turno": "Turno", "quantita": "Quanti", "inizio": "Dalle ore",
     "fine": "Alle ore", "autisti": "Autisti", "soccorritori": "Soccorritori", "tempo_max": "Tempo massimo (secondi)",
-    "data_riferimento_a": "Data di riferimento settimana A", "scarto_ore_max": "Differenza massima di ore",
+    "data_riferimento_a": "Data di riferimento settimana A", "scarto_ore_max": "Differenza massima di ore", "scarto_ore_mese": "Differenza massima di ore nel mese",
     "contenuti": "Riepiloghi", "responsabile": "Riceve i turni", "turni": "Turni", "voci": "Posti richiesti",
     "anno": "Anno", "regola": "Regola", "giorno": "Giorno", "mese": "Mese", "conta_giorno": "Conta il giorno",
     "conta_notte": "Conta la notte",
