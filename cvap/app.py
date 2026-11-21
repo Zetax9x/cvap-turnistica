@@ -24,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, BeforeValidator, Field, StringConstraints, model_validator
 
 from . import (accesso, api_push, push, api_calendari, api_cambi_turno, api_equita, api_festivita, api_storico_festivi,
-               dati_festivi, db, db_festivita, email_turni, ore_mese, registro)
+               coppie, dati_festivi, db, db_festivita, email_turni, ore_mese, registro)
 from .api_comune import (DATA_MAX, DATA_MIN, DataValida, Id, IdPath, Nome, descrivi_periodo, errore as _errore,
                          risposta_pdf)
 from .posta import PostinoBloccato, PostinoSmtp
@@ -482,6 +482,13 @@ def payload_settimana(conn: sqlite3.Connection, inizio: date, versione: str = "e
 
 def _candidato_json(c: Candidato) -> dict:
     return {**dataclasses.asdict(c), "regole": list(c.regole), "avvisi": list(c.avvisi)}
+
+
+def coppie_recenti(conn, giorni: list[date]) -> dict:
+    """Quante volte ogni coppia autista + soccorritore ha lavorato insieme nelle 3 settimane prima di `giorni`, sui
+    turni effettivi (cvap/coppie.py)."""
+    dal = giorni[0] - timedelta(days=coppie.GIORNI_FINESTRA - 7)
+    return dict(coppie.conta(a for _, a in db.assegnazioni_periodo(conn, dal, giorni[0] - timedelta(days=1))))
 
 
 def confronti_mese(conn, giorni: list[date], dipendenti) -> list:
@@ -1209,6 +1216,7 @@ def create_app(db_path: str, password: str | None = None, postino=None,
                                 fabbisogno=fabbisogno, scarto_ore_max=db.get_scarto_ore_max(conn),
                                 festivi=festivi, workers=worker_generatore(),
                                 mese=confronti_mese(conn, giorni, dipendenti), limiti_mese=db.limiti_mese(conn),
+                                coppie_recenti=coppie_recenti(conn, giorni),
                                 **kwargs)
             durata = round(time.monotonic() - t0, 2)
             if ris.stato in ("impossibile", "nessuna_soluzione"):

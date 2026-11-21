@@ -44,6 +44,7 @@ from ortools.sat.python import cp_model
 
 from .modello import (EXTRA, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, STANDBY, Assegnazione, Fabbisogno, Persona,
                       Unita, in_conflitto, ore_extra, parti_turno)
+from . import coppie as cp
 from .ore_mese import NOMI_MISURE, ConfrontoMese, differenza as differenza_mese, valore as valore_mese
 from .rotazione_festivi import ContoFestivita, FestiviSettimana, costo_festivita, debiti
 from .slot import unita_da_coprire
@@ -67,6 +68,9 @@ P_FUORI_BANDA_MESE = P_FUORI_BANDA // 2
 P_NOTTI_MESE = 3_600
 P_WEEKEND_MESE = 2_000
 # misura: (voce, peso per unità oltre il limite, ore di un'unità): le notti si sforano a notti intere (12 ore)
+# stessa coppia autista + soccorritore oltre MAX_STESSA_COPPIA volte in 4 settimane (cvap/coppie.py): regola
+# leggera, poco più dei doppi weekend nella settimana e molto sotto ore, notti e weekend del mese
+P_STESSA_COPPIA = 400
 PESI_MESE = {"ore": ("fuori_banda_mese", P_FUORI_BANDA_MESE, 1), "notti": ("notti_mese", P_NOTTI_MESE, 12),
              "weekend": ("weekend_mese", P_WEEKEND_MESE, 1)}
 P_TERZO_ASCOLI = 1_000_000
@@ -112,6 +116,8 @@ VOCI_OBIETTIVO: dict[str, tuple[str, str, str]] = {
                          "Ore oltre la differenza massima ammessa nel mese, dal 1° fino a questa settimana."),
     "notti_mese": ("Notti nel mese oltre il limite", "regola",
                    "Ore di notte oltre la differenza massima ammessa nel mese, dal 1° fino a questa settimana."),
+    "stessa_coppia": ("Stessa coppia troppo spesso", "regola",
+                      "Volte in cui un autista e un soccorritore lavorano insieme oltre 2 volte in 4 settimane."),
     "weekend_mese": ("Weekend nel mese oltre il limite", "regola",
                      "Turni di weekend oltre la differenza massima ammessa nel mese, dal 1° fino a questa settimana."),
     "doppio_weekend": ("Doppi weekend", "regola", "Turni di weekend oltre il primo alla stessa persona."),
@@ -193,6 +199,7 @@ def genera(
     contesto_generati: Sequence[Assegnazione] | None = None,
     mese: Sequence[ConfrontoMese] = (),
     limiti_mese: dict[str, int] | None = None,
+    coppie_recenti: dict[tuple[int, int], int] | None = None,
 ) -> Risultato:
     """Genera i turni dei dipendenti.
 
@@ -211,6 +218,8 @@ def genera(
     se omesso coincide con `contesto`. Lo storico e i conti festivi devono riferirsi ai generati.
     `mese`: i confronti del mese (cvap/ore_mese.py); `limiti_mese`: per misura ("ore", "notti" in ore di notte,
     "weekend" in turni) la distanza massima nel mese, dal 1° fino a questa settimana (assente o 0: nessun limite).
+    `coppie_recenti`: quante volte ogni coppia (id minore, id maggiore) ha lavorato insieme nelle 3 settimane prima
+    (cvap/coppie.py); None: regola «non sempre lo stesso collega» spenta.
     """
     avvio = time.monotonic()
     storico = storico or {}
@@ -235,7 +244,8 @@ def genera(
     limiti_mese = {k: v for k, v in (limiti_mese or {}).items() if v}
     mese = list(mese) if limiti_mese else []
     m = _Modello(giorni, unita, dipendenti, fissi, contesto, storico, crediti, ferie_di, indisponibili,
-                 scarto_ore_max, festivi, copertura_rigida, contesto_generati, mese, limiti_mese)
+                 scarto_ore_max, festivi, copertura_rigida, contesto_generati, mese, limiti_mese,
+                 coppie_recenti)
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = tempo_max
     solver.parameters.num_search_workers = workers
@@ -474,7 +484,7 @@ class _Modello:
 
     def __init__(self, giorni, unita, dipendenti, fissi, contesto, storico, crediti, ferie, indisponibili,
                  scarto_ore_max=SCARTO_ORE_MAX, festivi=None, copertura_rigida=False,
-                 contesto_generati=None, mese=(), limiti_mese=None):
+                 contesto_generati=None, mese=(), limiti_mese=None, coppie_recenti=None):
         self.model = cp_model.CpModel()
         self.giorni = giorni
         self.unita = unita
@@ -483,6 +493,7 @@ class _Modello:
         self.scarto_ore_max = scarto_ore_max
         self.mese = list(mese)
         self.limiti_mese = dict(limiti_mese or {})
+        self.coppie_recenti = coppie_recenti
         self.festivi = festivi or FestiviSettimana()
         self.crediti = crediti  # ore di ferie di ogni dipendente, contate come lavorate
         # scala intera dei termini dell'obiettivo: le ore si misurano in unità di 1/scala
@@ -523,6 +534,7 @@ class _Modello:
         self._rotazioni()
         self._standby_giorno_notte()
         self._festivita()
+        self._stessa_coppia()
         if not copertura_rigida:
             self.model.Minimize(sum(c * e for c, e, _ in self.obiettivo))
             self._suggerimento_iniziale()
@@ -829,6 +841,71 @@ class _Modello:
                     self.model.Add(minime <= s)
                 self.model.Add(massime - minime <= k * limite + k * passo * oltre)
                 self._pesa(voce, peso * self.scala, oltre)
+
+    def _stessa_coppia(self):
+        """«Non sempre lo stesso collega» (cvap/coppie.py): per ogni coppia autista + soccorritore, le volte insieme
+        nelle 3 settimane prima più quelle di questa settimana oltre MAX_STESSA_COPPIA pagano P_STESSA_COPPIA.
+        Le coppie tra due dipendenti da assegnare si guardano solo se sono già arrivate al limite (servirebbe una
+        variabile per ogni possibile coppia e il calcolo diventerebbe troppo lento); quelle con un turno fissato
+        (volontari, turni fissati a mano) sempre, perché non servono variabili in più."""
+        if self.coppie_recenti is None:
+            return
+        storia = self.coppie_recenti
+        limite = cp.MAX_STESSA_COPPIA
+        equipaggi = defaultdict(lambda: {"autista": [], "soccorritore": []})
+        for ui, u in enumerate(self.unita):
+            if (k := cp.chiave(u)):
+                equipaggi[k][u.ruolo].append(("var", u, [(pid, v) for pid, v in self._vars_ui(ui)]))
+        for a in self.fissi_settimana:
+            if (k := cp.chiave(a)) and a.ruolo in ("autista", "soccorritore"):
+                equipaggi[k][a.ruolo].append(("fisso", a, a.persona_id))
+        termini = defaultdict(list)   # coppia -> espressioni 0/1 (una per equipaggio)
+        costanti = Counter()          # coppia -> volte già decise (due turni fissati)
+        for lati in equipaggi.values():
+            viste = defaultdict(list)  # stessa coppia nello stesso equipaggio (mezzi turni): conta una volta
+            for ta, ua, chi_a in lati["autista"]:
+                for ts, us, chi_s in lati["soccorritore"]:
+                    if not cp.sovrapposti(ua, us):
+                        continue
+                    if ta == "fisso" and ts == "fisso":
+                        if chi_a != chi_s:
+                            viste[cp.coppia(chi_a, chi_s)].append(1)
+                    elif ta == "fisso" or ts == "fisso":
+                        fisso, variabili = (chi_a, chi_s) if ta == "fisso" else (chi_s, chi_a)
+                        for pid, v in variabili:
+                            if pid != fisso:
+                                viste[cp.coppia(fisso, pid)].append(v)
+                    else:
+                        for pa, va in chi_a:
+                            for ps, vs in chi_s:
+                                c = cp.coppia(pa, ps)
+                                if pa != ps and storia.get(c, 0) >= limite:
+                                    z = self.model.NewBoolVar("")
+                                    self.model.Add(z >= va + vs - 1)
+                                    viste[c].append(z)
+            for c, termini_c in viste.items():
+                if any(isinstance(x, int) for x in termini_c):
+                    costanti[c] += 1
+                elif len(termini_c) == 1:
+                    termini[c].append(termini_c[0])
+                else:  # più mezzi turni della stessa coppia nello stesso equipaggio: al più una volta
+                    w = self.model.NewBoolVar("")
+                    self.model.AddMaxEquality(w, termini_c)
+                    termini[c].append(w)
+        for c in set(termini) | set(costanti):
+            gia = storia.get(c, 0) + costanti[c]
+            if gia + len(termini[c]) <= limite:
+                continue  # non può superare il limite
+            oltre = self.model.NewIntVar(0, gia + len(termini[c]), "")
+            self.model.Add(oltre >= gia + sum(termini[c]) - limite)
+            self._pesa("stessa_coppia", P_STESSA_COPPIA * self.scala, oltre)
+
+    def _vars_ui(self, ui):
+        if not hasattr(self, "_per_unita"):
+            self._per_unita = defaultdict(list)
+            for (pid, i), v in self.x.items():
+                self._per_unita[i].append((pid, v))
+        return self._per_unita[ui]
 
     def _giorni_notti(self):
         n = self.scala

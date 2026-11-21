@@ -241,6 +241,7 @@ Il programma ricorda le settimane passate e le usa per bilanciare il carico di l
 - **Standby e Programmati**: stesso principio dei weekend, contando solo le settimane A (paragrafo 7.2); nello Standby anche l'equilibrio tra giorni e notti.
 - **Acquasanta e Venarotta**: nel tempo ognuno fa più o meno tanti turni in una sede quanti nell'altra (paragrafo 8.1).
 - **Festività**: ogni festività gira tra i dipendenti guardando gli ultimi 5 anni (capitolo 9).
+- **Non sempre lo stesso collega**: quando ci sono alternative, il programma evita che lo stesso autista e lo stesso soccorritore lavorino insieme più di 2 volte in 4 settimane (la settimana da generare e le 3 prima). Vale anche con i volontari: chi sceglie sempre lo stesso turno non trova sempre la stessa persona. Contano Acquasanta, Venarotta, Ascoli e Standby (non i Programmati) e i turni effettivi, cambi turno compresi. È una regola leggera: viene dopo ore, notti e weekend.
 
 L'equità si misura sul lungo periodo: in una singola settimana puoi avere più notti o più ore di un collega, e il programma tende a compensare nelle settimane successive. Per ore, notti e weekend c'è in più un limite nel mese (paragrafo 8.4).
 
@@ -279,8 +280,9 @@ Quando non si può avere tutto, il programma segue in linea di massima questo or
 5. alternare giorno e notte ad Ascoli;
 6. non dare a una persona più di un turno di weekend nella stessa settimana, né più di un turno di Standby o di Programmati;
 7. portare le ore di ciascuno vicino alla media, recuperando le differenze delle settimane passate;
-8. distribuire in modo equo nel tempo weekend, Standby, Programmati e festività;
-9. equilibrare giorni e notti, anche nello Standby e ad Ascoli.
+8. non far lavorare sempre insieme la stessa coppia (al massimo 2 volte in 4 settimane);
+9. distribuire in modo equo nel tempo weekend, Standby, Programmati e festività;
+10. equilibrare giorni e notti, anche nello Standby e ad Ascoli.
 
 Solo alla fine, a turni decisi, il programma pareggia Acquasanta e Venarotta con gli scambi del paragrafo 8.1, senza cambiare nient'altro.
 
