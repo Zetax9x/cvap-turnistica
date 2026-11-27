@@ -981,7 +981,7 @@ function renderMese(voci) {
     const parti = lista.map((v) => `${(testo[v.misura] || testo.ore)(v.differenza)} (limite ${(limite[v.misura] || limite.ore)(v.limite)})`);
     return el("span", { class: `conteggi ${fuori ? "scarto-alto" : "muted"}`,
       title: "Distanza tra chi è più avanti e chi è più indietro dal 1° del mese fino a questa settimana, sui turni "
-        + "generati. Le settimane con ferie o malattia non contano per chi è assente." },
+        + "generati. I giorni di ferie o malattia non contano per chi è assente." },
     `Nel mese di ${mese}${fino}: ${parti.join(" · ")}`,
     fuori ? el("span", { class: "sr-only" }, " oltre il limite") : null);
   });

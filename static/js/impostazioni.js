@@ -284,8 +284,8 @@ function renderScarto(imp) {
     inputMese,
     el("p", { class: "hint" }, `Tra chi ha più ore e chi ne ha meno dal 1° del mese fino alla settimana che si genera: `
       + `il controllo si ripete a ogni settimana, così a fine mese vale per tutto il mese. Si controlla da quando sono `
-      + `passati almeno 7 giorni dal 1°. Non entra chi ha un massimo di ore. Una settimana con ferie, malattia o non `
-      + `in servizio, per quella persona, non conta nel mese (né debiti né crediti). Se i due limiti sono in conflitto `
+      + `passati almeno 7 giorni dal 1°. Non entra chi ha un massimo di ore. Il giorno di ferie o malattia (o una `
+      + `settimana non in servizio), per quella persona, non conta nel mese (né debiti né crediti). Se i due limiti sono in conflitto `
       + `vince quello della settimana. Attualmente ${valoreMese ? `${valoreMese} h` : "nessun limite"}. `
       + `Valori ammessi da ${SCARTO_MESE_MIN} (nessun limite) a ${SCARTO_MESE_MAX}; predefinito ${SCARTO_MESE_PREDEFINITO}.`)),
   ...turniMese.map((t) => el("div", { class: "campo" },

@@ -72,6 +72,7 @@ P_WEEKEND_MESE = 2_000
 # stessa coppia autista + soccorritore oltre MAX_STESSA_COPPIA volte in 4 settimane (cvap/coppie.py): regola
 # leggera, poco più dei doppi weekend nella settimana e molto sotto ore, notti e weekend del mese
 P_STESSA_COPPIA = 400
+SCALA_MESE = 720_720  # minimo comune multiplo di 1–16 (e divisibile per 18): le medie dei giorni restano intere
 PESI_MESE = {"ore": ("fuori_banda_mese", P_FUORI_BANDA_MESE, 1), "notti": ("notti_mese", P_NOTTI_MESE, 12),
              "weekend": ("weekend_mese", P_WEEKEND_MESE, 1)}
 P_TERZO_ASCOLI = 1_000_000
@@ -874,34 +875,44 @@ class _Modello:
         dal 1° del mese a fine settimana al più il limite, o paga il peso in PESI_MESE per ogni unità oltre
         (un'ora, una notte, un turno di weekend).
 
-        Lo scarto di chi è presente in settimana è precedente + valore − media dei presenti; moltiplicato per il
-        numero dei presenti `k` resta intero: k·precedente (arrotondato) + k·valore − somma dei valori."""
+        Giorno per giorno lo scarto di chi è presente cresce di valore − media dei presenti. Tutto è moltiplicato per
+        SCALA_MESE, così resta intero: la media di un giorno con `k` presenti è somma·round(SCALA_MESE/k) (esatta per
+        k fino a 16 e 18; con 17 l'errore è sotto l'1 per centomila)."""
+        ids = {p.id for p in self.dipendenti}
         for cm in self.mese:
-            presenti = [p.id for p in self.dipendenti if p.id in cm.presenti]
-            k = len(presenti)
-            if k == 0 or len(cm.partecipanti) < 2:
+            if len(cm.partecipanti) < 2:
+                continue
+            # i giorni con gli stessi presenti si sommano: la somma degli scarti dei giorni è lo scarto del gruppo (senza
+            # assenze un solo gruppo per settimana, come confrontare i totali)
+            gruppi = defaultdict(list)
+            for g in sorted(cm.giorni):
+                if (chi := frozenset(cm.presenti.get(g, frozenset()) & ids)):
+                    gruppi[chi].append(g)
+            if not gruppi:
                 continue  # nessuno conta in settimana: lo scarto del mese non cambia
             for misura, limite in self.limiti_mese.items():
                 voce, peso, passo = PESI_MESE[misura]
                 prima = cm.precedenti.get(misura, {})
-                x = {}
-                for pid in presenti:
-                    x[pid] = (sum(valore_mese(misura, u) * v for u, v in self._vars_di(pid, lambda u: u.data in cm.giorni))
-                              + sum(valore_mese(misura, a) for a in self.fissi_settimana
-                                    if a.persona_id == pid and a.data in cm.giorni))
-                # la somma dei presenti in una variabile: ogni scarto resta un vincolo con pochi termini
-                tetto = k * (int(max((abs(v) for v in prima.values()), default=0)) + 1 + 2 * 24 * 7)
-                somma = self.model.NewIntVar(0, k * 24 * 7, "")
-                self.model.Add(somma == sum(x.values()))
-                scarti = [round(k * prima.get(pid, 0.0)) + (k * x[pid] - somma if pid in x else 0)
-                          for pid in cm.partecipanti]
+                scarti = {pid: round(SCALA_MESE * prima.get(pid, 0.0)) for pid in cm.partecipanti}
+                for chi, giorni_g in gruppi.items():
+                    presenti, dentro = sorted(chi), set(giorni_g)
+                    x = {pid: sum(valore_mese(misura, u) * v for u, v in self._vars_di(pid, lambda u: u.data in dentro))
+                         + sum(valore_mese(misura, a) for a in self.fissi_settimana if a.persona_id == pid and a.data in dentro)
+                         for pid in presenti}
+                    # la somma dei presenti in una variabile: ogni scarto resta un vincolo con pochi termini
+                    somma = self.model.NewIntVar(0, 48 * len(presenti) * len(giorni_g), "")
+                    self.model.Add(somma == sum(x.values()))
+                    quota = round(SCALA_MESE / len(presenti))
+                    for pid in presenti:
+                        scarti[pid] = scarti[pid] + SCALA_MESE * x[pid] - quota * somma
+                tetto = SCALA_MESE * (int(max((abs(v) for v in prima.values()), default=0)) + 1 + 2 * 24 * 7)
                 massime = self.model.NewIntVar(-tetto, tetto, "")
                 minime = self.model.NewIntVar(-tetto, tetto, "")
                 oltre = self.model.NewIntVar(0, 2 * tetto, "")
-                for s in scarti:
+                for s in scarti.values():
                     self.model.Add(massime >= s)
                     self.model.Add(minime <= s)
-                self.model.Add(massime - minime <= k * limite + k * passo * oltre)
+                self.model.Add(massime - minime <= SCALA_MESE * (limite + passo * oltre))
                 self._pesa(voce, peso * self.scala, oltre)
 
     def _stessa_coppia(self):

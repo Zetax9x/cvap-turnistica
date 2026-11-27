@@ -300,8 +300,8 @@ Oltre al pareggio nel tempo, nel mese di calendario (dal 1 al 30 o 31) tra chi �
 | Turni di weekend (sabato e domenica, giorno o notte) | 2 turni |
 
 - Il controllo si ripete a ogni settimana generata, sul periodo dal giorno 1 fin lì: così a fine mese vale per tutto il mese. Si comincia quando dal giorno 1 sono passati almeno 7 giorni.
-- Per ogni settimana si guarda quanto ognuno ha fatto rispetto alla media dei colleghi; nel mese si sommano queste differenze.
-- **Ferie e malattia:** la settimana in cui hai anche solo un giorno di ferie o malattia, per te, non conta nel mese: non crea né debiti né crediti, come per le ore nel tempo. Lo stesso vale per le settimane in cui non eri ancora in servizio. Così chi è in ferie non «sfora» il limite e non deve recuperare dopo.
+- Giorno per giorno si guarda quanto ognuno ha fatto rispetto alla media dei colleghi presenti quel giorno; nel mese si sommano queste differenze.
+- **Ferie e malattia:** il giorno di ferie o malattia, per te, non conta nel mese: non crea né debiti né crediti. Gli altri giorni della settimana contano normalmente. Lo stesso vale per le settimane in cui non eri ancora in servizio e, per tutti, per i giorni delle settimane non confermate. Così chi è in ferie non «sfora» il limite e non deve recuperare dopo.
 - Un turno conta nel mese in cui comincia: la notte del 31 conta nel mese che finisce. Mezza notte conta mezza notte.
 - Non entra nel confronto chi ha un massimo di ore personale. Le sostituzioni (ore extra) non contano.
 - Standby, Programmati, Ascoli e festività restano solo nel pareggio nel tempo: in un mese sono troppo pochi per pareggiarli.
