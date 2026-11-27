@@ -964,6 +964,29 @@ function vietato(personaId, postazione, fascia, segmento) {
     && (!d.postazione || d.postazione === postazione) && (!d.turno || tipi.includes(d.turno)));
 }
 
+/** Equità nel mese (limite progressivo, calcolato alla generazione sui turni generati: cvap/ore_mese.py):
+ * una riga per mese con ore, notti e weekend, ciascuno con il suo limite. */
+function renderMese(voci) {
+  const perMese = new Map();
+  for (const v of voci) {
+    if (!perMese.has(v.mese)) perMese.set(v.mese, []);
+    perMese.get(v.mese).push(v);
+  }
+  const testo = { ore: (x) => `ore ${formatOre(x)} h`, notti: (x) => `notti ${formatOre(x / 12)}`,
+    weekend: (x) => `weekend ${formatOre(x)}` };
+  const limite = { ore: (x) => `${formatOre(x)} h`, notti: (x) => formatOre(x / 12), weekend: (x) => formatOre(x) };
+  return [...perMese.entries()].map(([mese, lista]) => {
+    const fuori = lista.some((v) => v.differenza > v.limite + 0.05);
+    const fino = lista[0].fino_al ? ` fino al ${lista[0].fino_al.slice(8, 10)}/${lista[0].fino_al.slice(5, 7)}` : "";
+    const parti = lista.map((v) => `${(testo[v.misura] || testo.ore)(v.differenza)} (limite ${(limite[v.misura] || limite.ore)(v.limite)})`);
+    return el("span", { class: `conteggi ${fuori ? "scarto-alto" : "muted"}`,
+      title: "Distanza tra chi è più avanti e chi è più indietro dal 1° del mese fino a questa settimana, sui turni "
+        + "generati. Le settimane con ferie o malattia non contano per chi è assente." },
+    `Nel mese di ${mese}${fino}: ${parti.join(" · ")}`,
+    fuori ? el("span", { class: "sr-only" }, " oltre il limite") : null);
+  });
+}
+
 function renderRiepilogo(s) {
   const media = s.media_ore;
   const diff = s.differenza_ore || null;
@@ -987,7 +1010,9 @@ function renderRiepilogo(s) {
       diff ? el("span", { class: `conteggi ${oltre ? "scarto-alto" : "muted"}`,
         title: "Tra chi fa più ore e chi ne fa meno; ferie 6 h al giorno; chi ha un massimo di ore non è confrontato" },
       `Differenza max−min: ${formatOre(diff.differenza)} h (limite ${formatOre(limite)} h)`,
-      oltre ? el("span", { class: "sr-only" }, " oltre il limite") : null) : null));
+      oltre ? el("span", { class: "sr-only" }, " oltre il limite") : null) : null,
+      // limite progressivo del mese, calcolato alla generazione sui turni generati (cvap/ore_mese.py)
+      ...renderMese((s.report && s.report.differenza_mese) || [])));
   if (!righe.length) {
     sezione.append(el("p", { class: "muted" }, "Nessuna assegnazione in questa settimana."));
     return sezione;

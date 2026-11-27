@@ -45,6 +45,8 @@ from ortools.sat.python import cp_model
 
 from .modello import (EXTRA, POSTAZIONI_A_RICHIESTA, PROGRAMMATI, STANDBY, Assegnazione, Fabbisogno, Persona,
                       Unita, in_conflitto, ore_extra, parti_turno)
+from . import coppie as cp
+from .ore_mese import NOMI_MISURE, ConfrontoMese, differenza as differenza_mese, valore as valore_mese
 from .rotazione_festivi import ContoFestivita, FestiviSettimana, costo_festivita, debiti
 from .slot import unita_da_coprire
 from .storico import CATEGORIE_RICHIESTA, CATEGORIE_WEEKEND, SEDI_ALTERNATE, StoricoPersona, categoria_weekend
@@ -59,6 +61,19 @@ __all__ = ["Risultato", "StoricoPersona", "genera"]
 P_SCOPERTO = 10_000_000
 P_FUORI_BANDA = 100_000
 P_SOTTO_MINIMO = P_FUORI_BANDA  # per ogni ora sotto ORE_MIN_SETTIMANA
+# per ogni ora oltre il limite del mese (cvap/ore_mese.py): sotto il limite della settimana, così se i due sono in
+# conflitto (un mese già sbilanciato) vince la settimana e il mese si avvicina al limite il più possibile
+P_FUORI_BANDA_MESE = P_FUORI_BANDA // 2
+# notti e weekend nel mese: per ogni notte (anche solo in parte) e per ogni turno di weekend oltre il limite. Sopra il
+# pareggio giorno/notte e i doppi weekend della settimana, sotto i tre di fila (5.000) e molto sotto le ore
+P_NOTTI_MESE = 3_600
+P_WEEKEND_MESE = 2_000
+# misura: (voce, peso per unità oltre il limite, ore di un'unità): le notti si sforano a notti intere (12 ore)
+# stessa coppia autista + soccorritore oltre MAX_STESSA_COPPIA volte in 4 settimane (cvap/coppie.py): regola
+# leggera, poco più dei doppi weekend nella settimana e molto sotto ore, notti e weekend del mese
+P_STESSA_COPPIA = 400
+PESI_MESE = {"ore": ("fuori_banda_mese", P_FUORI_BANDA_MESE, 1), "notti": ("notti_mese", P_NOTTI_MESE, 12),
+             "weekend": ("weekend_mese", P_WEEKEND_MESE, 1)}
 P_TERZO_ASCOLI = 1_000_000
 P_TRE_DI_FILA = 5_000
 # Ascoli, in ordine di peso: posto scoperto > terzo turno > secondo giorno/notte nella settimana > 48 ore > ore fuori banda
@@ -102,6 +117,14 @@ VOCI_OBIETTIVO: dict[str, tuple[str, str, str]] = {
     "sotto_minimo": ("Ore sotto il minimo", "regola", "Ore mancanti al minimo settimanale, sommate tra i dipendenti."),
     "fuori_banda": ("Differenza di ore oltre il limite", "regola",
                     "Ore oltre la differenza massima ammessa tra chi lavora di più e chi di meno."),
+    "fuori_banda_mese": ("Differenza di ore nel mese oltre il limite", "regola",
+                         "Ore oltre la differenza massima ammessa nel mese, dal 1° fino a questa settimana."),
+    "notti_mese": ("Notti nel mese oltre il limite", "regola",
+                   "Ore di notte oltre la differenza massima ammessa nel mese, dal 1° fino a questa settimana."),
+    "stessa_coppia": ("Stessa coppia troppo spesso", "regola",
+                      "Volte in cui un autista e un soccorritore lavorano insieme oltre 2 volte in 4 settimane."),
+    "weekend_mese": ("Weekend nel mese oltre il limite", "regola",
+                     "Turni di weekend oltre la differenza massima ammessa nel mese, dal 1° fino a questa settimana."),
     "doppio_weekend": ("Doppi weekend", "regola", "Turni di weekend oltre il primo alla stessa persona."),
     "doppia_richiesta": ("Doppi Standby, Programmati o Extra", "regola",
                          "Turni della stessa postazione a richiesta oltre il primo alla stessa persona."),
@@ -159,6 +182,7 @@ class Risultato:
     durata_s: float = 0.0
     qualita: dict | None = None  # indicatori della ricerca; solo se esiste una soluzione
     diagnostica: dict | None = None  # peso di ogni regola nella soluzione (vedi `_diagnostica`)
+    differenza_mese: list[dict] = field(default_factory=list)  # per mese e misura controllati (cvap/ore_mese.py)
 
 
 def genera(
@@ -178,6 +202,9 @@ def genera(
     festivi: FestiviSettimana | None = None,
     copertura_rigida: bool = False,
     contesto_generati: Sequence[Assegnazione] | None = None,
+    mese: Sequence[ConfrontoMese] = (),
+    limiti_mese: dict[str, int] | None = None,
+    coppie_recenti: dict[tuple[int, int], int] | None = None,
 ) -> Risultato:
     """Genera i turni dei dipendenti.
 
@@ -194,6 +221,10 @@ def genera(
     `contesto` contiene gli impegni effettivi delle settimane vicine, usati per i vincoli.
     `contesto_generati` contiene il programma originale, usato per le penalità di distribuzione;
     se omesso coincide con `contesto`. Lo storico e i conti festivi devono riferirsi ai generati.
+    `mese`: i confronti del mese (cvap/ore_mese.py); `limiti_mese`: per misura ("ore", "notti" in ore di notte,
+    "weekend" in turni) la distanza massima nel mese, dal 1° fino a questa settimana (assente o 0: nessun limite).
+    `coppie_recenti`: quante volte ogni coppia (id minore, id maggiore) ha lavorato insieme nelle 3 settimane prima
+    (cvap/coppie.py); None: regola «non sempre lo stesso collega» spenta.
     """
     avvio = time.monotonic()
     storico = storico or {}
@@ -215,8 +246,11 @@ def genera(
         return Risultato("impossibile", scoperti=unita, messaggio="Nessun dipendente attivo disponibile.")
 
     ferie_di = {p.id: set(ferie.get(p.id, ())) for p in dipendenti}
+    limiti_mese = {k: v for k, v in (limiti_mese or {}).items() if v}
+    mese = list(mese) if limiti_mese else []
     m = _Modello(giorni, unita, dipendenti, fissi, contesto, storico, crediti, ferie_di, indisponibili,
-                 scarto_ore_max, festivi, copertura_rigida, contesto_generati)
+                 scarto_ore_max, festivi, copertura_rigida, contesto_generati, mese, limiti_mese,
+                 coppie_recenti)
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = tempo_max
     solver.parameters.num_search_workers = workers
@@ -249,7 +283,8 @@ def genera(
         else:
             scoperti.append(u)
     prima_sedi = assegnazioni
-    assegnazioni = riequilibra_sedi(assegnazioni, dipendenti, storico or {}, [a for a in fissi if not ore_extra(a)])
+    assegnazioni = riequilibra_sedi(assegnazioni, dipendenti, storico or {}, [a for a in fissi if not ore_extra(a)],
+                                    coppie_recenti=coppie_recenti)
     scambi_sedi = sum(1 for x, y in zip(prima_sedi, assegnazioni) if x.persona_id != y.persona_id) // 2
 
     ore = _ore_fisse(dipendenti, fissi)
@@ -266,6 +301,15 @@ def genera(
         alto, basso = d["massimo"], d["minimo"]
         note.append(f"Differenza di ore oltre il limite di {scarto_ore_max}h: "
                     f"{alto['nome']} {alto['ore']}h, {basso['nome']} {basso['ore']}h.")
+    persone_id = {p.id: p for p in persone}
+    diff_mese = [x for cm in mese for misura in limiti_mese
+                 if (x := differenza_mese(cm, fissi + assegnazioni, misura, persone_id))]
+    for x in diff_mese:
+        x["limite"] = limiti_mese[x["misura"]]
+        if x["differenza"] > x["limite"] + 0.05:
+            alto, basso = x["massimo"], x["minimo"]
+            note.append(f"Nel mese di {x['mese']} distanza di {x['differenza']:g} {x['unita']} oltre il limite di "
+                        f"{x['limite']}: più avanti {alto['nome']}, più indietro {basso['nome']}.")
     note += _nota_minimo(giorni, fissi + assegnazioni, dipendenti, ferie)
     nomi = {p.id: p.nome for p in dipendenti}
     in_extremis = [nomi[pid] for pid, n in Counter(a.persona_id for a in fissi + assegnazioni
@@ -289,6 +333,7 @@ def genera(
         durata_s=durata,
         qualita=_qualita(solver, conteggio, durata, tempo_max, workers, status),
         diagnostica=_diagnostica(solver, m.obiettivo, scambi_sedi),
+        differenza_mese=diff_mese,
     )
 
 
@@ -307,24 +352,28 @@ class _ContaSoluzioni(cp_model.CpSolverSolutionCallback):
 
 def riequilibra_sedi(assegnazioni: list[Assegnazione], dipendenti: Sequence[Persona],
                      storico: dict[int, StoricoPersona], fissi: Sequence[Assegnazione] = (),
-                     tempo_max: float = 2.0) -> list[Assegnazione]:
+                     tempo_max: float = 2.0, coppie_recenti: dict[tuple[int, int], int] | None = None) -> list[Assegnazione]:
     """Scambia tra Acquasanta e Venarotta i dipendenti che fanno lo stesso turno (data, fascia, metà, ruolo)
     nelle due sedi, per avvicinare ognuno a tanti turni nell'una quanti nell'altra, storico compreso.
 
     Lo scambio non cambia orari né ore: riposi, ore, weekend, giorni/notti restano gli stessi. Si salta
-    se uno dei due ha il divieto per l'altra sede. Minimizza la somma di (storico + settimana)^2."""
+    se uno dei due ha il divieto per l'altra sede, o se con `coppie_recenti` farebbe lavorare insieme una coppia
+    più volte del limite di «non sempre lo stesso collega» (cvap/coppie.py). Minimizza la somma di
+    (storico + settimana)^2."""
     primo, secondo = SEDI_ALTERNATE
     per_id = {p.id: p for p in dipendenti}
     gruppi: dict[tuple, dict[str, list[int]]] = defaultdict(lambda: {primo: [], secondo: []})
     for i, a in enumerate(assegnazioni):
         if a.postazione in (primo, secondo) and a.persona_id in per_id:
             gruppi[(a.data, a.fascia, a.segmento, a.ruolo)][a.postazione].append(i)
+    peggiora_coppie = _controllo_coppie(assegnazioni, fissi, coppie_recenti)
     coppie = []
     for g in gruppi.values():
         for i, j in zip(g[primo], g[secondo]):
             a = assegnazioni[i]
             pi, pj = per_id[a.persona_id], per_id[assegnazioni[j].persona_id]
-            if not pi.vieta(secondo, a.fascia, a.segmento) and not pj.vieta(primo, a.fascia, a.segmento):
+            if not pi.vieta(secondo, a.fascia, a.segmento) and not pj.vieta(primo, a.fascia, a.segmento) \
+                    and not peggiora_coppie(i, j):
                 coppie.append((i, j))
     if not coppie:
         return assegnazioni
@@ -365,6 +414,40 @@ def riequilibra_sedi(assegnazioni: list[Assegnazione], dipendenti: Sequence[Pers
             out[i] = replace(assegnazioni[i], persona_id=assegnazioni[j].persona_id)
             out[j] = replace(assegnazioni[j], persona_id=assegnazioni[i].persona_id)
     return out
+
+
+def _controllo_coppie(assegnazioni, fissi, coppie_recenti):
+    """Per riequilibra_sedi: vero se lo scambio (i, j) aumenta le volte oltre il limite di «non sempre lo stesso
+    collega», contando le 3 settimane prima e i turni della settimana. Senza `coppie_recenti` non esclude nulla."""
+    if coppie_recenti is None:
+        return lambda i, j: False
+    tutti = [a for a in fissi if not ore_extra(a)] + list(assegnazioni)
+    conta = Counter(coppie_recenti) + cp.conta(tutti)
+    limite = cp.MAX_STESSA_COPPIA
+
+    def compagni(a, persona):
+        k = cp.chiave(a)
+        altro = "soccorritore" if a.ruolo == "autista" else "autista"
+        return {b.persona_id for b in tutti if cp.chiave(b) == k and b.ruolo == altro and b.persona_id != persona
+                and cp.sovrapposti(a, b)}
+
+    def oltre(c):
+        return max(0, c - limite)
+
+    def peggiora(i, j):
+        a, b = assegnazioni[i], assegnazioni[j]
+        delta = Counter()
+        for x in compagni(a, a.persona_id):
+            delta[cp.coppia(a.persona_id, x)] -= 1
+        for x in compagni(b, b.persona_id):
+            delta[cp.coppia(b.persona_id, x)] -= 1
+        for x in compagni(b, b.persona_id):  # a va al posto di b
+            delta[cp.coppia(a.persona_id, x)] += 1
+        for x in compagni(a, a.persona_id):  # b va al posto di a
+            delta[cp.coppia(b.persona_id, x)] += 1
+        return sum(oltre(conta[c] + d) - oltre(conta[c]) for c, d in delta.items() if d) > 0
+
+    return peggiora
 
 
 def _qualita(solver, conteggio, durata, tempo_max, workers, status) -> dict:
@@ -445,13 +528,16 @@ class _Modello:
 
     def __init__(self, giorni, unita, dipendenti, fissi, contesto, storico, crediti, ferie, indisponibili,
                  scarto_ore_max=SCARTO_ORE_MAX, festivi=None, copertura_rigida=False,
-                 contesto_generati=None):
+                 contesto_generati=None, mese=(), limiti_mese=None, coppie_recenti=None):
         self.model = cp_model.CpModel()
         self.giorni = giorni
         self.unita = unita
         self.dipendenti = dipendenti
         self.storico = storico
         self.scarto_ore_max = scarto_ore_max
+        self.mese = list(mese)
+        self.limiti_mese = dict(limiti_mese or {})
+        self.coppie_recenti = coppie_recenti
         self.festivi = festivi or FestiviSettimana()
         self.crediti = crediti  # ore di ferie di ogni dipendente, contate come lavorate
         # scala intera dei termini dell'obiettivo: le ore si misurano in unità di 1/scala
@@ -492,6 +578,7 @@ class _Modello:
         self._rotazioni()
         self._standby_giorno_notte()
         self._festivita()
+        self._stessa_coppia()
         if not copertura_rigida:
             self.model.Minimize(sum(c * e for c, e, _ in self.obiettivo))
             self._suggerimento_iniziale()
@@ -735,6 +822,7 @@ class _Modello:
         banda = self.scarto_ore_max
         limite = 2 * (24 * 7 + max(self.crediti.values())) * n + 4 * max(banda, 24) * n  # supera ogni |scarto| possibile
         self._differenza(banda)
+        self._differenza_mese()
         massimo = self.model.NewIntVar(0, limite, "scarto_max")
         # i saldi si centrano sui dipendenti attuali: chi è entrato o uscito non sposta tutti dalla media
         saldi = {p.id: self.storico.get(p.id, StoricoPersona()).saldo_ore for p in self.dipendenti}
@@ -780,6 +868,106 @@ class _Modello:
             self.model.Add(minime <= c)
         self.model.Add(massime - minime <= banda + oltre)
         self._pesa("fuori_banda", P_FUORI_BANDA * self.scala, oltre)
+
+    def _differenza_mese(self):
+        """Limiti progressivi del mese (cvap/ore_mese.py): per ogni misura, tra chi è più avanti e chi è più indietro
+        dal 1° del mese a fine settimana al più il limite, o paga il peso in PESI_MESE per ogni unità oltre
+        (un'ora, una notte, un turno di weekend).
+
+        Lo scarto di chi è presente in settimana è precedente + valore − media dei presenti; moltiplicato per il
+        numero dei presenti `k` resta intero: k·precedente (arrotondato) + k·valore − somma dei valori."""
+        for cm in self.mese:
+            presenti = [p.id for p in self.dipendenti if p.id in cm.presenti]
+            k = len(presenti)
+            if k == 0 or len(cm.partecipanti) < 2:
+                continue  # nessuno conta in settimana: lo scarto del mese non cambia
+            for misura, limite in self.limiti_mese.items():
+                voce, peso, passo = PESI_MESE[misura]
+                prima = cm.precedenti.get(misura, {})
+                x = {}
+                for pid in presenti:
+                    x[pid] = (sum(valore_mese(misura, u) * v for u, v in self._vars_di(pid, lambda u: u.data in cm.giorni))
+                              + sum(valore_mese(misura, a) for a in self.fissi_settimana
+                                    if a.persona_id == pid and a.data in cm.giorni))
+                # la somma dei presenti in una variabile: ogni scarto resta un vincolo con pochi termini
+                tetto = k * (int(max((abs(v) for v in prima.values()), default=0)) + 1 + 2 * 24 * 7)
+                somma = self.model.NewIntVar(0, k * 24 * 7, "")
+                self.model.Add(somma == sum(x.values()))
+                scarti = [round(k * prima.get(pid, 0.0)) + (k * x[pid] - somma if pid in x else 0)
+                          for pid in cm.partecipanti]
+                massime = self.model.NewIntVar(-tetto, tetto, "")
+                minime = self.model.NewIntVar(-tetto, tetto, "")
+                oltre = self.model.NewIntVar(0, 2 * tetto, "")
+                for s in scarti:
+                    self.model.Add(massime >= s)
+                    self.model.Add(minime <= s)
+                self.model.Add(massime - minime <= k * limite + k * passo * oltre)
+                self._pesa(voce, peso * self.scala, oltre)
+
+    def _stessa_coppia(self):
+        """«Non sempre lo stesso collega» (cvap/coppie.py): per ogni coppia autista + soccorritore, le volte insieme
+        nelle 3 settimane prima più quelle di questa settimana oltre MAX_STESSA_COPPIA pagano P_STESSA_COPPIA.
+        Le coppie tra due dipendenti da assegnare si guardano solo se sono già arrivate al limite (servirebbe una
+        variabile per ogni possibile coppia e il calcolo diventerebbe troppo lento); quelle con un turno fissato
+        (volontari, turni fissati a mano) sempre, perché non servono variabili in più."""
+        if self.coppie_recenti is None:
+            return
+        storia = self.coppie_recenti
+        limite = cp.MAX_STESSA_COPPIA
+        equipaggi = defaultdict(lambda: {"autista": [], "soccorritore": []})
+        for ui, u in enumerate(self.unita):
+            if (k := cp.chiave(u)):
+                equipaggi[k][u.ruolo].append(("var", u, [(pid, v) for pid, v in self._vars_ui(ui)]))
+        for a in self.fissi_settimana:
+            if (k := cp.chiave(a)) and a.ruolo in ("autista", "soccorritore"):
+                equipaggi[k][a.ruolo].append(("fisso", a, a.persona_id))
+        termini = defaultdict(list)   # coppia -> espressioni 0/1 (una per equipaggio)
+        costanti = Counter()          # coppia -> volte già decise (due turni fissati)
+        for lati in equipaggi.values():
+            viste = defaultdict(list)  # stessa coppia nello stesso equipaggio (mezzi turni): conta una volta
+            for ta, ua, chi_a in lati["autista"]:
+                for ts, us, chi_s in lati["soccorritore"]:
+                    if not cp.sovrapposti(ua, us):
+                        continue
+                    if ta == "fisso" and ts == "fisso":
+                        if chi_a != chi_s:
+                            viste[cp.coppia(chi_a, chi_s)].append(1)
+                    elif ta == "fisso" or ts == "fisso":
+                        fisso, variabili = (chi_a, chi_s) if ta == "fisso" else (chi_s, chi_a)
+                        for pid, v in variabili:
+                            if pid != fisso:
+                                viste[cp.coppia(fisso, pid)].append(v)
+                    else:
+                        for pa, va in chi_a:
+                            for ps, vs in chi_s:
+                                c = cp.coppia(pa, ps)
+                                if pa != ps and storia.get(c, 0) >= limite:
+                                    z = self.model.NewBoolVar("")
+                                    self.model.Add(z >= va + vs - 1)
+                                    viste[c].append(z)
+            for c, termini_c in viste.items():
+                if any(isinstance(x, int) for x in termini_c):
+                    costanti[c] += 1
+                elif len(termini_c) == 1:
+                    termini[c].append(termini_c[0])
+                else:  # più mezzi turni della stessa coppia nello stesso equipaggio: al più una volta
+                    w = self.model.NewBoolVar("")
+                    self.model.AddMaxEquality(w, termini_c)
+                    termini[c].append(w)
+        for c in set(termini) | set(costanti):
+            gia = storia.get(c, 0) + costanti[c]
+            if gia + len(termini[c]) <= limite:
+                continue  # non può superare il limite
+            oltre = self.model.NewIntVar(0, gia + len(termini[c]), "")
+            self.model.Add(oltre >= gia + sum(termini[c]) - limite)
+            self._pesa("stessa_coppia", P_STESSA_COPPIA * self.scala, oltre)
+
+    def _vars_ui(self, ui):
+        if not hasattr(self, "_per_unita"):
+            self._per_unita = defaultdict(list)
+            for (pid, i), v in self.x.items():
+                self._per_unita[i].append((pid, v))
+        return self._per_unita[ui]
 
     def _giorni_notti(self):
         n = self.scala

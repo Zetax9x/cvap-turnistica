@@ -96,11 +96,11 @@ def test_postazioni_seed(client):
 
 
 def test_impostazioni_normalizzate_al_lunedi(client):
-    assert client.get("/api/impostazioni").json() == {"data_riferimento_a": LUNEDI_A, "scarto_ore_max": 12}
+    assert client.get("/api/impostazioni").json() == {"data_riferimento_a": LUNEDI_A, "scarto_ore_max": 12, "scarto_ore_mese": 12, "scarto_notti_mese": 2, "scarto_weekend_mese": 2}
     r = client.put("/api/impostazioni", json={"data_riferimento_a": "2026-10-29"})  # giovedì
     assert r.status_code == 200
-    assert r.json() == {"data_riferimento_a": LUNEDI_B, "scarto_ore_max": 12}
-    assert client.get("/api/impostazioni").json() == {"data_riferimento_a": LUNEDI_B, "scarto_ore_max": 12}
+    assert r.json() == {"data_riferimento_a": LUNEDI_B, "scarto_ore_max": 12, "scarto_ore_mese": 12, "scarto_notti_mese": 2, "scarto_weekend_mese": 2}
+    assert client.get("/api/impostazioni").json() == {"data_riferimento_a": LUNEDI_B, "scarto_ore_max": 12, "scarto_ore_mese": 12, "scarto_notti_mese": 2, "scarto_weekend_mese": 2}
     assert client.put("/api/impostazioni", json={"data_riferimento_a": "boh"}).status_code == 422
 
 
@@ -1225,7 +1225,7 @@ def test_scarto_ore_max_impostabile_e_nel_payload_della_settimana(client):
     assert client.get(f"/api/settimane/{LUNEDI_A}").json()["scarto_ore_max"] == 12
     r = client.put("/api/impostazioni", json={"scarto_ore_max": 6})
     assert r.status_code == 200
-    assert r.json() == {"data_riferimento_a": LUNEDI_A, "scarto_ore_max": 6}  # la data resta com'è
+    assert r.json() == {"data_riferimento_a": LUNEDI_A, "scarto_ore_max": 6, "scarto_ore_mese": 12, "scarto_notti_mese": 2, "scarto_weekend_mese": 2}  # la data resta com'è
     assert client.get("/api/impostazioni").json()["scarto_ore_max"] == 6
     assert client.get(f"/api/settimane/{LUNEDI_A}").json()["scarto_ore_max"] == 6
 

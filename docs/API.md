@@ -12,7 +12,9 @@ Frontend: HTML + JS vanilla (ES modules) in `static/`, servito da FastAPI. UI in
 | `slot.py` | `unita_da_coprire(giorni, postazioni, occupate) -> list[Unita]` |
 | `vincoli.py` | `Violazione(livello: "errore"\|"avviso", codice, messaggio, persona_id=None, data=None)`, `valida_settimana(giorni, postazioni, assegnazioni, persone: dict[int, Persona], contesto=()) -> list[Violazione]` |
 | `storico.py` | `StoricoPersona(settimane, saldo_ore, weekend: dict, ore_giorno, ore_notte)`, `SettimanaPassata(media_ore, dipendenti: list[int], assegnazioni)`, `calcola_storico(list[SettimanaPassata]) -> dict[int, StoricoPersona]` |
-| `solver.py` | `genera(giorni, postazioni, persone: list[Persona], fissi=(), contesto=(), storico=None, tempo_max=45.0, seed=0, workers=8, ferie=None, indisponibili=None, fabbisogno=(), scarto_ore_max=12, festivi=None) -> Risultato` con `Risultato(stato, assegnazioni: list[Assegnazione]` (solo nuove, origine `generato`)`, scoperti: list[Unita], media_ore: float, ore: dict[int,int], messaggio: str, durata_s: float, qualita: dict \| None, diagnostica: dict \| None)`; `stato` ∈ `ottimo \| ammissibile \| impossibile \| nessuna_soluzione` |
+| `coppie.py` | «Non sempre lo stesso collega»: `chiave(turno)` (equipaggio: giorno, postazione con equipaggio, fascia), `conta(assegnazioni) -> Counter[(id, id)]` (autista + soccorritore nello stesso equipaggio con orari sovrapposti), `MAX_STESSA_COPPIA = 2`, `GIORNI_FINESTRA = 28`; il generatore riceve `coppie_recenti` (3 settimane prima, turni effettivi) e penalizza le volte oltre il limite (voce `stessa_coppia`) |
+| `ore_mese.py` | Equità nel mese con limite progressivo (ore, notti in ore di notte, weekend in turni): `ConfrontoMese(anno, mese, giorni, partecipanti, presenti, precedenti[misura][id], fino_al)`, `prepara(giorni, passato, ferie, settimane_passate, persone) -> list[ConfrontoMese]` (scarti dalla media dei presenti settimana per settimana; settimane con assenze o fuori servizio neutre; da quando sono passati 7 giorni dal 1°), `scarti(confronto, assegnazioni, misura)`, `differenza(confronto, assegnazioni, misura, persone=None) -> dict \| None` |
+| `solver.py` | `genera(giorni, postazioni, persone: list[Persona], fissi=(), contesto=(), storico=None, tempo_max=45.0, seed=0, workers=8, ferie=None, indisponibili=None, fabbisogno=(), scarto_ore_max=12, festivi=None, mese=(), limiti_mese=None, coppie_recenti=None) -> Risultato` con `Risultato(stato, assegnazioni: list[Assegnazione]` (solo nuove, origine `generato`)`, scoperti: list[Unita], media_ore: float, ore: dict[int,int], messaggio: str, durata_s: float, qualita: dict \| None, diagnostica: dict \| None, differenza_mese: list[dict])`; `stato` ∈ `ottimo \| ammissibile \| impossibile \| nessuna_soluzione` |
 | `festivita.py` | Calendario delle festività (puro): `pasqua`, `data_nell_anno`, `date_festive`, `turni_festivi`, `FESTIVITA_PREDEFINITE` (sezione "Festività a rotazione: calendario") |
 | `db_festivita.py`, `api_festivita.py`, `api_comune.py` | Repository e router del calendario (`/api/festivita`), chi vuole lavorare (`/api/festivita/disponibili`), ordine e storico per anno (`/api/festivita/prossime`, `/lavorate`); tipi condivisi delle API |
 | `storico_festivi.py`, `db_storico_festivi.py`, `api_storico_festivi.py` | Storico delle festività degli anni passati: lettura CSV, anteprima, limite della prima settimana generata, router `/api/storico-festivi` |
@@ -65,7 +67,7 @@ persone(id INTEGER PK, nome TEXT NOT NULL, tipo TEXT, qualifica TEXT, attivo INT
         indisponibilita_libera INTEGER /*1: la procedura guidata non avvisa sulle sue indisponibilità*/)
 postazioni(id INTEGER PK, nome TEXT UNIQUE, solo_settimane_b INTEGER, ordine INTEGER)
    seed: Acquasanta(0,1), Venarotta(0,2), Ascoli(1,3)
-impostazioni(chiave TEXT PK, valore TEXT)        -- data_riferimento_a (default 2026-10-19), scarto_ore_max (default 12)
+impostazioni(chiave TEXT PK, valore TEXT)        -- data_riferimento_a (default 2026-10-19), scarto_ore_max (default 12), scarto_ore_mese (default 12), scarto_notti_mese (default 2), scarto_weekend_mese (default 2); 0 = nessun limite
 divieti(id INTEGER PK, persona_id INTEGER REFERENCES persone(id), postazione TEXT NULL, turno TEXT NULL)
 settimane(inizio TEXT PK, stato TEXT ('bozza'|'confermata'), dipendenti TEXT /*JSON id*/, generata_il TEXT, report TEXT /*JSON*/)
 assegnazioni(id INTEGER PK, data TEXT, postazione TEXT, fascia TEXT, segmento TEXT, ruolo TEXT,
@@ -118,8 +120,11 @@ porta anche il ruolo `normale` o `master` dentro la firma; HttpOnly, SameSite=La
   (turno: `mattina|pomeriggio|giorno|notte`; almeno uno tra postazione e turno; solo dipendenti; niente duplicati → 400;
   persona inesistente → 404) → 201 · `DELETE /divieti/{id}` → 204 · 404.
   Un turno assegnato che viola un divieto è un errore `divieto` nel validatore; il generatore non lo assegna.
-- `GET /impostazioni` → `{data_riferimento_a, scarto_ore_max}` · `PUT /impostazioni` `{data_riferimento_a?, scarto_ore_max?}`
-  (almeno uno; data normalizzata al lunedì; `scarto_ore_max` intero 1..24, default 12)
+- `GET /impostazioni` → `{data_riferimento_a, scarto_ore_max, scarto_ore_mese, scarto_notti_mese, scarto_weekend_mese}` · `PUT /impostazioni` con uno o più di questi campi
+  (data normalizzata al lunedì; `scarto_ore_max` intero 1..24, default 12; equità nel mese, vedi `ore_mese.py`:
+  `scarto_ore_mese` 0..72 ore (default 12), `scarto_notti_mese` 0..10 notti (default 2), `scarto_weekend_mese` 0..10 turni
+  (default 2), 0 = nessun limite; il report della generazione riporta `differenza_mese`: per mese e misura
+  `{mese, fino_al, misura, unita, differenza, limite, massimo, minimo}`)
 - `GET /settimane/{data}` (qualsiasi data, normalizzata al lunedì) →
   ```
   { inizio, fine, tipo: "A"|"B", stato: "nuova"|"bozza"|"confermata",
