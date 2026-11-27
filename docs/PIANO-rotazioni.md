@@ -29,7 +29,7 @@ mostrato un miglioramento chiaro (numeri al punto 3.3).
 | Weekend | Equi nel tempo con il meccanismo del "debito" (sotto); al massimo uno a settimana | `solver._weekend`, `storico.StoricoPersona.weekend` |
 | Standby e Programmati | Stesso meccanismo, solo tra chi quella settimana li può fare; penalità per il secondo turno nella settimana | `solver._richieste`, `StoricoPersona.richieste`, `CATEGORIE_RICHIESTA` |
 | Acquasanta / Venarotta | Scambi a fine generazione verso tanti turni nell'una quanti nell'altra | `solver.riequilibra_sedi`, `StoricoPersona.sedi` |
-| **Ascoli** | Solo regole **settimanali**: max 2 (3 in extremis), mai due giorni/notti di fila, giorno e notte alternati. **Nessun conteggio nel tempo** | `solver._ascoli`, `vincoli._ascoli*` |
+| **Ascoli** | Solo regole **settimanali**: max 2 (3 in extremis), mai due turni in giorni consecutivi (di qualunque fascia), un giorno e una notte (il secondo giorno o la seconda notte solo in extremis), dopo una notte il giorno ad Ascoli da D+3 (48 ore, violabile per non lasciare un posto scoperto). **Nessun conteggio nel tempo** | `solver._ascoli`, `vincoli._ascoli*` |
 | **Assistenze ed Extra** | Coperte per ultime; contano solo nelle ore. **Nessuna rotazione** | `solver._priorita`, `modello.EXTRA` |
 | **Festività** | **Non esistono**: sono speciali solo sabato e domenica (`categoria_weekend`) | — |
 | Storico | Ricalcolato ogni volta dalle settimane salvate, a partire dalla prima con turni generati (ottobre 2026). **Niente anni passati** | `storico.calcola_storico`, `app._settimana_passata` |

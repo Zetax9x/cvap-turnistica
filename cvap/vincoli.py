@@ -96,6 +96,7 @@ def valida_settimana(
         violazioni += _consecutivi(pid, nome, turni, settimana, livello)
         if persona and persona.dipendente:
             violazioni += _ascoli_di_fila(pid, nome, turni, settimana)
+            violazioni += _ascoli_48_ore(pid, nome, turni, settimana)
 
     violazioni += _ore(giorni, assegnazioni, persone, ferie, scarto_ore_max)
     violazioni += _ascoli(assegnazioni, persone)
@@ -266,32 +267,46 @@ def _consecutivi(pid, nome, turni, settimana, livello):
 
 
 def _ascoli_di_fila(pid, nome, turni, settimana):
-    """Ad Ascoli mai due turni della stessa fascia in giorni consecutivi (anche mezzo turno)."""
+    """Ad Ascoli mai due turni in giorni consecutivi, di qualunque fascia (anche mezzo turno)."""
     out = []
-    for fascia in ("giorno", "notte"):
-        date_ascoli = {t.data for t in turni if t.postazione == ASCOLI and t.fascia == fascia}
-        for d in sorted(date_ascoli):
-            dopo = d + timedelta(days=1)
-            if dopo in date_ascoli and {d, dopo} & settimana:
-                etichetta = "giorni" if fascia == "giorno" else "notti"
-                out.append(Violazione("errore", "ascoli_di_fila",
-                                      f"{nome}: due {etichetta} di fila ad Ascoli ({_fmt(d)} e {_fmt(dopo)})",
-                                      pid, dopo))
+    date_ascoli = {t.data for t in turni if t.postazione == ASCOLI}
+    for d in sorted(date_ascoli):
+        dopo = d + timedelta(days=1)
+        if dopo in date_ascoli and {d, dopo} & settimana:
+            out.append(Violazione("errore", "ascoli_di_fila",
+                                  f"{nome}: due turni di fila ad Ascoli ({_fmt(d)} e {_fmt(dopo)})", pid, dopo))
+    return out
+
+
+def _ascoli_48_ore(pid, nome, turni, settimana):
+    """Dopo una notte ad Ascoli, il turno di giorno ad Ascoli dopo almeno 48 ore dalla fine della notte: la notte
+    del giorno D finisce la mattina di D+1, il giorno è libero da D+3 (il giorno D+1 lo vieta `_ascoli_di_fila`).
+    Avviso: il generatore la viola solo per non lasciare un posto scoperto."""
+    out = []
+    notti = {t.data for t in turni if t.postazione == ASCOLI and t.fascia == "notte"}
+    giorni = {t.data for t in turni if t.postazione == ASCOLI and t.fascia == "giorno"}
+    for d in sorted(notti):
+        dopo = d + timedelta(days=2)
+        if dopo in giorni and {d, dopo} & settimana:
+            out.append(Violazione("avviso", "ascoli_48_ore",
+                                  f"{nome}: giorno ad Ascoli il {_fmt(dopo)}, meno di 48 ore dopo la notte "
+                                  f"del {_fmt(d)} (meglio dal {_fmt(d + timedelta(days=3))})", pid, dopo))
     return out
 
 
 def _ascoli_giorno_notte(assegnazioni, persone):
-    """Ad Ascoli giorno e notte alternati: avviso se una fascia supera l'altra di 2 o più turni
-    (anche mezzo turno conta). Vale solo per i dipendenti."""
+    """Ad Ascoli un giorno e una notte: avviso per ogni dipendente con due turni della stessa fascia nella
+    settimana (anche mezzo turno conta). Vale solo per i dipendenti."""
     conta = Counter((a.persona_id, a.fascia) for a in assegnazioni if a.postazione == ASCOLI and not ore_extra(a))
     out = []
     for pid in sorted({pid for pid, _ in conta}):
         p = persone.get(pid)
         giorni, notti = conta[pid, "giorno"], conta[pid, "notte"]
-        if not p or not p.dipendente or abs(giorni - notti) < 2:
+        if not p or not p.dipendente or max(giorni, notti) < 2:
             continue
         out.append(Violazione("avviso", "ascoli_giorno_notte",
-                              f"{p.nome}: ad Ascoli {giorni} giorni e {notti} notti (meglio alternarli)", pid))
+                              f"{p.nome}: ad Ascoli {giorni} giorni e {notti} notti (meglio un giorno e una notte)",
+                              pid))
     return out
 
 

@@ -133,7 +133,7 @@ def test_senza_limiti_mensili_niente_confronto():
 def test_impostazioni_dell_equita_nel_mese_dall_api(tmp_path):
     c = TestClient(create_app(str(tmp_path / "t.db")))
     imp = c.get("/api/impostazioni").json()
-    assert (imp["scarto_ore_mese"], imp["scarto_notti_mese"], imp["scarto_weekend_mese"]) == (12, 2, 1)
+    assert (imp["scarto_ore_mese"], imp["scarto_notti_mese"], imp["scarto_weekend_mese"]) == (12, 2, 2)
     r = c.put("/api/impostazioni", json={"scarto_ore_mese": 0, "scarto_notti_mese": 3, "scarto_weekend_mese": 0})
     assert r.status_code == 200
     assert (r.json()["scarto_ore_mese"], r.json()["scarto_notti_mese"], r.json()["scarto_weekend_mese"]) == (0, 3, 0)
@@ -149,4 +149,4 @@ def test_la_generazione_riporta_l_equita_del_mese(tmp_path):
     assert r.status_code == 200, r.text
     mese = r.json()["report"]["differenza_mese"]
     assert [(m["mese"], m["misura"], m["limite"]) for m in mese] == [
-        ("ottobre 2026", "ore", 12), ("ottobre 2026", "notti", 24), ("ottobre 2026", "weekend", 1)]
+        ("ottobre 2026", "ore", 12), ("ottobre 2026", "notti", 24), ("ottobre 2026", "weekend", 2)]

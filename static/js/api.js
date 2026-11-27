@@ -92,8 +92,19 @@ export const api = {
   creaPersona: (dati) => richiesta("POST", "/persone", dati),
   aggiornaPersona: (id, dati) => richiesta("PUT", `/persone/${enc(id)}`, dati),
   eliminaPersona: (id) => richiesta("DELETE", `/persone/${enc(id)}`),
-  impostaParametri: (id, maxOre) =>
-    richiesta("PUT", `/persone/${enc(id)}/parametri`, { max_ore_settimana: maxOre }),
+  // `indisponibilitaLibera` assente (undefined): resta com'è
+  impostaParametri: (id, maxOre, indisponibilitaLibera) =>
+    richiesta("PUT", `/persone/${enc(id)}/parametri`,
+      indisponibilitaLibera === undefined ? { max_ore_settimana: maxOre }
+        : { max_ore_settimana: maxOre, indisponibilita_libera: indisponibilitaLibera }),
+
+  // Scheda ore mensile del dipendente: gestione della master (codici personali, elenco, riapertura)
+  impostaCodiceScheda: (id, codice) => richiesta("PUT", `/schede-ore-gestione/codici/${enc(id)}`, { codice }),
+  azzeraCodiceScheda: (id) => richiesta("DELETE", `/schede-ore-gestione/codici/${enc(id)}`),
+  generaCodiceScheda: (id) => richiesta("POST", `/schede-ore-gestione/codici/${enc(id)}/genera`),
+  elencoSchedeOre: (mese) => richiesta("GET", `/schede-ore-gestione/${enc(mese)}`),
+  differenzeSchedaOre: (mese, id) => richiesta("GET", `/schede-ore-gestione/${enc(mese)}/${enc(id)}/differenze`),
+  riapriSchedaOre: (mese, id) => richiesta("POST", `/schede-ore-gestione/${enc(mese)}/${enc(id)}/riapri`),
 
   divieti: () => richiesta("GET", "/divieti"),
   creaDivieto: (dati) => richiesta("POST", "/divieti", dati),

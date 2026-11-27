@@ -4,7 +4,7 @@ Oltre ai limiti della settimana e al pareggio nel tempo, nel mese di calendario,
 generato, tra chi è più avanti e chi è più indietro non ci devono essere più di:
 - `ore`: 12 ore (impostazione «scarto_ore_mese»);
 - `notti`: 2 notti, cioè 24 ore di notte (impostazione «scarto_notti_mese», in notti);
-- `weekend`: 1 turno di weekend, sabato o domenica, giorno o notte (impostazione «scarto_weekend_mese»).
+- `weekend`: 2 turni di weekend, sabato o domenica, giorno o notte (impostazione «scarto_weekend_mese»).
 Il limite è progressivo: si controlla a ogni settimana generata sul periodo dal 1° del mese fin lì, così a fine
 mese vale per tutto il mese. Si comincia quando dal 1° sono passati almeno `GIORNI_MINIMI` giorni.
 
@@ -32,7 +32,7 @@ from .storico import categoria_weekend
 
 GIORNI_MINIMI = 7
 MISURE = ("ore", "notti", "weekend")
-LIMITI_PREDEFINITI = {"ore": 12, "notti": 24, "weekend": 1}  # notti in ore (2 notti)
+LIMITI_PREDEFINITI = {"ore": 12, "notti": 24, "weekend": 2}  # notti in ore (2 notti)
 NOMI_MISURE = {"ore": "ore", "notti": "ore di notte", "weekend": "turni di weekend"}
 
 MESI = ("gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre",

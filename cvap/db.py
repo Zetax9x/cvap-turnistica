@@ -21,7 +21,7 @@ SCARTO_ORE_MAX_DEFAULT = 12
 SCARTO_ORE_MAX_RANGE = (1, 24)
 SCARTO_ORE_MESE_RANGE = (0, 72)
 # equità nel mese: distanza massima in notti e in turni di weekend (cvap/ore_mese.py); 0 = nessun limite
-LIMITI_MESE_DEFAULT = {"scarto_ore_mese": 12, "scarto_notti_mese": 2, "scarto_weekend_mese": 1}
+LIMITI_MESE_DEFAULT = {"scarto_ore_mese": 12, "scarto_notti_mese": 2, "scarto_weekend_mese": 2}
 LIMITI_MESE_RANGE = {"scarto_ore_mese": SCARTO_ORE_MESE_RANGE, "scarto_notti_mese": (0, 10), "scarto_weekend_mese": (0, 10)}
 
 _SCHEMA = """
@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS persone (
     attivo INTEGER NOT NULL DEFAULT 1,
     autista_programmati INTEGER NOT NULL DEFAULT 0,  -- soccorritore che può guidare nei Programmati
     max_ore_settimana INTEGER,  -- tetto alle ore lavorate a settimana (NULL = nessun limite)
-    email TEXT  -- per l'invio dei turni (NULL = nessuna)
+    email TEXT,  -- per l'invio dei turni (NULL = nessuna)
+    indisponibilita_libera INTEGER NOT NULL DEFAULT 0  -- 1: la procedura guidata non avvisa sulle sue indisponibilità
 );
 CREATE TABLE IF NOT EXISTS email_inviate (
     inizio TEXT NOT NULL,       -- lunedì della settimana
@@ -204,6 +205,31 @@ CREATE TABLE IF NOT EXISTS calendari (  -- link segreti dei calendari .ics dei d
     codice TEXT NOT NULL UNIQUE,
     creato_il TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS codici_scheda (  -- codice personale per aprire la scheda ore (cvap/db_schede_ore.py)
+    persona_id INTEGER PRIMARY KEY REFERENCES persone(id),
+    hash TEXT NOT NULL,           -- scrypt: il codice non è mai salvato in chiaro
+    sale TEXT NOT NULL,
+    aggiornato_il TEXT NOT NULL,
+    fallimenti INTEGER NOT NULL DEFAULT 0,
+    bloccato_fino TEXT            -- dopo troppi errori
+);
+CREATE TABLE IF NOT EXISTS schede_ore (  -- scheda ore mensile del dipendente
+    persona_id INTEGER NOT NULL REFERENCES persone(id),
+    mese TEXT NOT NULL,           -- AAAA-MM
+    note TEXT NOT NULL DEFAULT '',
+    stato TEXT NOT NULL DEFAULT 'bozza',   -- bozza | confermata
+    aggiornata_il TEXT NOT NULL,
+    confermata_il TEXT,
+    congelata TEXT,               -- JSON: righe e totali al momento della conferma
+    PRIMARY KEY (persona_id, mese)
+);
+CREATE TABLE IF NOT EXISTS schede_ore_giorni (  -- solo i giorni corretti dal dipendente
+    persona_id INTEGER NOT NULL REFERENCES persone(id),
+    mese TEXT NOT NULL,
+    giorno INTEGER NOT NULL,
+    dati TEXT NOT NULL,           -- JSON: ferie, colonne, note, disponibilità
+    PRIMARY KEY (persona_id, mese, giorno)
+);
 """
 
 _POSTAZIONI_SEED = (("Acquasanta", 0, 1), ("Venarotta", 0, 2), ("Ascoli", 1, 3))
@@ -358,6 +384,12 @@ def _migra(conn) -> None:
         except Exception:
             if "email" not in _colonne(conn, "persone"):
                 raise
+    if "indisponibilita_libera" not in _colonne(conn, "persone"):
+        try:
+            conn.execute("ALTER TABLE persone ADD COLUMN indisponibilita_libera INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            if "indisponibilita_libera" not in _colonne(conn, "persone"):
+                raise
     if "motivo" not in _colonne(conn, "ferie"):
         try:
             conn.execute("ALTER TABLE ferie ADD COLUMN motivo TEXT NOT NULL DEFAULT 'ferie'")
@@ -381,7 +413,8 @@ def _migra(conn) -> None:
 def _persona_dict(r: sqlite3.Row) -> dict:
     return {"id": r["id"], "nome": r["nome"], "tipo": r["tipo"], "qualifica": r["qualifica"],
             "autista_programmati": bool(r["autista_programmati"]), "attivo": bool(r["attivo"]),
-            "max_ore_settimana": r["max_ore_settimana"], "email": r["email"]}
+            "max_ore_settimana": r["max_ore_settimana"], "email": r["email"],
+            "indisponibilita_libera": bool(r["indisponibilita_libera"])}
 
 
 def a_persona(r: dict | sqlite3.Row, divieti: tuple[Divieto, ...] = ()) -> Persona:
@@ -437,6 +470,18 @@ def imposta_max_ore(conn: sqlite3.Connection, persona_id: int, max_ore: int | No
     return get_persona(conn, persona_id) if cur.rowcount else None
 
 
+def imposta_parametri(conn: sqlite3.Connection, persona_id: int, max_ore: int | None,
+                      indisponibilita_libera: bool | None = None) -> dict | None:
+    """Imposta il massimo di ore e, se indicato (None = resta com'è), se la procedura guidata evita di avvisare
+    sulle indisponibilità della persona; None se la persona non esiste."""
+    with conn:
+        cur = conn.execute("UPDATE persone SET max_ore_settimana = ? WHERE id = ?", (max_ore, persona_id))
+        if cur.rowcount and indisponibilita_libera is not None:
+            conn.execute("UPDATE persone SET indisponibilita_libera = ? WHERE id = ?",
+                         (int(indisponibilita_libera), persona_id))
+    return get_persona(conn, persona_id) if cur.rowcount else None
+
+
 def elimina_persona(conn: sqlite3.Connection, persona_id: int) -> bool:
     """Elimina la persona; se ha assegnazioni o è nello storico delle festività la disattiva soltanto.
 
@@ -459,6 +504,8 @@ def elimina_persona(conn: sqlite3.Connection, persona_id: int) -> bool:
             conn.execute("DELETE FROM divieti WHERE persona_id = ?", (persona_id,))
             conn.execute("DELETE FROM email_inviate WHERE persona_id = ?", (persona_id,))
             conn.execute("DELETE FROM calendari WHERE persona_id = ?", (persona_id,))
+            for tabella in ("codici_scheda", "schede_ore", "schede_ore_giorni"):
+                conn.execute(f"DELETE FROM {tabella} WHERE persona_id = ?", (persona_id,))
             conn.execute("DELETE FROM persone WHERE id = ?", (persona_id,))
     return True
 

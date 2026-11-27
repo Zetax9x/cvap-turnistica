@@ -5,6 +5,7 @@ import { api } from "./api.js";
 import { mostraRiepiloghi } from "./riepiloghi.js";
 import { mostra as mostraFestivita, renderSchede, nuovoCaricamento, superato } from "./festivita.js";
 import { mostra as mostraStorico } from "./storico-festivi.js";
+import { renderCodiciScheda } from "./codici-scheda.js";
 import { el, clear, toast, toastErrore, mondayOf, todayISO, dataLunga, parseISO } from "./util.js";
 
 const SCARTO_PREDEFINITO = 12;
@@ -16,7 +17,7 @@ const SCARTO_MESE_MAX = 72;
 // notti e weekend nel mese: [chiave, etichetta, predefinito, massimo, unità]
 const LIMITI_TURNI_MESE = [
   ["scarto_notti_mese", "Differenza massima di notti nel mese", 2, 10, ["notte", "notti"]],
-  ["scarto_weekend_mese", "Differenza massima di turni di weekend nel mese", 1, 10, ["turno", "turni"]],
+  ["scarto_weekend_mese", "Differenza massima di turni di weekend nel mese", 2, 10, ["turno", "turni"]],
 ];
 const ORE_SETTIMANA_MAX = 72;  // come ORE_MAX_SETTIMANA nel server
 const TURNI_DIVIETO = [
@@ -151,6 +152,7 @@ function render(imp, salvata = null) {
     form,
     renderScarto(imp),
     renderMassimiOre(),
+    renderCodiciScheda(sezioneRipiegabile),
     renderDivieti(),
     sezioneRiepiloghi,
     renderEmailEquita(),
@@ -163,6 +165,7 @@ const SEZIONI = [
   ["imp-alternanza", "Settimane A/B"],
   ["imp-scarto", "Differenza ore"],
   ["imp-parametri", "Massimi ore"],
+  ["imp-codici-scheda", "Codici scheda ore"],
   ["imp-divieti", "Divieti"],
   ["imp-riepiloghi", "Email"],
   ["imp-email-equita", "Email equità"],
@@ -300,8 +303,10 @@ function renderScarto(imp) {
 function renderMassimiOre() {
   const dip = dipendentiAttivi();
   const conMassimo = dip.filter((p) => p.max_ore_settimana).length;
+  const senzaAvvisi = dip.filter((p) => p.indisponibilita_libera).length;
   const sezione = sezioneRipiegabile("imp-parametri", "titolo-parametri", "Parametri dipendenti",
-    conMassimo ? `${conMassimo} con un massimo personale` : "nessun massimo personale");
+    [conMassimo ? `${conMassimo} con un massimo personale` : "nessun massimo personale",
+      ...(senzaAvvisi ? [`${senzaAvvisi} senza avvisi sulle indisponibilità`] : [])].join(", "));
   if (!dip.length) {
     sezione.append(el("p", { class: "muted" }, "Nessun dipendente attivo. Aggiungilo nella sezione Personale."));
     return sezione;
@@ -311,7 +316,10 @@ function renderMassimiOre() {
     min: "1", max: String(ORE_SETTIMANA_MAX), step: "1", placeholder: "72 (massimo)",
     value: p.max_ore_settimana ? String(p.max_ore_settimana) : "",
   })]));
-  const invia = el("button", { type: "submit", class: "btn btn-primary" }, "Salva massimi ore");
+  const caselle = new Map(dip.map((p) => [p.id, el("input", {
+    type: "checkbox", id: `senza-avvisi-${p.id}`, name: "indisponibilita_libera", checked: Boolean(p.indisponibilita_libera),
+  })]));
+  const invia = el("button", { type: "submit", class: "btn btn-primary" }, "Salva parametri");
   const form = el("form", {
     onsubmit: async (e) => {
       e.preventDefault();
@@ -326,13 +334,14 @@ function renderMassimiOre() {
           toast(`${p.nome}: indica un numero intero di ore da 1 a ${ORE_SETTIMANA_MAX}, oppure lascia vuoto.`, "avviso");
           return;
         }
-        if (n !== (p.max_ore_settimana || null)) cambi.push([p, n]);
+        const libera = caselle.get(p.id).checked;
+        if (n !== (p.max_ore_settimana || null) || libera !== Boolean(p.indisponibilita_libera)) cambi.push([p, n, libera]);
       }
       if (!cambi.length) { toast("Nessuna modifica da salvare.", "info"); return; }
       invia.disabled = true;
       try {
-        for (const [p, n] of cambi) await api.impostaParametri(p.id, n);
-        toast("Massimi ore salvati.", "ok");
+        for (const [p, n, libera] of cambi) await api.impostaParametri(p.id, n, libera);
+        toast("Parametri salvati.", "ok");
         await carica(undefined, "imp-parametri");
       } catch (err) {
         toastErrore(err);
@@ -343,15 +352,20 @@ function renderMassimiOre() {
     },
   },
   el("p", { class: "hint" }, "Massimo di ore lavorate a settimana (le ore di ferie e malattia non contano). "
-    + "Nessuno può superare le 72 ore: lascia vuoto per il solo tetto di 72, o indica un massimo più basso."),
+    + "Nessuno può superare le 72 ore: lascia vuoto per il solo tetto di 72, o indica un massimo più basso. "
+    + "Con \"Senza avvisi\" la procedura guidata non chiede conferma quando inserisci più indisponibilità "
+    + "o indisponibilità non di tutta la giornata per quel dipendente."),
   el("div", { class: "table-scroll" }, el("table", { class: "tabella" },
-    el("caption", { class: "sr-only" }, "Massimo di ore a settimana per dipendente"),
+    el("caption", { class: "sr-only" }, "Parametri per dipendente: massimo di ore a settimana e avvisi sulle indisponibilità"),
     el("thead", {}, el("tr", {},
       el("th", { scope: "col" }, "Dipendente"),
-      el("th", { scope: "col" }, "Max ore/settimana"))),
+      el("th", { scope: "col" }, "Max ore/settimana"),
+      el("th", { scope: "col" }, "Senza avvisi indisponibilità"))),
     el("tbody", {}, dip.map((p) => el("tr", {},
       el("th", { scope: "row" }, el("label", { for: `max-ore-${p.id}` }, p.nome)),
-      el("td", {}, campi.get(p.id))))))),
+      el("td", {}, campi.get(p.id)),
+      el("td", {}, el("label", { class: "sr-only", for: `senza-avvisi-${p.id}` },
+        `${p.nome}: senza avvisi sulle indisponibilità`), caselle.get(p.id))))))),
   el("div", { class: "form-actions" }, invia));
   segnalaModifiche(form);
   sezione.append(form);

@@ -33,6 +33,8 @@ Quando compili il riepilogo mensile delle ore, scrivi l'**orario effettivo** in 
 
 > Esempio: nei Programmati il turno del pomeriggio finisce alle 20, ma se hai finito alle 17 scrivi **17**, non 20.
 
+Dal programma puoi compilare e scaricare la scheda già pronta dai tuoi turni: vedi il capitolo 12 della guida.
+
 ## 5. Ore sotto e sopra il contratto
 
 Se alla fine del mese un dipendente ha fatto **meno ore di quelle previste dal contratto**, le ore di differenza vengono **comunque pagate dalla Croce Verde**. Se nei mesi successivi si superano le ore previste dal contratto, le ore in più vengono scalate per recuperare quelle già pagate.
@@ -140,7 +142,7 @@ Non ti vengono mai assegnati turni nei giorni di ferie o malattia, nei giorni in
 
 ### 4.5 Ascoli
 
-Ad Ascoli valgono regole in più: al massimo 3 turni a settimana a testa e mai due giorni o due notti di fila. I dettagli sono nel capitolo 7.
+Ad Ascoli valgono regole in più: al massimo 3 turni a settimana a testa e mai due turni in giorni consecutivi. I dettagli sono nel capitolo 7.
 
 ## 5. Le regole sulle ore
 
@@ -219,8 +221,9 @@ Se la connessione si interrompe, usa **Verifica esito** o **Riprendi lo stesso i
 
 - Al massimo 2 turni ad Ascoli a settimana per dipendente; anche mezzo turno conta come turno.
 - Un terzo turno solo se proprio non c'è altra soluzione; mai più di 3.
-- Mai due giorni di fila o due notti di fila ad Ascoli, anche a cavallo tra due settimane.
-- Il programma cerca di alternare giorno e notte: con due turni ad Ascoli, meglio un giorno e una notte.
+- Mai due turni ad Ascoli in giorni consecutivi (giorno e notte compresi), anche a cavallo tra due settimane.
+- Dopo una notte ad Ascoli il turno di giorno ad Ascoli viene dopo almeno 48 ore dalla fine della notte (notte il lunedì, giorno dal giovedì). Il programma la rispetta se può, altrimenti la supera pur di non lasciare un posto scoperto.
+- Il programma alterna giorno e notte: con due turni ad Ascoli, un giorno e una notte; due giorni o due notti nella stessa settimana solo se non c'è altra soluzione.
 
 ### 7.2 Standby e Programmati (settimane A)
 
@@ -276,7 +279,7 @@ Quando non si può avere tutto, il programma segue in linea di massima questo or
 1. coprire tutti i posti (prima le postazioni fisse, poi Standby e Programmati);
 2. rispettare il minimo di 36 ore e la differenza massima di 12 ore (nella settimana e nel mese), ed evitare il terzo turno ad Ascoli;
 3. evitare 3 giorni o 3 notti di fila;
-4. nel mese, non più di 2 notti e 1 turno di weekend di differenza tra chi ne ha fatti di più e chi di meno (paragrafo 8.4);
+4. nel mese, non più di 2 notti e 2 turni di weekend di differenza tra chi ne ha fatti di più e chi di meno (paragrafo 8.4);
 5. alternare giorno e notte ad Ascoli;
 6. non dare a una persona più di un turno di weekend nella stessa settimana, né più di un turno di Standby o di Programmati;
 7. portare le ore di ciascuno vicino alla media, recuperando le differenze delle settimane passate;
@@ -294,7 +297,7 @@ Oltre al pareggio nel tempo, nel mese di calendario (dal 1 al 30 o 31) tra chi �
 |---|---|
 | Ore | 12 ore |
 | Notti | 2 notti |
-| Turni di weekend (sabato e domenica, giorno o notte) | 1 turno |
+| Turni di weekend (sabato e domenica, giorno o notte) | 2 turni |
 
 - Il controllo si ripete a ogni settimana generata, sul periodo dal giorno 1 fin lì: così a fine mese vale per tutto il mese. Si comincia quando dal giorno 1 sono passati almeno 7 giorni.
 - Per ogni settimana si guarda quanto ognuno ha fatto rispetto alla media dei colleghi; nel mese si sommano queste differenze.
@@ -396,9 +399,9 @@ No, il programma non lo fa mai.
 | Ore massime | 72 ore lavorate a settimana, o il tuo massimo personale se più basso |
 | Ore minime | 36 ore a settimana, ferie comprese (se il personale basta) |
 | Differenza tra colleghi | Di norma al massimo 12 ore tra chi lavora di più e chi di meno, nella settimana e nel mese (se il personale basta) |
-| Notti e weekend nel mese | Di norma al massimo 2 notti e 1 turno di weekend di differenza tra colleghi |
+| Notti e weekend nel mese | Di norma al massimo 2 notti e 2 turni di weekend di differenza tra colleghi |
 | Ferie e malattia | Nessun turno; 6 ore per giorno nel conteggio; niente da recuperare |
-| Ascoli | Al massimo 2 turni (3 solo in extremis); mai 2 giorni o 2 notti di fila; alternare giorno e notte |
+| Ascoli | Al massimo 2 turni (3 solo in extremis); mai due turni in giorni consecutivi; un giorno e una notte; dopo una notte il giorno dopo 48 ore |
 | Weekend | Distribuiti in modo equo nel tempo; di norma al massimo uno a settimana |
 | Standby e Programmati | Solo nelle settimane A, quando richiesti; distribuiti in modo equo sulle settimane A di servizio; nello Standby anche giorni e notti |
 | Mezzi turni | Solo dai volontari: di giorno e nella notte di Standby (19–23 / 23–7); l'altra metà va a un dipendente |
@@ -406,3 +409,27 @@ No, il programma non lo fa mai.
 | Festività | Ognuna gira guardando gli ultimi 5 anni; chi l'ha fatta di recente ha la precedenza per restare a casa |
 | Equità nel tempo | Ore, notti, weekend e turni speciali bilanciati nel corso delle settimane |
 | Volontari | Comunicano le disponibilità entro le 16 del venerdì e scelgono i propri turni; il programma non li sposta e assegna ai dipendenti i posti rimasti |
+
+## 12. La scheda ore del mese
+
+Il programma prepara da solo la tua scheda ore mensile, nello stesso modello del riepilogo mensile (una riga per giorno, con Ascoli, Acquasanta, Venarotta, Programmati, Assistenze, Viaggi, Ferie, Note e Disponibilità aggiuntive), partendo dai turni che hai davvero svolto: i cambi, le cessioni e gli scambi sono già tenuti in conto.
+
+**Come si apre.** Vai alla pagina `/scheda-ore` del programma, scegli il tuo nome e scrivi il tuo **PIN**: sono 6 cifre che ti hanno dato i responsabili. Dopo 5 PIN sbagliati la pagina si blocca per 15 minuti. Il PIN è tuo: non darlo ad altri.
+
+**Cosa trovi.** Puoi aprire il mese in corso e i dodici precedenti. I turni sono già compilati: gli Standby compaiono nella colonna Programmati con la nota "Standby", le Assistenze ed Extra nella colonna Assistenze con il nome della richiesta, la malattia nelle note. Le colonne Viaggi e Disponibilità aggiuntive le compili tu.
+
+**Come si controlla, un giorno alla volta.** La pagina ti mostra un giorno per volta, con la domanda «Il programma dice che hai fatto…». In alto c'è la striscia della settimana (L M M G V S D): un pallino verde segna i giorni già controllati e toccando un giorno ci vai subito; con **‹ Prima** e **Dopo ›** cambi settimana. Per ogni giorno scegli:
+- **Sì, è tutto giusto**: hai fatto proprio quei turni, con quegli orari; passi al giorno dopo. Se il giorno non ha turni e va bene così, il pulsante dice «Sì, quel giorno non ho fatto turni».
+- **Cambia un orario**: hai iniziato o finito a un'ora diversa. Compaiono **Modifica** ed **Elimina** per ciascun turno. Scrivi l'orario **effettivo** in cui hai iniziato e finito (come `8` oppure `8:30`; vedi il capitolo 4 del regolamento) e premi **Salva**.
+- **Aggiungi un turno**: hai fatto un turno che non c'è in elenco. Scegli il tipo (Ascoli, Acquasanta, Venarotta, Programmati, Assistenze, Viaggi Ast, Viaggi), scrivi inizio e fine e premi **Salva**. Se il turno è in più rispetto a quelli che escono il venerdì, metti la spunta **Si tratta di un extra?**.
+- **Ero in ferie**: segna il giorno come ferie; toccalo di nuovo per toglierlo.
+
+Ogni turno ha anche una **nota del turno** (per esempio «ritardo per traffico»), che scrivi nello stesso modulo di Modifica o di Aggiungi un turno. Nell'Excel le note dei turni compaiono nella colonna Note del giorno, nella forma «Ascoli: Extra - ritardo per traffico». Le note scritte dal programma (Malattia, Standby, nome delle assistenze) le vedi in sola lettura sotto i turni.
+
+Sotto, in ogni giorno, puoi scrivere una **disponibilità aggiuntiva** (da che ora a che ora, con il motivo) e premere **Salva disponibilità**. Un giorno che hai corretto porta l'etichetta "Corretto da te" e il pulsante "Ripristina dai turni". I giorni che non tocchi continuano ad aggiornarsi se i turni cambiano. Se un giorno ha due turni nella stessa colonna e non contigui, il programma ne scrive uno e mette l'altro nelle note, con l'avviso "Due turni nella stessa colonna": sistemalo a mano. Se i turni cambiano dopo una tua correzione, il giorno ti avvisa. Nel mese in corso devi controllare solo i giorni già passati. I totali del mese (postazioni, secondari, totale, ferie, disponibilità aggiuntive) sono sempre in fondo alla pagina e seguono le formule del modello.
+
+I giorni che hai già controllato vengono ricordati **su questo telefono o computer**: se riapri la scheda da un altro dispositivo la pagina riparte dal primo giorno da controllare, ma le correzioni che hai salvato restano.
+
+**Riepilogo e note finali.** Il pulsante **Vai al riepilogo** (in alto a sinistra) elenca i giorni ancora da controllare o da rivedere e contiene il campo per le tue annotazioni finali. Ci arrivi anche alla fine del mese, dopo l'ultimo giorno.
+
+**Conferma e download.** Quando hai finito, dal riepilogo premi **Ho finito la revisione** e conferma: da quel momento la scheda non si può più modificare e non cambia più, nemmeno se i turni cambiano. Ora puoi **scaricarla in Excel**, nel modello originale. I responsabili vedono le schede confermate e, se serve correggerle ancora, possono riaprirle (le tue correzioni restano).
