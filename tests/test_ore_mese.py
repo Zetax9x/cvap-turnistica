@@ -55,13 +55,16 @@ def test_scarti_dalla_media_e_sostituzioni_escluse():
     assert luglio.precedenti["weekend"] == pytest.approx({1: 2 / 3, 2: -1 / 3, 3: -1 / 3})  # sabato 11
 
 
-def test_settimana_con_ferie_neutra_per_chi_e_assente():
-    passato = [giorno(SETT_1[0], 1), giorno(SETT_1[1], 1), giorno(SETT_1[2], 3)]
-    ferie = {2: {SETT_1[4]}}  # Bruno un giorno di ferie: quella settimana per lui non conta
+def test_giorno_di_ferie_neutro_per_chi_e_assente():
+    # 6–10 luglio: Anna giorno lun, mar e ven; Carla giorno mer; Bruno in ferie venerdì 10
+    passato = [giorno(SETT_1[0], 1), giorno(SETT_1[1], 1), giorno(SETT_1[2], 3), giorno(SETT_1[4], 1)]
+    ferie = {2: {SETT_1[4]}}
     luglio = prepara(GIORNI, passato, ferie, [], persone())[0]
-    assert luglio.precedenti["ore"] == pytest.approx({1: 6, 2: 0, 3: -6})  # media tra Anna e Carla
+    # lun, mar, mer: media 4 tra tutti e tre; ven: Bruno assente, media 6 tra Anna e Carla, Bruno resta dov'era
+    assert luglio.precedenti["ore"] == pytest.approx({1: 8 + 8 - 4 + 6, 2: -4 - 4 - 4, 3: -4 - 4 + 8 - 6})
     luglio = prepara(GIORNI, [], {3: {GIORNI[1]}}, [], persone())[0]
-    assert luglio.presenti == frozenset({1, 2})  # Carla in ferie in questa settimana: non conta adesso
+    assert luglio.presenti[GIORNI[1]] == frozenset({1, 2})  # Carla in ferie martedì: quel giorno non conta
+    assert luglio.presenti[GIORNI[0]] == frozenset({1, 2, 3})  # il lunedì sì
 
 
 def test_chi_non_era_in_servizio_e_neutro_in_quella_settimana():
@@ -73,7 +76,7 @@ def test_chi_non_era_in_servizio_e_neutro_in_quella_settimana():
 
 
 def test_differenza_con_i_turni_della_settimana():
-    c = ConfrontoMese(2026, 7, frozenset(GIORNI[:5]), (1, 2, 3), frozenset({1, 2}),
+    c = ConfrontoMese(2026, 7, frozenset(GIORNI[:5]), (1, 2, 3), {g: frozenset({1, 2}) for g in GIORNI[:5]},
                       {"ore": {1: 10.0, 2: -4.0, 3: -6.0}}, GIORNI[4])
     turni = [giorno(GIORNI[0], 2), giorno(GIORNI[6], 2)]  # il turno di domenica 2 agosto non conta in luglio
     assert scarti(c, turni, "ore") == pytest.approx({1: 4.0, 2: 2.0, 3: -6.0})  # Carla assente: resta com'era
@@ -83,7 +86,7 @@ def test_differenza_con_i_turni_della_settimana():
 
 def _confronto(dip, giorni, precedenti):
     ids = tuple(p.id for p in dip)
-    return ConfrontoMese(2026, 10, frozenset(giorni), ids, frozenset(ids), precedenti, giorni[-1])
+    return ConfrontoMese(2026, 10, frozenset(giorni), ids, {g: frozenset(ids) for g in giorni}, precedenti, giorni[-1])
 
 
 def test_il_generatore_recupera_le_ore_del_mese():
@@ -169,3 +172,20 @@ def test_nel_mese_contano_solo_le_settimane_confermate(tmp_path):
     assert c.post("/api/settimane/2026-10-26/conferma").status_code == 200  # confermata: adesso conta
     novembre = [x for x in confronti_mese(conn, giorni_settimana(date(2026, 11, 9)), persone) if x.mese == 11][0]
     assert novembre.precedenti["ore"][ids[0]] == pytest.approx(8.0)  # 12 ore, media 4 tra i tre
+
+
+def test_il_generatore_con_ferie_a_meta_settimana():
+    """Il n. 1 è 18 ore indietro nel mese ed è in ferie lunedì–mercoledì: quei giorni per lui sono neutri, negli altri
+    il generatore gli fa recuperare. Il conto del generatore e quello di ore_mese devono coincidere."""
+    giorni = giorni_settimana(date(2026, 10, 19))
+    dip = staff(8, 6)
+    ids = tuple(p.id for p in dip)
+    ferie = {1: set(giorni[:3])}
+    presenti = {g: frozenset(i for i in ids if g not in ferie.get(i, ())) for g in giorni}
+    c = ConfrontoMese(2026, 10, frozenset(giorni), ids, presenti,
+                      {"ore": {i: (-18.0 if i == 1 else 18 / 13) for i in ids}}, giorni[-1])
+    r = genera(giorni, ["Acquasanta", "Venarotta"], dip, tempo_max=15, scarto_ore_max=24, ferie=ferie,
+               mese=[c], limiti_mese={"ore": 12})
+    assert r.scoperti == []
+    assert not any(a.persona_id == 1 and a.data in giorni[:3] for a in r.assegnazioni)
+    assert r.differenza_mese[0]["differenza"] <= 12
