@@ -150,3 +150,22 @@ def test_la_generazione_riporta_l_equita_del_mese(tmp_path):
     mese = r.json()["report"]["differenza_mese"]
     assert [(m["mese"], m["misura"], m["limite"]) for m in mese] == [
         ("ottobre 2026", "ore", 12), ("ottobre 2026", "notti", 24), ("ottobre 2026", "weekend", 2)]
+
+
+def test_nel_mese_contano_solo_le_settimane_confermate(tmp_path):
+    """I turni di una settimana in bozza (qui domenica 1° novembre, inserita a mano) non entrano nel mese."""
+    from cvap import db as cdb
+    from cvap.app import confronti_mese
+    c = TestClient(create_app(str(tmp_path / "t.db")))
+    ids = [c.post("/api/persone", json={"nome": n, "tipo": "dipendente", "qualifica": q}).json()["id"]
+           for n, q in (("Anna", "autista"), ("Bruno", "autista"), ("Carla", "soccorritore"))]
+    turno = {"data": "2026-11-01", "postazione": "Acquasanta", "fascia": "notte", "segmento": "intero",
+             "ruolo": "autista", "persona_id": ids[0]}
+    assert c.post("/api/settimane/2026-10-26/assegnazioni", json=turno).status_code == 201  # settimana in bozza
+    conn = cdb.connetti(str(tmp_path / "t.db"))
+    persone = cdb.dipendenti_attivi(conn)
+    novembre = [x for x in confronti_mese(conn, giorni_settimana(date(2026, 11, 9)), persone) if x.mese == 11][0]
+    assert all(v == 0 for v in novembre.precedenti["ore"].values())
+    assert c.post("/api/settimane/2026-10-26/conferma").status_code == 200  # confermata: adesso conta
+    novembre = [x for x in confronti_mese(conn, giorni_settimana(date(2026, 11, 9)), persone) if x.mese == 11][0]
+    assert novembre.precedenti["ore"][ids[0]] == pytest.approx(8.0)  # 12 ore, media 4 tra i tre

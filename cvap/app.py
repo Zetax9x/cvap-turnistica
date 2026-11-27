@@ -493,12 +493,18 @@ def coppie_recenti(conn, giorni: list[date]) -> dict:
 
 
 def confronti_mese(conn, giorni: list[date], dipendenti) -> list:
-    """I confronti del limite di ore nel mese (cvap/ore_mese.py) per la settimana `giorni`, sui turni generati."""
+    """I confronti del limite di ore nel mese (cvap/ore_mese.py) per la settimana `giorni`, sui turni generati.
+
+    Contano solo le settimane passate confermate, come nella pagina dell'equità: i giorni del mese che cadono in
+    una settimana in bozza (per esempio prima che si usasse il programma, con pochi turni inseriti a mano) sono
+    neutri per tutti."""
     primo = min(date(d.year, d.month, 1) for d in giorni)
     prima = giorni[0] - timedelta(days=1)
-    passato = [a for _, a in db.assegnazioni_periodo(conn, primo, prima, "generati")] if prima >= primo else []
-    settimane = [(giorni_settimana(date.fromisoformat(r["inizio"])), r["dipendenti"])
-                 for r in db.lista_settimane(conn, prima_di=giorni[0])]
+    righe = [r for r in db.lista_settimane(conn, prima_di=giorni[0]) if r["stato"] == "confermata"]
+    confermate = {date.fromisoformat(r["inizio"]) for r in righe}
+    passato = [a for _, a in db.assegnazioni_periodo(conn, primo, prima, "generati")
+               if lunedi(a.data) in confermate] if prima >= primo else []
+    settimane = [(giorni_settimana(date.fromisoformat(r["inizio"])), r["dipendenti"]) for r in righe]
     return ore_mese.prepara(giorni, passato, db.ferie_periodo(conn, primo, giorni[-1]), settimane, dipendenti)
 
 
