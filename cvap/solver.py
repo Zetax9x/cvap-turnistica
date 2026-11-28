@@ -88,14 +88,18 @@ P_ORE_MAX = 40
 P_GIORNO_NOTTE = 20
 P_GIORNO_NOTTE_STORICO = 5
 P_WEEKEND = 30
-P_RICHIESTE = 30
-P_DOPPIA_RICHIESTA = 300
+# Standby, Programmati ed Extra: rotazione nel tempo (per turno, × (2·debito + 1)) e turni oltre il primo nella
+# settimana. Erano 30 e 300: troppo poco rispetto a ore e giorni/notti, e i Programmati tornavano a chi era già
+# avanti anche quando c'era un'alternativa
+P_RICHIESTE = 150
+P_DOPPIA_RICHIESTA = 1_500
 P_ASCOLI_STORICO = 30        # rotazione nel tempo del numero di turni ad Ascoli
 P_ASCOLI_GN_STORICO = 100    # per ogni turno di differenza tra giorni e notti ad Ascoli, storico compreso
 # per ogni turno di differenza tra giorni e notti di Standby, storico compreso. Sotto la rotazione dei totali:
-# lo scarto tra chi è in equilibrio e chi riceve la fascia che gli manca (2 x 25 = 50) è meno di un turno di
-# differenza nei totali (2 x P_RICHIESTE = 60), così decide la fascia solo tra chi ha totali vicini
-P_STANDBY_GN_STORICO = 25
+# lo scarto tra chi è in equilibrio e chi riceve la fascia che gli manca (2 x 125 = 250) è meno di un turno di
+# differenza nei totali (2 x P_RICHIESTE = 300), così decide la fascia solo tra chi ha totali vicini (scalato con
+# P_RICHIESTE: prima 25 con P_RICHIESTE = 30)
+P_STANDBY_GN_STORICO = 125
 # festività (docs/PIANO-rotazioni.md, 3.3): tutte molto sotto copertura, ore e regole di Ascoli
 # P_FESTIVITA (60 x peso, sul debito) e P_STESSA_FESTIVITA (500 x peso, l'anno prima; metà due anni prima) sono in
 # cvap/rotazione_festivi.py, con il costo (`costo_festivita`) usato anche dall'ordine di rotazione in anticipo

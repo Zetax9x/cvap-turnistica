@@ -95,9 +95,9 @@ e hanno la precedenza.
 - Standby e Programmati esistono solo nelle settimane A: la quota si calcola sulle **settimane A** in cui il
   dipendente era presente (`StoricoPersona.settimane_a`, settimane senza turni ad Ascoli), non su tutte.
 - Come per Ascoli, nel tempo si minimizza `|(standby_giorno − standby_notte) dello storico + (giorni − notti) di
-  Standby della settimana|` (anche mezzo turno conta 1), con peso `P_STANDBY_GN_STORICO = 25`: sotto la rotazione
-  dei totali (la differenza tra chi è in equilibrio e chi riceve la fascia che gli manca, 2 × 25, è meno di un turno
-  di differenza nei totali, 2 × `P_RICHIESTE` = 60). Esclusi i dipendenti con un divieto di fascia in Standby.
+  Standby della settimana|` (anche mezzo turno conta 1), con peso `P_STANDBY_GN_STORICO = 125` (prima 25): sotto la rotazione
+  dei totali (la differenza tra chi è in equilibrio e chi riceve la fascia che gli manca, 2 × 125, è meno di un turno
+  di differenza nei totali, 2 × `P_RICHIESTE` = 300; `P_RICHIESTE` = 150 e `P_DOPPIA_RICHIESTA` = 1.500 dal 28/11/2026, prima 30 e 300). Esclusi i dipendenti con un divieto di fascia in Standby.
 - Equità: riga "Standby: giorni e notti"; Statistiche: colonna Standby con giorni / notti (`standby_gn`).
 
 ### Dove si vede

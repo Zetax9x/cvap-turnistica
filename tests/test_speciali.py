@@ -227,3 +227,17 @@ def test_chi_ha_fatto_molti_programmati_in_passato_ne_fa_meno():
     r = genera(GIORNI, STAZIONI, persone, fabbisogno=richieste, storico=storico, tempo_max=10)
     assert r.scoperti == []
     assert turni_in(r, PROGRAMMATI).get(11, 0) == 0
+
+
+@pytest.mark.parametrize("seme", [0, 1])
+def test_chi_e_avanti_di_poco_nei_programmati_viene_saltato(seme):
+    """Come Falcioni a novembre: 4 Programmati in 2 settimane A contro 1 degli altri. Con un'alternativa non ne
+    riceve altri e nessuno ne fa due nella settimana (con i pesi di prima a volte succedeva)."""
+    persone = staff(10, 8)
+    storico = {p.id: StoricoPersona(settimane=2, settimane_a=2, richieste={PROGRAMMATI: 1}) for p in persone}
+    storico[11] = StoricoPersona(settimane=2, settimane_a=2, richieste={PROGRAMMATI: 4})
+    richieste = [fab(d, PROGRAMMATI, "giorno", "prog_mattina", "soccorritore", 2) for d in GIORNI[:5]]
+    r = genera(GIORNI, STAZIONI, persone, fabbisogno=richieste, storico=storico, tempo_max=20, seed=seme)
+    assert r.scoperti == []
+    turni = turni_in(r, PROGRAMMATI)
+    assert turni.get(11, 0) == 0 and max(turni.values()) == 1
