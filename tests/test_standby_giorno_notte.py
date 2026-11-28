@@ -149,7 +149,7 @@ def test_la_parte_di_standby_nel_generatore_usa_le_settimane_a():
 
 def test_divieto_di_notte_in_standby_non_penalizza_i_giorni():
     # 1 non può fare notti in Standby: ha solo giorni, ma non deve pagarli come uno squilibrio.
-    # Totali appena sopra gli altri (12 punti), meno del costo di un turno per chi è in equilibrio (25)
+    # Totali appena sopra gli altri, meno del costo di un turno per chi è in equilibrio (P_STANDBY_GN_STORICO)
     persone = staff(3, 0)
     persone[0] = Persona(1, "Autista 1", "dipendente", "autista", divieti=(Divieto(STANDBY, "notte"),))
     storico = {1: StoricoPersona(settimane=100, settimane_a=100, richieste={STANDBY: 20}, standby_giorno=20),
